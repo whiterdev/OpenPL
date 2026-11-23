@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>OpenPL concepto H, base de datos con lupa</title>
+  <ellipse cx="112" cy="48" rx="72" ry="22" fill="#000"/>
+  <path fill="#000" d="M40 66V194A72 22 0 0 0 184 194V66A72 22 0 0 1 40 66Z"/>
+  <circle cx="172" cy="168" r="54" fill="#fff"/>
+  <circle cx="172" cy="168" r="34" fill="none" stroke="#000" stroke-width="16"/>
+  <path fill="#000" d="M190 198l12-12 40 40-12 12z"/>
+</svg>

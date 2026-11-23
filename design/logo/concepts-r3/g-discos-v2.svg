@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>OpenPL concepto G, disco que se abre como un cajón</title>
+  <ellipse cx="116" cy="48" rx="80" ry="22" fill="#000"/>
+  <path fill="#000" d="M36 76V112A80 22 0 0 0 196 112V76A80 22 0 0 1 36 76Z"/>
+  <path fill="#000" d="M60 130V166A80 22 0 0 0 220 166V130A80 22 0 0 1 60 130Z"/>
+  <path fill="#000" d="M36 184V206A80 22 0 0 0 196 206V184A80 22 0 0 1 36 184Z"/>
+</svg>

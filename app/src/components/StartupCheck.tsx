@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Database, WarningCircle } from "@phosphor-icons/react";
+import { WarningCircle } from "@phosphor-icons/react";
+import { Logo } from "./Logo";
 import { api } from "../api";
 import { describeError, type ClientInfo } from "../types";
 import "./StartupCheck.css";
@@ -39,7 +40,7 @@ export function StartupCheck({ onReady }: { onReady: (info: ClientInfo) => void 
     <main className="startup">
       <section className="startup-card" aria-labelledby="startup-title">
         <header>
-          <Database size={20} color="var(--accent)" aria-hidden />
+          <Logo size={20} />
           <h1 id="startup-title">Cliente Oracle no disponible</h1>
         </header>
         <p className="startup-err" role="alert">

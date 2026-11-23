@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>OpenPL</title><g transform="translate(-27.78 -27.78) scale(1.217)">
+  
+  <g transform="translate(0 5)">
+  <path fill="#000" fill-rule="evenodd" d="M40 54a88 32 0 1 0 176 0a88 32 0 1 0-176 0ZM64 54a64 12 0 1 0 128 0a64 12 0 1 0-128 0Z"/>
+  <path fill="#000" d="M40 104V140A88 28 0 0 0 216 140V104A88 28 0 0 1 40 104Z"/>
+  <path fill="#000" d="M40 166V196A88 28 0 0 0 216 196V166A88 28 0 0 1 40 166Z"/>
+  </g>
+</g></svg>

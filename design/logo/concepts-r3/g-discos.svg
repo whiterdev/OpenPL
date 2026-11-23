@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>OpenPL concepto G, discos con la tapa abierta</title>
+  <ellipse cx="128" cy="48" rx="73" ry="18" fill="none" stroke="#000" stroke-width="14"/>
+  <path fill="#000" d="M48 76V112A80 24 0 0 0 208 112V76A80 24 0 0 1 48 76Z"/>
+  <path fill="#000" d="M48 130V166A80 24 0 0 0 208 166V130A80 24 0 0 1 48 130Z"/>
+  <path fill="#000" d="M48 184V206A80 24 0 0 0 208 206V184A80 24 0 0 1 48 184Z"/>
+</svg>

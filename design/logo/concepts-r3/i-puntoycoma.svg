@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>OpenPL concepto I, base de datos con punto y coma</title>
+  <ellipse cx="128" cy="46" rx="80" ry="24" fill="#000"/>
+  <path fill="#000" fill-rule="evenodd" d="M48 66V206A80 24 0 0 0 208 206V66A80 24 0 0 1 48 66Z
+    M128 96a18 18 0 1 1 0 36a18 18 0 1 1 0-36Z
+    M128 150a18 18 0 0 1 18 18c0 20-11 34-29 41l-5-10c8-4 13-10 14-16a18 18 0 0 1 2-33Z"/>
+</svg>

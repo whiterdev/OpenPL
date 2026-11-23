@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle,
-  Database,
   MagnifyingGlass,
   Plus,
   SidebarSimple,
@@ -12,6 +11,7 @@ import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
+import { Logo } from "./components/Logo";
 import { commands, formatKeys, handleShortcut, type CommandId } from "./keymap";
 import {
   describeError,
@@ -138,7 +138,7 @@ export default function App() {
   return (
     <div className="shell">
       <header className="titlebar">
-        <Database size={18} color="var(--accent)" aria-label="OpenPL" />
+        <Logo size={18} />
         <MenuBar menus={menus} />
         <button className="btn" disabled title="Nuevo">
           <Plus size={13} aria-hidden />
