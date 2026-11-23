@@ -1,0 +1,9 @@
+[package]
+name = "openpl-oracle"
+description = "Acceso a Oracle para OpenPL (sobre el crate oracle / ODPI-C)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
