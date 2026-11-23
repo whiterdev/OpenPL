@@ -1,5 +1,7 @@
 # OpenPL Plan 1 — Base, conexión y explorador de objetos
 
+> **Estado: terminado** (rama `feat/plan-1-base`). Ver [docs/ESTADO.md](../../ESTADO.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Una app de escritorio Tauri que detecta el Instant Client, guarda perfiles de conexión, conecta a Oracle 12.1+ verificando compatibilidad cliente/servidor, y muestra el explorador de objetos del esquema.

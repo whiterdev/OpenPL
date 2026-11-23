@@ -1,5 +1,9 @@
 # OpenPL — Diseño v1
 
+> **Nota:** hay decisiones posteriores que actualizan este diseño (tema grafito, menús y atajos,
+> conexión con host/puerto/servicio, 35 tipos en el explorador, etc.). Están en
+> [docs/ESTADO.md](../../ESTADO.md#decisiones-vigentes-que-actualizan-el-diseño) y mandan sobre este documento.
+
 Fecha: 2026-11-23 · Estado: borrador para aprobación
 
 ## 1. Intención y porqué

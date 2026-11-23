@@ -1,7 +1,4 @@
-# Tauri + React + Typescript
+# app
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Interfaz de OpenPL (Tauri v2 + React + TypeScript). Ver [../AGENTS.md](../AGENTS.md) para el mapa
+del código y los comandos, y [../docs/ESTADO.md](../docs/ESTADO.md) para el estado.
