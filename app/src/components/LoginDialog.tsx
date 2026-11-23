@@ -17,6 +17,12 @@ const ENVS: { id: Environment; label: string }[] = [
   { id: "prod", label: "Producción" },
 ];
 
+/** "host:1521/servicio" o "host/servicio" → partes; un alias TNS devuelve null. */
+export function parseEzConnect(value: string): { host: string; port: string; service: string } | null {
+  const m = /^([^:/\s]+)(?::(\d+))?\/(\S+)$/.exec(value.trim());
+  return m ? { host: m[1], port: m[2] ?? "1521", service: m[3] } : null;
+}
+
 /** "srv:1521/ventas" → "VENTAS"; "DEVPDB" → "DEVPDB". */
 function dbLabel(db: string): string {
   const part = db.trim().split("/").pop() ?? db;
@@ -35,7 +41,30 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
   const [selected, setSelected] = useState<ConnectionProfile | null>(null);
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
-  const [db, setDb] = useState("");
+  const [mode, setMode] = useState<"basic" | "tns">("basic");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("1521");
+  const [service, setService] = useState("");
+  const [alias, setAlias] = useState("");
+  const db = mode === "basic" ? `${host.trim()}:${port.trim() || "1521"}/${service.trim()}` : alias.trim();
+
+  /** Rellena los campos a partir de la cadena guardada en el perfil. */
+  function applyDb(value: string) {
+    const ez = parseEzConnect(value);
+    if (ez || value.trim() === "") {
+      setMode("basic");
+      setHost(ez?.host ?? "");
+      setPort(ez?.port ?? "1521");
+      setService(ez?.service ?? "");
+      setAlias("");
+    } else {
+      setMode("tns");
+      setAlias(value.trim());
+      setHost("");
+      setPort("1521");
+      setService("");
+    }
+  }
   const [role, setRole] = useState<Role>("Normal");
   const [environment, setEnvironment] = useState<Environment | null>(null);
   const [name, setName] = useState("");
@@ -69,7 +98,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
     pickedId.current = p.id;
     setSelected(p);
     setUser(p.user);
-    setDb(p.db);
+    applyDb(p.db);
     setRole(p.role);
     setEnvironment(p.environment);
     setName(p.name);
@@ -185,7 +214,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
                 setSelected(null);
                 setUser("");
                 setPassword("");
-                setDb("");
+                applyDb("");
                 setName("");
                 setEnvironment(null);
                 setRole("Normal");
@@ -235,16 +264,44 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
             </div>
           )}
 
-          <label className="login-field">
-            <span className="lbl">Base de datos</span>
-            <input
-              className="fld mono"
-              aria-label="Base de datos"
-              placeholder="alias TNS o host:puerto/servicio"
-              value={db}
-              onChange={(e) => setDb(e.target.value)}
-            />
-          </label>
+          <div className="login-field">
+            <span className="lbl" id="lbl-tipo">Base de datos</span>
+            <div role="radiogroup" aria-labelledby="lbl-tipo" className="seg" style={{ alignSelf: "flex-start" }}>
+              <button type="button" role="radio" aria-checked={mode === "basic"} onClick={() => setMode("basic")}>
+                Host y servicio
+              </button>
+              <button type="button" role="radio" aria-checked={mode === "tns"} onClick={() => setMode("tns")}>
+                Alias TNS
+              </button>
+            </div>
+          </div>
+          {mode === "basic" ? (
+            <div className="login-hostrow">
+              <label className="login-field">
+                <span className="lbl">Host</span>
+                <input className="fld mono" aria-label="Host" value={host} onChange={(e) => setHost(e.target.value)} />
+              </label>
+              <label className="login-field">
+                <span className="lbl">Puerto</span>
+                <input
+                  className="fld mono"
+                  aria-label="Puerto"
+                  inputMode="numeric"
+                  value={port}
+                  onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                />
+              </label>
+              <label className="login-field">
+                <span className="lbl">Servicio</span>
+                <input className="fld mono" aria-label="Servicio" value={service} onChange={(e) => setService(e.target.value)} />
+              </label>
+            </div>
+          ) : (
+            <label className="login-field">
+              <span className="lbl">Alias</span>
+              <input className="fld mono" aria-label="Alias" value={alias} onChange={(e) => setAlias(e.target.value)} />
+            </label>
+          )}
 
           <div className="login-segs">
             <div className="login-field">

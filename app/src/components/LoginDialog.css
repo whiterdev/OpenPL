@@ -33,3 +33,4 @@
 .login-check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .login-actions { margin-top: auto; display: flex; gap: 8px; align-items: center; }
 .login-actions .btn { height: 30px; padding: 0 12px; }
+.login-hostrow { display: grid; grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1fr); gap: 12px; }

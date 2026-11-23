@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="840" viewBox="0 0 1600 840"><defs><filter id="grey"><feColorMatrix type="saturate" values="0"/></filter></defs><rect width="1600" height="840" fill="#f7f7f4"/><text x="60" y="78" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="40" font-weight="700" fill="#161616">OpenPL, conceptos de logo</text><text x="60" y="116" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="20" fill="#6b6b6b">Concepts for review — pick a direction (or tell me what you like in each).</text><rect x="60" y="150" width="474.667" height="630" rx="18" fill="#fff" stroke="#e4e4e0" stroke-width="1"/><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="90" y="190" width="414.667" height="300" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto A, punto y coma abierto</title>
+  <path fill="#000" fill-rule="evenodd" d="M128 40a36 36 0 1 1 0 72a36 36 0 1 1 0-72zm0 21a15 15 0 1 0 0 30a15 15 0 1 0 0-30z"/>
+  <path fill="#000" d="M128 138a34 34 0 0 1 34 34c0 34-20 58-52 70l-8-16c16-8 26-20 28-34a34 34 0 0 1-36-34 34 34 0 0 1 34-20z"/>
+</svg>
+</g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="90" y="516" width="64" height="64" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto A, punto y coma abierto</title>
+  <path fill="#000" fill-rule="evenodd" d="M128 40a36 36 0 1 1 0 72a36 36 0 1 1 0-72zm0 21a15 15 0 1 0 0 30a15 15 0 1 0 0-30z"/>
+  <path fill="#000" d="M128 138a34 34 0 0 1 34 34c0 34-20 58-52 70l-8-16c16-8 26-20 28-34a34 34 0 0 1-36-34 34 34 0 0 1 34-20z"/>
+</svg>
+</g><text x="122" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">64px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="180" y="548" width="32" height="32" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto A, punto y coma abierto</title>
+  <path fill="#000" fill-rule="evenodd" d="M128 40a36 36 0 1 1 0 72a36 36 0 1 1 0-72zm0 21a15 15 0 1 0 0 30a15 15 0 1 0 0-30z"/>
+  <path fill="#000" d="M128 138a34 34 0 0 1 34 34c0 34-20 58-52 70l-8-16c16-8 26-20 28-34a34 34 0 0 1-36-34 34 34 0 0 1 34-20z"/>
+</svg>
+</g><text x="196" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">32px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="238" y="564" width="16" height="16" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto A, punto y coma abierto</title>
+  <path fill="#000" fill-rule="evenodd" d="M128 40a36 36 0 1 1 0 72a36 36 0 1 1 0-72zm0 21a15 15 0 1 0 0 30a15 15 0 1 0 0-30z"/>
+  <path fill="#000" d="M128 138a34 34 0 0 1 34 34c0 34-20 58-52 70l-8-16c16-8 26-20 28-34a34 34 0 0 1-36-34 34 34 0 0 1 34-20z"/>
+</svg>
+</g><text x="246" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">16px</text><text x="90.0" y="636" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#161616">A · Punto y coma abierto</text><text x="90.0" y="670" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">El ; que cierra cada sentencia PL/SQL, con</text><text x="90.0" y="696" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">el punto abierto.</text><rect x="562.667" y="150" width="474.667" height="630" rx="18" fill="#fff" stroke="#161616" stroke-width="2"/><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="592.667" y="190" width="414.667" height="300" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto B, p abierta</title>
+  <path fill="none" stroke="#000" stroke-width="30" stroke-linecap="butt"
+        d="M201.03 100.89 A64 64 0 1 1 159.89 51.86"/>
+  <rect x="59" y="112" width="30" height="124" fill="#000"/>
+</svg>
+</g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="592.667" y="516" width="64" height="64" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto B, p abierta</title>
+  <path fill="none" stroke="#000" stroke-width="30" stroke-linecap="butt"
+        d="M201.03 100.89 A64 64 0 1 1 159.89 51.86"/>
+  <rect x="59" y="112" width="30" height="124" fill="#000"/>
+</svg>
+</g><text x="624.667" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">64px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="682.667" y="548" width="32" height="32" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto B, p abierta</title>
+  <path fill="none" stroke="#000" stroke-width="30" stroke-linecap="butt"
+        d="M201.03 100.89 A64 64 0 1 1 159.89 51.86"/>
+  <rect x="59" y="112" width="30" height="124" fill="#000"/>
+</svg>
+</g><text x="698.667" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">32px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="740.667" y="564" width="16" height="16" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto B, p abierta</title>
+  <path fill="none" stroke="#000" stroke-width="30" stroke-linecap="butt"
+        d="M201.03 100.89 A64 64 0 1 1 159.89 51.86"/>
+  <rect x="59" y="112" width="30" height="124" fill="#000"/>
+</svg>
+</g><text x="748.667" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">16px</text><text x="592.6666666666667" y="636" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#161616">B · p abierta</text><text x="592.6666666666667" y="664" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#161616" letter-spacing="1.5">RECOMMENDED</text><text x="592.6666666666667" y="698" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">Un anillo abierto con asta: se lee O y p,</text><text x="592.6666666666667" y="724" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">Open + PL.</text><rect x="1065.33" y="150" width="474.667" height="630" rx="18" fill="#fff" stroke="#e4e4e0" stroke-width="1"/><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="1095.33" y="190" width="414.667" height="300" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto C, spec y body</title>
+  <path fill="#000" d="M60 48h96a16 16 0 0 1 16 16v40H44V64a16 16 0 0 1 16-16z"/>
+  <path fill="#000" d="M84 124h128v68a16 16 0 0 1-16 16H100a16 16 0 0 1-16-16z"/>
+</svg>
+</g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="1095.33" y="516" width="64" height="64" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto C, spec y body</title>
+  <path fill="#000" d="M60 48h96a16 16 0 0 1 16 16v40H44V64a16 16 0 0 1 16-16z"/>
+  <path fill="#000" d="M84 124h128v68a16 16 0 0 1-16 16H100a16 16 0 0 1-16-16z"/>
+</svg>
+</g><text x="1127.33" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">64px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="1185.33" y="548" width="32" height="32" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto C, spec y body</title>
+  <path fill="#000" d="M60 48h96a16 16 0 0 1 16 16v40H44V64a16 16 0 0 1 16-16z"/>
+  <path fill="#000" d="M84 124h128v68a16 16 0 0 1-16 16H100a16 16 0 0 1-16-16z"/>
+</svg>
+</g><text x="1201.33" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">32px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="1243.33" y="564" width="16" height="16" preserveAspectRatio="xMidYMid meet">
+  <title>OpenPL concepto C, spec y body</title>
+  <path fill="#000" d="M60 48h96a16 16 0 0 1 16 16v40H44V64a16 16 0 0 1 16-16z"/>
+  <path fill="#000" d="M84 124h128v68a16 16 0 0 1-16 16H100a16 16 0 0 1-16-16z"/>
+</svg>
+</g><text x="1251.33" y="600" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">16px</text><text x="1095.3333333333335" y="636" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#161616">C · Spec / Body</text><text x="1095.3333333333335" y="670" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">Las dos mitades de un paquete, desplazadas</text><text x="1095.3333333333335" y="696" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">como al abrirse.</text></svg>

@@ -28,10 +28,11 @@ const perfil: ConnectionProfile = {
 
 const ok = { session_id: "s1", server_version: "12.1.0", compat: { kind: "Supported" as const } };
 
-async function llenar(user = "HR", pw = "clave", db = "DEVPDB") {
+async function llenar(user = "HR", pw = "clave", host = "db.example.com", servicio = "DEVPDB") {
   await userEvent.type(screen.getByLabelText("Usuario"), user);
   await userEvent.type(screen.getByLabelText("Contraseña"), pw);
-  await userEvent.type(screen.getByLabelText("Base de datos"), db);
+  await userEvent.type(screen.getByLabelText("Host"), host);
+  await userEvent.type(screen.getByLabelText("Servicio"), servicio);
 }
 
 describe("LoginDialog", () => {
@@ -58,12 +59,12 @@ describe("LoginDialog", () => {
     );
   });
 
-  test("sin perfil el label es usuario en base", async () => {
+  test("sin perfil el label es usuario en servicio", async () => {
     m.listProfiles.mockResolvedValue([]);
     m.connect.mockResolvedValue(ok);
     const onConnected = vi.fn();
     render(<LoginDialog onConnected={onConnected} />);
-    await llenar("HR", "x", "srv:1521/ventas");
+    await llenar("HR", "x", "srv", "ventas");
     await userEvent.click(screen.getByRole("button", { name: /Conectar/ }));
     await vi.waitFor(() => expect(onConnected.mock.calls[0][0].label).toBe("HR en VENTAS"));
   });
@@ -86,7 +87,9 @@ describe("LoginDialog", () => {
     render(<LoginDialog onConnected={vi.fn()} />);
     await userEvent.click(await screen.findByRole("button", { name: /HR en DEV/ }));
     expect(screen.getByLabelText("Usuario")).toHaveValue("HR");
-    expect(screen.getByLabelText("Base de datos")).toHaveValue("db.example.com:1521/DEVPDB");
+    expect(screen.getByLabelText("Host")).toHaveValue("db.example.com");
+    expect(screen.getByLabelText("Puerto")).toHaveValue("1521");
+    expect(screen.getByLabelText("Servicio")).toHaveValue("DEVPDB");
     await vi.waitFor(() => expect(screen.getByLabelText("Contraseña")).toHaveValue("guardada"));
   });
 
@@ -147,6 +150,41 @@ describe("LoginDialog", () => {
     render(<LoginDialog onConnected={vi.fn()} />);
     await llenar();
     await userEvent.keyboard("{Enter}");
-    await vi.waitFor(() => expect(m.connect).toHaveBeenCalledWith({ user: "HR", password: "clave", db: "DEVPDB", role: "Normal" }));
+    await vi.waitFor(() =>
+      expect(m.connect).toHaveBeenCalledWith({ user: "HR", password: "clave", db: "db.example.com:1521/DEVPDB", role: "Normal" }),
+    );
+  });
+
+  test("el puerto viene en 1521 y se puede cambiar", async () => {
+    m.listProfiles.mockResolvedValue([]);
+    m.connect.mockResolvedValue(ok);
+    render(<LoginDialog onConnected={vi.fn()} />);
+    expect(screen.getByLabelText("Puerto")).toHaveValue("1521");
+    await llenar();
+    await userEvent.clear(screen.getByLabelText("Puerto"));
+    await userEvent.type(screen.getByLabelText("Puerto"), "1522");
+    await userEvent.click(screen.getByRole("button", { name: /Conectar/ }));
+    await vi.waitFor(() => expect(m.connect.mock.calls[0][0].db).toBe("db.example.com:1522/DEVPDB"));
+  });
+
+  test("modo alias TNS conecta con el alias", async () => {
+    m.listProfiles.mockResolvedValue([]);
+    m.connect.mockResolvedValue(ok);
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await userEvent.click(screen.getByRole("radio", { name: "Alias TNS" }));
+    expect(screen.queryByLabelText("Host")).toBeNull();
+    await userEvent.type(screen.getByLabelText("Usuario"), "HR");
+    await userEvent.type(screen.getByLabelText("Contraseña"), "x");
+    await userEvent.type(screen.getByLabelText("Alias"), "ORCL");
+    await userEvent.click(screen.getByRole("button", { name: /Conectar/ }));
+    await vi.waitFor(() => expect(m.connect.mock.calls[0][0].db).toBe("ORCL"));
+  });
+
+  test("un perfil con alias abre en modo alias", async () => {
+    m.listProfiles.mockResolvedValue([{ ...perfil, db: "PRODALIAS" }]);
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /HR en DEV/ }));
+    expect(screen.getByRole("radio", { name: "Alias TNS" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("Alias")).toHaveValue("PRODALIAS");
   });
 });

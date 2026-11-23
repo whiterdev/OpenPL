@@ -10,10 +10,36 @@ pub enum ObjectType {
     Function,
     Trigger,
     Type,
+    JavaSource,
+    JavaClass,
+    DbmsJob,
+    Queue,
+    QueueTable,
+    Library,
+    Directory,
     Table,
+    Index,
+    Constraint,
     View,
+    MaterializedView,
     Sequence,
+    User,
+    Profile,
+    Role,
     Synonym,
+    DatabaseLink,
+    Tablespace,
+    Cluster,
+    WindowGroup,
+    Window,
+    Schedule,
+    Program,
+    Chain,
+    Job,
+    JobClass,
+    Credential,
+    FileWatcher,
+    RecycleBin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,18 +74,45 @@ pub struct RawRow {
 
 impl ObjectType {
     /// Orden del árbol del explorador.
-    pub const ALL: [ObjectType; 9] = [
+    pub const ALL: [ObjectType; 35] = [
         ObjectType::Package,
         ObjectType::Procedure,
         ObjectType::Function,
         ObjectType::Trigger,
         ObjectType::Type,
+        ObjectType::JavaSource,
+        ObjectType::JavaClass,
+        ObjectType::DbmsJob,
+        ObjectType::Queue,
+        ObjectType::QueueTable,
+        ObjectType::Library,
+        ObjectType::Directory,
         ObjectType::Table,
+        ObjectType::Index,
+        ObjectType::Constraint,
         ObjectType::View,
+        ObjectType::MaterializedView,
         ObjectType::Sequence,
+        ObjectType::User,
+        ObjectType::Profile,
+        ObjectType::Role,
         ObjectType::Synonym,
+        ObjectType::DatabaseLink,
+        ObjectType::Tablespace,
+        ObjectType::Cluster,
+        ObjectType::WindowGroup,
+        ObjectType::Window,
+        ObjectType::Schedule,
+        ObjectType::Program,
+        ObjectType::Chain,
+        ObjectType::Job,
+        ObjectType::JobClass,
+        ObjectType::Credential,
+        ObjectType::FileWatcher,
+        ObjectType::RecycleBin,
     ];
 
+    /// Tipos de ALL_OBJECTS que representa (vacío si usa una consulta propia).
     pub fn oracle_types(self) -> &'static [&'static str] {
         match self {
             ObjectType::Package => &["PACKAGE", "PACKAGE BODY"],
@@ -67,12 +120,195 @@ impl ObjectType {
             ObjectType::Function => &["FUNCTION"],
             ObjectType::Trigger => &["TRIGGER"],
             ObjectType::Type => &["TYPE", "TYPE BODY"],
+            ObjectType::JavaSource => &["JAVA SOURCE"],
+            ObjectType::JavaClass => &["JAVA CLASS"],
+            ObjectType::Queue => &["QUEUE"],
+            ObjectType::Library => &["LIBRARY"],
+            ObjectType::Directory => &["DIRECTORY"],
             ObjectType::Table => &["TABLE"],
+            ObjectType::Index => &["INDEX"],
             ObjectType::View => &["VIEW"],
+            ObjectType::MaterializedView => &["MATERIALIZED VIEW"],
             ObjectType::Sequence => &["SEQUENCE"],
             ObjectType::Synonym => &["SYNONYM"],
+            ObjectType::DatabaseLink => &["DATABASE LINK"],
+            ObjectType::Cluster => &["CLUSTER"],
+            ObjectType::WindowGroup => &["WINDOW GROUP", "SCHEDULER GROUP"],
+            ObjectType::Window => &["WINDOW"],
+            ObjectType::Schedule => &["SCHEDULE"],
+            ObjectType::Program => &["PROGRAM"],
+            ObjectType::Chain => &["CHAIN"],
+            ObjectType::Job => &["JOB"],
+            ObjectType::JobClass => &["JOB CLASS"],
+            ObjectType::Credential => &["CREDENTIAL"],
+            ObjectType::FileWatcher => &["FILE WATCHER"],
+            _ => &[],
         }
     }
+
+    /// Objetos de SYS compartidos por todos: "Míos" no filtra por dueño.
+    fn is_global(self) -> bool {
+        matches!(
+            self,
+            ObjectType::Directory
+                | ObjectType::Window
+                | ObjectType::WindowGroup
+                | ObjectType::JobClass
+        )
+    }
+}
+
+/// Consulta propia para tipos que no salen de ALL_OBJECTS.
+/// Columnas: dueño, nombre, tipo, estado ('VALID'/'INVALID'), fecha ISO (`ISO` se reemplaza).
+struct Custom {
+    select: &'static str,
+    from_where: &'static str,
+    owner_col: Option<&'static str>,
+    name_col: &'static str,
+    order: &'static str,
+}
+
+const ISO_FMT: &str = "'YYYY-MM-DD\"T\"HH24:MI:SS'";
+const NO_OWNER: &str = "CAST(NULL AS VARCHAR2(1))";
+const NO_DATE: &str = "CAST(NULL AS VARCHAR2(19))";
+
+fn custom(t: ObjectType) -> Option<Custom> {
+    let c = |select, from_where, owner_col, name_col, order| Custom {
+        select,
+        from_where,
+        owner_col,
+        name_col,
+        order,
+    };
+    Some(match t {
+        ObjectType::Constraint => c(
+            "owner, constraint_name, 'CONSTRAINT', 'VALID', TO_CHAR(last_change, ISO)",
+            "FROM all_constraints WHERE constraint_type IN ('P','U','R','C') AND constraint_name NOT LIKE 'BIN$%'",
+            Some("owner"),
+            "constraint_name",
+            "owner, constraint_name",
+        ),
+        ObjectType::DbmsJob => c(
+            "schema_user, TO_CHAR(job), 'JOB', CASE broken WHEN 'Y' THEN 'INVALID' ELSE 'VALID' END, TO_CHAR(last_date, ISO)",
+            "FROM all_jobs WHERE 1 = 1",
+            Some("schema_user"),
+            "TO_CHAR(job)",
+            "schema_user, job",
+        ),
+        ObjectType::QueueTable => c(
+            "owner, queue_table, 'QUEUE TABLE', 'VALID', NO_DATE",
+            "FROM all_queue_tables WHERE 1 = 1",
+            Some("owner"),
+            "queue_table",
+            "owner, queue_table",
+        ),
+        ObjectType::User => c(
+            "NO_OWNER, username, 'USER', 'VALID', TO_CHAR(created, ISO)",
+            "FROM all_users WHERE 1 = 1",
+            None,
+            "username",
+            "username",
+        ),
+        ObjectType::Role => c(
+            "NO_OWNER, role, 'ROLE', 'VALID', NO_DATE",
+            "FROM dba_roles WHERE 1 = 1",
+            None,
+            "role",
+            "role",
+        ),
+        ObjectType::Profile => c(
+            "DISTINCT NO_OWNER, profile, 'PROFILE', 'VALID', NO_DATE",
+            "FROM dba_profiles WHERE 1 = 1",
+            None,
+            "profile",
+            "profile",
+        ),
+        ObjectType::Tablespace => c(
+            "NO_OWNER, tablespace_name, 'TABLESPACE', CASE status WHEN 'OFFLINE' THEN 'INVALID' ELSE 'VALID' END, NO_DATE",
+            "FROM user_tablespaces WHERE 1 = 1",
+            None,
+            "tablespace_name",
+            "tablespace_name",
+        ),
+        ObjectType::RecycleBin => c(
+            "USER, original_name, type, 'VALID', REPLACE(droptime, ':', 'T')",
+            "FROM user_recyclebin WHERE 1 = 1",
+            None,
+            "original_name",
+            "droptime DESC",
+        ),
+        _ => return None,
+    })
+}
+
+/// Alternativa sin privilegios de DBA (ORA-00942 / ORA-01031 en la consulta principal).
+fn custom_fallback(t: ObjectType) -> Option<Custom> {
+    let c = |select, from_where, name_col: &'static str| Custom {
+        select,
+        from_where,
+        owner_col: None,
+        name_col,
+        order: name_col,
+    };
+    match t {
+        ObjectType::Role => Some(c(
+            "NO_OWNER, granted_role, 'ROLE', 'VALID', NO_DATE",
+            "FROM user_role_privs WHERE 1 = 1",
+            "granted_role",
+        )),
+        ObjectType::Profile => Some(c(
+            "NO_OWNER, profile, 'PROFILE', 'VALID', NO_DATE",
+            "FROM user_users WHERE 1 = 1",
+            "profile",
+        )),
+        _ => None,
+    }
+}
+
+/// `UPPER(col) LIKE :f` con `\`, `%` y `_` escapados: "contiene" literal.
+fn push_filter(
+    sql: &mut String,
+    binds: &mut Vec<(String, String)>,
+    col: &str,
+    filter: Option<&str>,
+) {
+    if let Some(f) = filter.map(str::trim).filter(|f| !f.is_empty()) {
+        let escaped: String = f
+            .to_uppercase()
+            .chars()
+            .flat_map(|c| match c {
+                '\\' | '%' | '_' => vec!['\\', c],
+                _ => vec![c],
+            })
+            .collect();
+        sql.push_str(&format!(" AND UPPER({col}) LIKE :f ESCAPE '\\'"));
+        binds.push(("f".to_string(), format!("%{escaped}%")));
+    }
+}
+
+fn custom_query(c: &Custom, scope: Scope, filter: Option<&str>) -> (String, Vec<(String, String)>) {
+    let mut binds = Vec::new();
+    let select = c
+        .select
+        .replace("NO_OWNER", NO_OWNER)
+        .replace("NO_DATE", NO_DATE)
+        .replace("ISO", ISO_FMT);
+    let mut sql = format!("SELECT {select} {}", c.from_where);
+    if let (Scope::Mine, Some(owner)) = (scope, c.owner_col) {
+        sql.push_str(&format!(" AND {owner} = USER"));
+    }
+    push_filter(&mut sql, &mut binds, c.name_col, filter);
+    sql.push_str(&format!(" ORDER BY {}", c.order));
+    (sql, binds)
+}
+
+/// Consulta alternativa cuando la principal no tiene privilegios (solo algunos tipos).
+pub fn fallback_query(
+    scope: Scope,
+    t: ObjectType,
+    filter: Option<&str>,
+) -> Option<(String, Vec<(String, String)>)> {
+    custom_fallback(t).map(|c| custom_query(&c, scope, filter))
 }
 
 /// SQL y binds nombrados para listar objetos de un tipo. Compatible con Oracle 12.1.
@@ -81,6 +317,9 @@ pub fn objects_query(
     t: ObjectType,
     filter: Option<&str>,
 ) -> (String, Vec<(String, String)>) {
+    if let Some(c) = custom(t) {
+        return custom_query(&c, scope, filter);
+    }
     let mut binds = Vec::new();
     let mut placeholders = Vec::new();
     for (i, ot) in t.oracle_types().iter().enumerate() {
@@ -93,21 +332,10 @@ pub fn objects_query(
          FROM all_objects WHERE object_type IN ({})",
         placeholders.join(", ")
     );
-    if scope == Scope::Mine {
+    if scope == Scope::Mine && !t.is_global() {
         sql.push_str(" AND owner = USER");
     }
-    if let Some(f) = filter.map(str::trim).filter(|f| !f.is_empty()) {
-        let escaped: String = f
-            .to_uppercase()
-            .chars()
-            .flat_map(|c| match c {
-                '\\' | '%' | '_' => vec!['\\', c],
-                _ => vec![c],
-            })
-            .collect();
-        sql.push_str(" AND UPPER(object_name) LIKE :f ESCAPE '\\'");
-        binds.push(("f".to_string(), format!("%{escaped}%")));
-    }
+    push_filter(&mut sql, &mut binds, "object_name", filter);
     sql.push_str(" AND object_name NOT LIKE 'BIN$%' ORDER BY owner, object_name");
     (sql, binds)
 }
@@ -148,7 +376,30 @@ pub fn merge_status(t: ObjectType, rows: Vec<RawRow>) -> Vec<ObjectInfo> {
     out
 }
 
-/// Lista objetos de un tipo desde la base.
+fn run_query(conn: &DbConn, sql: &str, binds: &[(String, String)]) -> Result<Vec<RawRow>, DbError> {
+    let params: Vec<(&str, &dyn oracle::sql_type::ToSql)> = binds
+        .iter()
+        .map(|(k, v)| (k.as_str(), v as &dyn oracle::sql_type::ToSql))
+        .collect();
+    let rows = conn.raw().query_named(sql, &params)?;
+    let text = |row: &oracle::Row, i: usize| -> Result<String, DbError> {
+        Ok(row.get::<_, Option<String>>(i)?.unwrap_or_default())
+    };
+    let mut raw = Vec::new();
+    for row in rows {
+        let row = row?;
+        raw.push(RawRow {
+            owner: text(&row, 0)?,
+            name: text(&row, 1)?,
+            oracle_type: text(&row, 2)?,
+            status: text(&row, 3)?,
+            last_ddl_time: text(&row, 4)?,
+        });
+    }
+    Ok(raw)
+}
+
+/// Lista objetos de un tipo desde la base. Si faltan privilegios y hay alternativa, la usa.
 pub fn list_objects(
     conn: &DbConn,
     scope: Scope,
@@ -156,22 +407,16 @@ pub fn list_objects(
     filter: Option<&str>,
 ) -> Result<Vec<ObjectInfo>, DbError> {
     let (sql, binds) = objects_query(scope, t, filter);
-    let params: Vec<(&str, &dyn oracle::sql_type::ToSql)> = binds
-        .iter()
-        .map(|(k, v)| (k.as_str(), v as &dyn oracle::sql_type::ToSql))
-        .collect();
-    let rows = conn.raw().query_named(&sql, &params)?;
-    let mut raw = Vec::new();
-    for row in rows {
-        let row = row?;
-        raw.push(RawRow {
-            owner: row.get(0)?,
-            name: row.get(1)?,
-            oracle_type: row.get(2)?,
-            status: row.get(3)?,
-            last_ddl_time: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-        });
-    }
+    let raw = match run_query(conn, &sql, &binds) {
+        Ok(r) => r,
+        Err(e) if matches!(e.code.as_deref(), Some("ORA-00942") | Some("ORA-01031")) => {
+            match fallback_query(scope, t, filter) {
+                Some((fsql, fbinds)) => run_query(conn, &fsql, &fbinds)?,
+                None => return Err(e),
+            }
+        }
+        Err(e) => return Err(e),
+    };
     Ok(merge_status(t, raw))
 }
 
@@ -271,6 +516,72 @@ mod tests {
             ],
         );
         assert_eq!(out[0].last_ddl_time, "2024-05-01T00:00:00");
+    }
+
+    #[test]
+    fn el_arbol_tiene_todos_los_tipos() {
+        assert_eq!(ObjectType::ALL.len(), 35);
+        assert_eq!(ObjectType::ALL[0], ObjectType::Package);
+        assert_eq!(*ObjectType::ALL.last().unwrap(), ObjectType::RecycleBin);
+    }
+
+    #[test]
+    fn tipos_de_all_objects_nuevos() {
+        let (sql, b) = objects_query(Scope::Mine, ObjectType::JavaSource, None);
+        assert!(sql.contains("FROM all_objects") && sql.contains("owner = USER"));
+        assert_eq!(b[0].1, "JAVA SOURCE");
+        let (_, b) = objects_query(Scope::All, ObjectType::WindowGroup, None);
+        let tipos: Vec<_> = b.iter().map(|x| x.1.as_str()).collect();
+        assert!(tipos.contains(&"WINDOW GROUP") && tipos.contains(&"SCHEDULER GROUP"));
+    }
+
+    #[test]
+    fn tipos_globales_ignoran_mios() {
+        for t in [
+            ObjectType::Directory,
+            ObjectType::Window,
+            ObjectType::JobClass,
+        ] {
+            let (sql, _) = objects_query(Scope::Mine, t, None);
+            assert!(!sql.contains("owner = USER"), "{t:?}");
+        }
+    }
+
+    #[test]
+    fn usuarios_desde_all_users() {
+        let (sql, _) = objects_query(Scope::Mine, ObjectType::User, Some("hr"));
+        assert!(sql.contains("FROM all_users"));
+        assert!(sql.contains("UPPER(username) LIKE :f"));
+        assert!(!sql.contains("owner = USER"));
+    }
+
+    #[test]
+    fn restricciones_por_dueno() {
+        let (sql, _) = objects_query(Scope::Mine, ObjectType::Constraint, None);
+        assert!(sql.contains("FROM all_constraints") && sql.contains("owner = USER"));
+    }
+
+    #[test]
+    fn dbms_jobs_por_schema_user() {
+        let (sql, _) = objects_query(Scope::Mine, ObjectType::DbmsJob, None);
+        assert!(sql.contains("FROM all_jobs") && sql.contains("schema_user = USER"));
+    }
+
+    #[test]
+    fn papelera_del_usuario() {
+        let (sql, _) = objects_query(Scope::All, ObjectType::RecycleBin, None);
+        assert!(sql.contains("FROM user_recyclebin"));
+    }
+
+    #[test]
+    fn roles_y_perfiles_tienen_alternativa_sin_privilegios() {
+        let (sql, _) = objects_query(Scope::All, ObjectType::Role, None);
+        assert!(sql.contains("FROM dba_roles"));
+        let (fb, _) = fallback_query(Scope::All, ObjectType::Role, None).unwrap();
+        assert!(fb.contains("FROM user_role_privs"));
+        let (fb, _) = fallback_query(Scope::All, ObjectType::Profile, None).unwrap();
+        assert!(fb.contains("FROM user_users"));
+        assert!(fallback_query(Scope::All, ObjectType::Table, None).is_none());
     }
 
     #[test]

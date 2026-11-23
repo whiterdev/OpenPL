@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ObjectBrowser } from "./ObjectBrowser";
 import { api } from "../api";
@@ -38,13 +38,17 @@ describe("ObjectBrowser", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  test("muestra los 9 tipos en orden y no consulta hasta expandir", () => {
+  test("muestra todos los tipos en orden y no consulta hasta expandir", () => {
     renderBrowser();
     const labels = screen
       .getAllByRole("treeitem")
       .filter((n) => n.getAttribute("aria-level") === "1")
       .map((n) => n.getAttribute("aria-label"));
-    expect(labels).toEqual(["Paquetes", "Procedimientos", "Funciones", "Triggers", "Tipos", "Tablas", "Vistas", "Secuencias", "Sinónimos"]);
+    expect(labels).toHaveLength(35);
+    expect(labels.slice(0, 5)).toEqual(["Paquetes", "Procedimientos", "Funciones", "Triggers", "Tipos"]);
+    for (const l of ["Tablas", "Índices", "Vistas", "Usuarios", "Roles", "Jobs", "DBMS_Jobs", "Programas", "Database links", "Tablespaces"])
+      expect(labels).toContain(l);
+    expect(labels[labels.length - 1]).toBe("Papelera");
     expect(m.listObjects).not.toHaveBeenCalled();
   });
 
@@ -153,6 +157,62 @@ describe("ObjectBrowser", () => {
     await userEvent.click(screen.getByRole("button", { name: /Refrescar/ }));
     expect(await screen.findByText("PKG_A")).toBeInTheDocument();
     expect(screen.queryByText("error")).toBeNull();
+  });
+
+  test("clic derecho en un objeto abre el menú contextual con atajos", async () => {
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    const menu = screen.getByRole("menu", { name: /PKG_A/ });
+    expect(within(menu).getByRole("menuitem", { name: /Abrir/ })).toHaveTextContent("Enter");
+    expect(within(menu).getByRole("menuitem", { name: /Probar/ })).toHaveTextContent("Ctrl T");
+    expect(within(menu).getByRole("menuitem", { name: /Refrescar/ })).toHaveTextContent("Ctrl R");
+  });
+
+  test("Abrir del menú contextual llama onOpenObject y cierra el menú", async () => {
+    const onOpenObject = vi.fn();
+    renderBrowser({ onOpenObject });
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Abrir/ }));
+    expect(onOpenObject).toHaveBeenCalledWith(obj("PKG_A"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  test("Copiar nombre con esquema copia OWNER.NOMBRE", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copiar nombre con esquema/ }));
+    expect(writeText).toHaveBeenCalledWith("HR.PKG_A");
+  });
+
+  test("Escape cierra el menú contextual", async () => {
+    renderBrowser();
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: "Paquetes" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  test("clic derecho en un tipo ofrece Refrescar", async () => {
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    await screen.findByText("PKG_A");
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Refrescar/ }));
+    await vi.waitFor(() => expect(m.listObjects).toHaveBeenCalledTimes(2));
+  });
+
+  test("objetos sin dueño (usuarios, roles) se muestran solo con su nombre", async () => {
+    m.listObjects.mockResolvedValue([obj("HR", { owner: "", object_type: "User" })]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("radio", { name: "Todos" }));
+    await userEvent.click(screen.getByRole("treeitem", { name: "Usuarios" }));
+    expect(m.listObjects).toHaveBeenLastCalledWith("s1", "All", "User", null);
+    expect(await screen.findByRole("treeitem", { name: "HR" })).toBeInTheDocument();
   });
 
   test("muestra el contador del tipo cargado", async () => {

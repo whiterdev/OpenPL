@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
@@ -16,23 +16,80 @@ import {
   Package,
   Table,
   TreeStructure,
+  AppWindow,
+  Binoculars,
+  Books,
+  CalendarBlank,
+  CirclesThree,
+  Clock,
+  Coffee,
+  FolderSimple,
+  Globe,
+  HardDrives,
+  Hash,
+  IdentificationCard,
+  Key,
+  Link,
+  Password,
+  Rows,
+  SquaresFour,
+  Stack,
+  Tag,
+  TerminalWindow,
+  Timer,
+  Trash,
+  User,
+  UsersThree,
   type IconProps,
 } from "@phosphor-icons/react";
 import { api } from "../api";
 import { commands, formatKeys } from "../keymap";
 import { describeError, type ActiveConnection, type ObjectInfo, type ObjectType, type Scope } from "../types";
+import { ContextMenu, type ContextItem } from "./ContextMenu";
 import "./ObjectBrowser.css";
+
+const CODE = "var(--fn)";
+const DATA = "var(--st)";
+const SCHED = "var(--env-qa)";
+const SEC = "var(--kw)";
+const STORE = "var(--muted)";
 
 const TYPES: { t: ObjectType; label: string; Icon: ComponentType<IconProps>; tint: string }[] = [
   { t: "Package", label: "Paquetes", Icon: Package, tint: "var(--accent)" },
-  { t: "Procedure", label: "Procedimientos", Icon: FunctionIcon, tint: "var(--fn)" },
-  { t: "Function", label: "Funciones", Icon: FunctionIcon, tint: "var(--fn)" },
-  { t: "Trigger", label: "Triggers", Icon: Lightning, tint: "var(--env-qa)" },
+  { t: "Procedure", label: "Procedimientos", Icon: FunctionIcon, tint: CODE },
+  { t: "Function", label: "Funciones", Icon: FunctionIcon, tint: CODE },
+  { t: "Trigger", label: "Triggers", Icon: Lightning, tint: SCHED },
   { t: "Type", label: "Tipos", Icon: Cube, tint: "var(--ty)" },
-  { t: "Table", label: "Tablas", Icon: Table, tint: "var(--st)" },
-  { t: "View", label: "Vistas", Icon: Eye, tint: "var(--st)" },
-  { t: "Sequence", label: "Secuencias", Icon: ListNumbers, tint: "var(--muted)" },
-  { t: "Synonym", label: "Sinónimos", Icon: LinkSimple, tint: "var(--muted)" },
+  { t: "JavaSource", label: "Fuentes Java", Icon: Coffee, tint: CODE },
+  { t: "JavaClass", label: "Clases Java", Icon: Coffee, tint: CODE },
+  { t: "DbmsJob", label: "DBMS_Jobs", Icon: Clock, tint: SCHED },
+  { t: "Queue", label: "Colas", Icon: Rows, tint: DATA },
+  { t: "QueueTable", label: "Tablas de cola", Icon: Rows, tint: DATA },
+  { t: "Library", label: "Librerías", Icon: Books, tint: CODE },
+  { t: "Directory", label: "Directorios", Icon: FolderSimple, tint: STORE },
+  { t: "Table", label: "Tablas", Icon: Table, tint: DATA },
+  { t: "Index", label: "Índices", Icon: Hash, tint: DATA },
+  { t: "Constraint", label: "Restricciones", Icon: Key, tint: DATA },
+  { t: "View", label: "Vistas", Icon: Eye, tint: DATA },
+  { t: "MaterializedView", label: "Vistas materializadas", Icon: Stack, tint: DATA },
+  { t: "Sequence", label: "Secuencias", Icon: ListNumbers, tint: STORE },
+  { t: "User", label: "Usuarios", Icon: User, tint: SEC },
+  { t: "Profile", label: "Perfiles", Icon: IdentificationCard, tint: SEC },
+  { t: "Role", label: "Roles", Icon: UsersThree, tint: SEC },
+  { t: "Synonym", label: "Sinónimos", Icon: LinkSimple, tint: STORE },
+  { t: "DatabaseLink", label: "Database links", Icon: Globe, tint: STORE },
+  { t: "Tablespace", label: "Tablespaces", Icon: HardDrives, tint: STORE },
+  { t: "Cluster", label: "Clusters", Icon: CirclesThree, tint: DATA },
+  { t: "WindowGroup", label: "Grupos de ventanas", Icon: SquaresFour, tint: SCHED },
+  { t: "Window", label: "Ventanas", Icon: AppWindow, tint: SCHED },
+  { t: "Schedule", label: "Calendarios", Icon: CalendarBlank, tint: SCHED },
+  { t: "Program", label: "Programas", Icon: TerminalWindow, tint: SCHED },
+  { t: "Chain", label: "Cadenas", Icon: Link, tint: SCHED },
+  { t: "Job", label: "Jobs", Icon: Timer, tint: SCHED },
+  { t: "JobClass", label: "Clases de job", Icon: Tag, tint: SCHED },
+  { t: "Credential", label: "Credenciales", Icon: Password, tint: SEC },
+  { t: "FileWatcher", label: "Vigilantes de archivos", Icon: Binoculars, tint: SCHED },
+  { t: "RecycleBin", label: "Papelera", Icon: Trash, tint: STORE },
 ];
 
 const ROW = 24;
@@ -58,6 +115,46 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
   const inflight = useRef(new Set<string>());
   const generation = useRef(0);
   const [localRefresh, setLocalRefresh] = useState(0);
+  const [menu, setMenu] = useState<{ x: number; y: number; label: string; items: (ContextItem | "sep")[] } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const copy = (text: string) => void navigator.clipboard?.writeText(text);
+  const refresh = () => setLocalRefresh((n) => n + 1);
+
+  function objectMenu(e: React.MouseEvent, o: ObjectInfo) {
+    e.preventDefault();
+    const full = o.owner ? `${o.owner}.${o.name}` : o.name;
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      label: full,
+      items: [
+        { label: "Abrir", keys: "Enter", run: () => onOpenObject(o) },
+        { label: commands.test.label, keys: commands.test.keys },
+        { label: "Describir" },
+        { label: "Recompilar" },
+        "sep",
+        { label: "Copiar nombre", keys: "Ctrl+C", run: () => copy(o.name) },
+        { label: "Copiar nombre con esquema", run: () => copy(full) },
+        "sep",
+        { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh },
+      ],
+    });
+  }
+
+  function typeMenu(e: React.MouseEvent, t: ObjectType, label: string) {
+    e.preventDefault();
+    const open = expanded.has(t);
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      label,
+      items: [
+        { label: open ? "Contraer" : "Expandir", run: () => toggle(t) },
+        { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh },
+      ],
+    });
+  }
 
   const keyOf = (t: ObjectType) => `${scope}|${t}|${query ?? ""}`;
 
@@ -137,6 +234,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
 
   function onObjKey(e: KeyboardEvent, o: ObjectInfo) {
     if (e.key === "Enter") onOpenObject(o);
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") copy(o.name);
   }
 
   function renderRow(r: Row, style?: React.CSSProperties) {
@@ -155,6 +253,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
           className="ob-row ob-type"
           style={style}
           onClick={() => toggle(ty.t)}
+          onContextMenu={(e) => typeMenu(e, ty.t, ty.label)}
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(ty.t))}
         >
           {open ? <CaretDown size={10} className="ob-caret" aria-hidden /> : <CaretRight size={10} className="ob-caret" aria-hidden />}
@@ -166,7 +265,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       );
     }
     const o = r.o;
-    const shown = scope === "All" ? `${o.owner}.${o.name}` : o.name;
+    const shown = scope === "All" && o.owner ? `${o.owner}.${o.name}` : o.name;
     const invalid = o.status === "Invalid";
     return (
       <div
@@ -178,6 +277,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
         className="ob-row ob-obj"
         style={style}
         onDoubleClick={() => onOpenObject(o)}
+        onContextMenu={(e) => objectMenu(e, o)}
         onKeyDown={(e) => onObjKey(e, o)}
       >
         <ty.Icon size={15} color={ty.tint} aria-hidden />
@@ -231,6 +331,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
           rows.map((r) => renderRow(r))
         )}
       </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} label={menu.label} items={menu.items} onClose={closeMenu} />}
     </aside>
   );
 }
