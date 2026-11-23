@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod error;
 pub mod profiles;
 pub mod secrets;
+pub mod session;
 
 pub use error::CoreError;
 pub use profiles::{ConnectionProfile, Environment, ProfileStore};
