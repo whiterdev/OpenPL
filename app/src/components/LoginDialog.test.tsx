@@ -113,6 +113,34 @@ describe("LoginDialog", () => {
     expect(p.save_password).toBe(false);
   });
 
+  test("si guardar el perfil falla, muestra el error", async () => {
+    m.listProfiles.mockResolvedValue([]);
+    m.saveProfile.mockRejectedValue({ Secret: "Secret Service no disponible" });
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await llenar();
+    await userEvent.click(screen.getByRole("button", { name: "Guardar perfil" }));
+    expect(await screen.findByText("Secret Service no disponible")).toBeInTheDocument();
+  });
+
+  test("si no se pueden leer los perfiles, muestra el error", async () => {
+    m.listProfiles.mockRejectedValue({ Json: "connections.json inválido" });
+    render(<LoginDialog onConnected={vi.fn()} />);
+    expect(await screen.findByText("connections.json inválido")).toBeInTheDocument();
+  });
+
+  test("cambiar de perfil antes de leer la contraseña no mezcla contraseñas", async () => {
+    const otro: ConnectionProfile = { ...perfil, id: "22222222-2222-2222-2222-222222222222", name: "VENTAS en PROD", db: "PROD", environment: "prod", save_password: false };
+    m.listProfiles.mockResolvedValue([perfil, otro]);
+    let soltar: (v: string) => void = () => {};
+    m.storedPassword.mockReturnValue(new Promise<string | null>((r) => (soltar = r)));
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /HR en DEV/ }));
+    await userEvent.click(screen.getByRole("button", { name: /VENTAS en PROD/ }));
+    soltar("clave-de-dev");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByLabelText("Contraseña")).toHaveValue("");
+  });
+
   test("Enter en el formulario conecta", async () => {
     m.listProfiles.mockResolvedValue([]);
     m.connect.mockResolvedValue(ok);

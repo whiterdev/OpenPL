@@ -56,6 +56,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
   const [cache, setCache] = useState<Record<string, ObjectInfo[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const inflight = useRef(new Set<string>());
+  const generation = useRef(0);
   const [localRefresh, setLocalRefresh] = useState(0);
 
   const keyOf = (t: ObjectType) => `${scope}|${t}|${query ?? ""}`;
@@ -73,6 +74,9 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       firstRefresh.current = false;
       return;
     }
+    // Respuestas en vuelo de antes del refresco se descartan al llegar.
+    generation.current += 1;
+    inflight.current = new Set();
     setCache({});
     setErrors({});
   }, [refreshKey, localRefresh]);
@@ -80,17 +84,25 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
   useEffect(() => {
     for (const t of expanded) {
       const key = keyOf(t);
-      if (cache[key] || inflight.current.has(key)) continue;
-      inflight.current.add(key);
+      // Un tipo con error no se reintenta solo: se reintenta al refrescar.
+      if (cache[key] || errors[key] || inflight.current.has(key)) continue;
+      const gen = generation.current;
+      const pending = inflight.current;
+      pending.add(key);
       api
         .listObjects(connection.sessionId, scope, t, query)
-        .then((v) => setCache((c) => ({ ...c, [key]: v })))
+        .then((v) => {
+          if (gen !== generation.current) return;
+          setCache((c) => ({ ...c, [key]: v }));
+          setErrors(({ [key]: _old, ...rest }) => rest);
+        })
         .catch((e) => {
+          if (gen !== generation.current) return;
           const d = describeError(e);
           if (d.kind === "ConnectionLost") onConnectionLost();
           setErrors((er) => ({ ...er, [key]: d.code ? `${d.code} ${d.message}` : d.message }));
         })
-        .finally(() => inflight.current.delete(key));
+        .finally(() => pending.delete(key));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, scope, query, cache, connection.sessionId]);

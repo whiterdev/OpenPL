@@ -12,9 +12,19 @@ interface Props {
   onDisconnect: (id: string) => void;
   onReconnect: (id: string) => void;
   onNew?: () => void;
+  reconnectError?: string;
 }
 
-export function ConnectionBar({ connections, activeId, states, onSelect, onDisconnect, onReconnect, onNew }: Props) {
+export function ConnectionBar({
+  connections,
+  activeId,
+  states,
+  onSelect,
+  onDisconnect,
+  onReconnect,
+  onNew,
+  reconnectError,
+}: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
@@ -58,6 +68,11 @@ export function ConnectionBar({ connections, activeId, states, onSelect, onDisco
       {disconnected && (
         <>
           <span className="connbar-off">Desconectado</span>
+          {reconnectError && (
+            <span className="connbar-off" role="alert">
+              {reconnectError}
+            </span>
+          )}
           <button className="btn" onClick={() => onReconnect(active.sessionId)}>
             Reconectar
           </button>

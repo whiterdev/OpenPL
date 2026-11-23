@@ -58,6 +58,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests Rust (incluye pruebas contra Oracle XE)
+        # shell: bash activa pipefail; sin él, tee ocultaría el fallo de cargo test.
+        shell: bash
         run: cargo test --workspace 2>&1 | tee test.log
       - name: Las pruebas live no se saltaron
         run: "! grep -q 'SKIP: OPENPL_TEST_' test.log"

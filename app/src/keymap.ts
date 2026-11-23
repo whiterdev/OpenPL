@@ -107,3 +107,24 @@ export function matches(e: KeyLike, keys: string): boolean {
   if (mods.has("Alt") !== e.altKey) return false;
   return e.key.toLowerCase() === key.toLowerCase();
 }
+
+/**
+ * Maneja una tecla contra el registro. Toda combinación registrada se bloquea aunque aún no
+ * tenga acción (así F5 o Ctrl R no recargan la ventana); devuelve true si ejecutó una acción.
+ */
+export function handleShortcut(
+  e: KeyLike & { preventDefault: () => void },
+  actions: Partial<Record<CommandId, () => void>>,
+): boolean {
+  for (const c of list) {
+    if (!c.keys || !matches(e, c.keys)) continue;
+    e.preventDefault();
+    const run = actions[c.id];
+    if (run) {
+      run();
+      return true;
+    }
+    return false;
+  }
+  return false;
+}

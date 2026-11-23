@@ -129,6 +129,32 @@ describe("ObjectBrowser", () => {
     expect(screen.queryAllByRole("treeitem").length).toBeLessThan(500);
   });
 
+  test("refrescar durante una carga no deja datos viejos", async () => {
+    let viejo: (v: ObjectInfo[]) => void = () => {};
+    m.listObjects
+      .mockReturnValueOnce(new Promise<ObjectInfo[]>((r) => (viejo = r)))
+      .mockResolvedValueOnce([obj("PKG_NUEVO")]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    await userEvent.click(screen.getByRole("button", { name: /Refrescar/ }));
+    await vi.waitFor(() => expect(m.listObjects).toHaveBeenCalledTimes(2));
+    await act(async () => viejo([obj("PKG_VIEJO")]));
+    expect(await screen.findByText("PKG_NUEVO")).toBeInTheDocument();
+    expect(screen.queryByText("PKG_VIEJO")).toBeNull();
+  });
+
+  test("tras un error, un refresco exitoso quita la marca de error", async () => {
+    m.listObjects
+      .mockRejectedValueOnce({ Db: { code: "ORA-00942", kind: "Other", message: "x" } })
+      .mockResolvedValueOnce([obj("PKG_A")]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    expect(await screen.findByText("error")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Refrescar/ }));
+    expect(await screen.findByText("PKG_A")).toBeInTheDocument();
+    expect(screen.queryByText("error")).toBeNull();
+  });
+
   test("muestra el contador del tipo cargado", async () => {
     renderBrowser();
     await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));

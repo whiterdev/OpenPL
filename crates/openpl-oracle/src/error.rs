@@ -30,8 +30,10 @@ pub fn classify(code: &str) -> ErrorKind {
         "ORA-12154" | "ORA-12514" | "ORA-12541" | "ORA-12505" | "ORA-12545" | "ORA-12170" => {
             ErrorKind::UnknownService
         }
-        "ORA-03113" | "ORA-03114" | "ORA-03135" | "ORA-02396" | "ORA-00028" | "DPI-1080"
-        | "DPI-1010" => ErrorKind::ConnectionLost,
+        "ORA-03113" | "ORA-03114" | "ORA-03135" | "ORA-02396" | "ORA-00028" | "ORA-01012"
+        | "ORA-12537" | "ORA-12547" | "ORA-12571" | "DPI-1080" | "DPI-1010" => {
+            ErrorKind::ConnectionLost
+        }
         _ => ErrorKind::Other,
     }
 }
@@ -61,9 +63,16 @@ impl DbError {
         let kind = code.as_deref().map(classify).unwrap_or(ErrorKind::Other);
         let message = match kind {
             ErrorKind::InvalidCredentials => "Usuario o contraseña incorrectos.".to_string(),
-            ErrorKind::PasswordExpired => "La contraseña expiró.".to_string(),
+            ErrorKind::PasswordExpired => {
+                "La contraseña expiró; cámbiela con otra herramienta.".to_string()
+            }
+            ErrorKind::ClientMissing if code.as_deref() == Some("DPI-1072") => {
+                "La versión del cliente Oracle no es compatible; instale Instant Client 19 o 21."
+                    .to_string()
+            }
             ErrorKind::ClientMissing => {
-                "No se encontró Oracle Instant Client (64 bits).".to_string()
+                // El detalle original distingue "no encontrado" de "arquitectura incorrecta".
+                format!("No se encontró Oracle Instant Client (64 bits). {original}")
             }
             _ => original.to_string(),
         };
@@ -89,6 +98,48 @@ impl From<oracle::Error> for DbError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cliente_de_otra_arquitectura_conserva_el_detalle() {
+        let e = DbError::from_code(
+            Some("DPI-1047".into()),
+            "DPI-1047: Cannot locate a 64-bit Oracle Client library: \"oci.dll is not the correct architecture\"",
+        );
+        assert_eq!(e.kind, ErrorKind::ClientMissing);
+        assert!(e
+            .message
+            .starts_with("No se encontró Oracle Instant Client (64 bits)."));
+        assert!(e.message.contains("not the correct architecture"));
+    }
+
+    #[test]
+    fn cliente_de_version_no_soportada_no_dice_no_encontrado() {
+        let e = DbError::from_code(
+            Some("DPI-1072".into()),
+            "DPI-1072: the Oracle Client library version is unsupported",
+        );
+        assert!(!e.message.contains("No se encontró"));
+        assert!(e.message.contains("no es compatible"));
+    }
+
+    #[test]
+    fn mas_codigos_de_conexion_perdida() {
+        for c in ["ORA-01012", "ORA-12537", "ORA-12547", "ORA-12571"] {
+            assert_eq!(classify(c), ErrorKind::ConnectionLost, "{c}");
+        }
+    }
+
+    #[test]
+    fn clave_expirada_indica_que_hacer() {
+        let e = DbError::from_code(
+            Some("ORA-28001".into()),
+            "ORA-28001: the password has expired",
+        );
+        assert_eq!(
+            e.message,
+            "La contraseña expiró; cámbiela con otra herramienta."
+        );
+    }
 
     #[test]
     fn clasifica_codigos() {

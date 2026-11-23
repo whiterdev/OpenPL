@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CheckCircle, MagnifyingGlass, Plug, Plus, WarningCircle } from "@phosphor-icons/react";
 import { api } from "../api";
 import { describeError, type ActiveConnection, type ConnectionProfile, type Environment, type Role } from "../types";
@@ -43,9 +43,17 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
   const [error, setError] = useState<{ code: string | null; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const reload = () => api.listProfiles().then(setProfiles);
+  const pickedId = useRef<string | null>(null);
+
+  function fail(err: unknown) {
+    const d = describeError(err);
+    setError({ code: d.code, message: d.message });
+  }
+
+  const reload = () => api.listProfiles().then(setProfiles).catch(fail);
   useEffect(() => {
     void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const groups = useMemo(() => {
@@ -58,6 +66,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
   }, [profiles, search]);
 
   async function pick(p: ConnectionProfile) {
+    pickedId.current = p.id;
     setSelected(p);
     setUser(p.user);
     setDb(p.db);
@@ -68,8 +77,13 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
     setError(null);
     setPassword("");
     if (p.save_password) {
-      const pw = await api.storedPassword(p.id);
-      if (pw) setPassword(pw);
+      try {
+        const pw = await api.storedPassword(p.id);
+        // Si mientras tanto se eligió otro perfil, esta contraseña no le corresponde.
+        if (pw && pickedId.current === p.id) setPassword(pw);
+      } catch (err) {
+        if (pickedId.current === p.id) fail(err);
+      }
     }
   }
 
@@ -110,16 +124,27 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
 
   async function saveProfile() {
     const p = currentProfile();
-    await api.saveProfile(p, savePassword ? password || null : null);
-    setSelected(p);
-    await reload();
+    try {
+      await api.saveProfile(p, savePassword ? password || null : null);
+      pickedId.current = p.id;
+      setSelected(p);
+      setError(null);
+      await reload();
+    } catch (err) {
+      fail(err);
+    }
   }
 
   async function deleteProfile() {
     if (!selected) return;
-    await api.deleteProfile(selected.id);
-    setSelected(null);
-    await reload();
+    try {
+      await api.deleteProfile(selected.id);
+      pickedId.current = null;
+      setSelected(null);
+      await reload();
+    } catch (err) {
+      fail(err);
+    }
   }
 
   return (
@@ -156,6 +181,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
               type="button"
               className="btn ghost"
               onClick={() => {
+                pickedId.current = null;
                 setSelected(null);
                 setUser("");
                 setPassword("");

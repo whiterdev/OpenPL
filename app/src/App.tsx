@@ -12,12 +12,13 @@ import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
-import { commands, formatKeys, matches, type CommandId } from "./keymap";
-import type {
-  ActiveConnection,
-  ClientInfo,
-  ObjectInfo,
-  SessionState,
+import { commands, formatKeys, handleShortcut, type CommandId } from "./keymap";
+import {
+  describeError,
+  type ActiveConnection,
+  type ClientInfo,
+  type ObjectInfo,
+  type SessionState,
 } from "./types";
 import "./App.css";
 
@@ -30,6 +31,7 @@ export default function App() {
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reconnectErrors, setReconnectErrors] = useState<Record<string, string>>({});
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
 
@@ -43,14 +45,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      for (const [id, run] of Object.entries(actions)) {
-        const keys = commands[id as CommandId].keys;
-        if (run && keys && matches(e, keys)) {
-          e.preventDefault();
-          run();
-          return;
-        }
-      }
+      handleShortcut(e, actions);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -68,9 +63,12 @@ export default function App() {
     try {
       await api.reconnect(id);
       setStates((s) => ({ ...s, [id]: "Connected" }));
+      setReconnectErrors(({ [id]: _old, ...rest }) => rest);
       setRefreshTick((t) => t + 1);
-    } catch {
+    } catch (e) {
+      const d = describeError(e);
       setStates((s) => ({ ...s, [id]: "Disconnected" }));
+      setReconnectErrors((r) => ({ ...r, [id]: d.code ? `${d.code} ${d.message}` : d.message }));
     }
   }
 
@@ -153,6 +151,7 @@ export default function App() {
           onSelect={setActiveId}
           onDisconnect={(id) => void disconnect(id)}
           onReconnect={(id) => void reconnect(id)}
+          reconnectError={activeId ? reconnectErrors[activeId] : undefined}
           onNew={() => setShowLogin(true)}
         />
         <div className="titlebar-center">

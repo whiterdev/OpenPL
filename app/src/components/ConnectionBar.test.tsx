@@ -32,6 +32,21 @@ describe("ConnectionBar", () => {
     expect(onReconnect).toHaveBeenCalledWith("s1");
   });
 
+  test("muestra el error del último intento de reconexión", () => {
+    render(
+      <ConnectionBar
+        connections={[dev]}
+        activeId="s1"
+        states={{ s1: "Disconnected" }}
+        reconnectError="ORA-12541 No hay listener"
+        onSelect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onReconnect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ORA-12541 No hay listener")).toBeInTheDocument();
+  });
+
   test("advertencia de compatibilidad se indica con su texto en el tooltip", () => {
     const warn = { ...dev, compat: { kind: "Warn" as const, reason: "Instant Client 12 no está probado" } };
     render(<ConnectionBar connections={[warn]} activeId="s1" states={{}} onSelect={vi.fn()} onDisconnect={vi.fn()} onReconnect={vi.fn()} />);

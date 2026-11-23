@@ -114,17 +114,17 @@ pub fn objects_query(
 
 /// Agrupa spec/body (o type/type body) en un solo objeto; inválido si cualquiera lo es.
 pub fn merge_status(t: ObjectType, rows: Vec<RawRow>) -> Vec<ObjectInfo> {
-    let mut out: Vec<ObjectInfo> = Vec::new();
+    let mut out: Vec<ObjectInfo> = Vec::with_capacity(rows.len());
+    let mut index: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::with_capacity(rows.len());
     for r in rows {
         let status = if r.status == "VALID" {
             ObjectStatus::Valid
         } else {
             ObjectStatus::Invalid
         };
-        match out
-            .iter_mut()
-            .find(|o| o.owner == r.owner && o.name == r.name)
-        {
+        let key = (r.owner.clone(), r.name.clone());
+        match index.get(&key).map(|&i| &mut out[i]) {
             Some(o) => {
                 if status == ObjectStatus::Invalid {
                     o.status = ObjectStatus::Invalid;
@@ -133,13 +133,16 @@ pub fn merge_status(t: ObjectType, rows: Vec<RawRow>) -> Vec<ObjectInfo> {
                     o.last_ddl_time = r.last_ddl_time;
                 }
             }
-            None => out.push(ObjectInfo {
-                owner: r.owner,
-                name: r.name,
-                object_type: t,
-                status,
-                last_ddl_time: r.last_ddl_time,
-            }),
+            None => {
+                index.insert(key, out.len());
+                out.push(ObjectInfo {
+                    owner: r.owner,
+                    name: r.name,
+                    object_type: t,
+                    status,
+                    last_ddl_time: r.last_ddl_time,
+                });
+            }
         }
     }
     out
@@ -268,6 +271,21 @@ mod tests {
             ],
         );
         assert_eq!(out[0].last_ddl_time, "2024-05-01T00:00:00");
+    }
+
+    #[test]
+    fn merge_de_decenas_de_miles_de_filas_es_rapido() {
+        let rows: Vec<RawRow> = (0..40_000)
+            .map(|i| raw("PUBLIC", &format!("SYN_{i:06}"), "SYNONYM", "VALID"))
+            .collect();
+        let t0 = std::time::Instant::now();
+        let out = merge_status(ObjectType::Synonym, rows);
+        assert_eq!(out.len(), 40_000);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(300),
+            "{:?}",
+            t0.elapsed()
+        );
     }
 
     #[test]

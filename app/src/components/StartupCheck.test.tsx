@@ -17,13 +17,18 @@ const missing = {
 describe("StartupCheck", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  test("sin Instant Client muestra error y ayuda, y botón Reintentar", async () => {
+  test("sin Instant Client muestra error y ayuda, sin un Reintentar que no puede funcionar", async () => {
     m.clientInfo.mockResolvedValue(missing);
     render(<StartupCheck onReady={vi.fn()} />);
     expect(await screen.findByText("DPI-1047")).toBeInTheDocument();
     expect(screen.getByText("Agregue su carpeta al PATH")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    expect(m.clientInfo).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+  });
+
+  test("si la consulta del cliente falla, muestra el error en vez de una ventana vacía", async () => {
+    m.clientInfo.mockRejectedValue("fallo de IPC");
+    render(<StartupCheck onReady={vi.fn()} />);
+    expect(await screen.findByText("fallo de IPC")).toBeInTheDocument();
   });
 
   test("elegir carpeta del cliente llama setClientDir y pide reiniciar", async () => {

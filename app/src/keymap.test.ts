@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { commands, formatKeys, matches } from "./keymap";
+import { describe, expect, test, vi } from "vitest";
+import { commands, formatKeys, handleShortcut, matches } from "./keymap";
 
 describe("keymap", () => {
   test("los atajos del diseño están registrados", () => {
@@ -50,6 +50,28 @@ describe("keymap", () => {
         "F10",
       ),
     ).toBe(false);
+  });
+
+  test("un atajo registrado sin acción igual se bloquea (F5, Ctrl R no recargan la ventana)", () => {
+    const ev = { key: "F5", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    expect(handleShortcut(ev, {})).toBe(false);
+    expect(ev.preventDefault).toHaveBeenCalled();
+    const r = { key: "r", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    handleShortcut(r, {});
+    expect(r.preventDefault).toHaveBeenCalled();
+  });
+
+  test("handleShortcut ejecuta la acción del atajo", () => {
+    const run = vi.fn();
+    const ev = { key: "b", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    expect(handleShortcut(ev, { toggleExplorer: run })).toBe(true);
+    expect(run).toHaveBeenCalled();
+  });
+
+  test("teclas sin atajo no se bloquean", () => {
+    const ev = { key: "a", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    handleShortcut(ev, {});
+    expect(ev.preventDefault).not.toHaveBeenCalled();
   });
 
   test("ningún atajo está repetido", () => {
