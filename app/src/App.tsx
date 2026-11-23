@@ -76,10 +76,15 @@ export default function App() {
     if (activeId) setStates((s) => ({ ...s, [activeId]: "Disconnected" }));
   }, [activeId]);
 
-  const onOpenObject = useCallback((_o: ObjectInfo) => {
-    setNotice("Edición disponible en una versión posterior");
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
     window.setTimeout(() => setNotice(null), 2500);
   }, []);
+
+  const onOpenObject = useCallback(
+    (_o: ObjectInfo) => showNotice("Edición disponible en una versión posterior"),
+    [showNotice],
+  );
 
   const run = (id: CommandId) =>
     actions[id] ? { command: id, run: actions[id] } : { command: id };
@@ -183,6 +188,7 @@ export default function App() {
             refreshKey={refreshTick}
             onOpenObject={onOpenObject}
             onConnectionLost={onConnectionLost}
+            onNotice={showNotice}
           />
         )}
         <main className="workspace">

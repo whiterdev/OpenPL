@@ -5,7 +5,7 @@ import { ObjectBrowser } from "./ObjectBrowser";
 import { api } from "../api";
 import type { ActiveConnection, ObjectInfo } from "../types";
 
-vi.mock("../api", () => ({ api: { listObjects: vi.fn() } }));
+vi.mock("../api", () => ({ api: { listObjects: vi.fn(), objectDdl: vi.fn(), recompile: vi.fn() } }));
 const m = vi.mocked(api);
 
 const conn: ActiveConnection = {
@@ -213,6 +213,77 @@ describe("ObjectBrowser", () => {
     await userEvent.click(screen.getByRole("treeitem", { name: "Usuarios" }));
     expect(m.listObjects).toHaveBeenLastCalledWith("s1", "All", "User", null);
     expect(await screen.findByRole("treeitem", { name: "HR" })).toBeInTheDocument();
+  });
+
+  test("menú de una tabla: consultar y editar datos, y DDL", async () => {
+    m.listObjects.mockResolvedValue([obj("CLIENTES", { object_type: "Table" })]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Tablas" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /CLIENTES/ }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Consultar datos/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: /Editar datos/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: /Copiar DDL/ })).toBeEnabled();
+    expect(within(menu).queryByRole("menuitem", { name: /Recompilar/ })).toBeNull();
+  });
+
+  test("menú de un paquete: Spec y Body, y Recompilar habilitado", async () => {
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Editar Spec y Body/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /^Recompilar/ })).toBeEnabled();
+  });
+
+  test("Copiar DDL copia el DDL y avisa", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    m.objectDdl.mockResolvedValue("CREATE PACKAGE ...;");
+    const onNotice = vi.fn();
+    renderBrowser({ onNotice });
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copiar DDL/ }));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("CREATE PACKAGE ...;"));
+    expect(m.objectDdl).toHaveBeenCalledWith("s1", "Package", "HR", "PKG_A");
+    expect(onNotice).toHaveBeenCalledWith("DDL copiado");
+  });
+
+  test("Recompilar recompila y vuelve a consultar el tipo", async () => {
+    m.recompile.mockResolvedValue({ with_errors: true });
+    const onNotice = vi.fn();
+    renderBrowser({ onNotice });
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_B/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Recompilar/ }));
+    await vi.waitFor(() => expect(m.recompile).toHaveBeenCalledWith("s1", "Package", "HR", "PKG_B"));
+    await vi.waitFor(() => expect(m.listObjects).toHaveBeenCalledTimes(2));
+    expect(onNotice).toHaveBeenCalledWith("PKG_B compilado con errores");
+  });
+
+  test("en producción Recompilar pide confirmación", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <ObjectBrowser connection={{ ...conn, environment: "prod" }} onOpenObject={vi.fn()} onConnectionLost={vi.fn()} refreshKey={0} />,
+    );
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /PKG_A/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Recompilar/ }));
+    expect(confirm).toHaveBeenCalled();
+    expect(m.recompile).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  test("menú de una carpeta copia los nombres separados por coma", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    await screen.findByText("PKG_A");
+    fireEvent.contextMenu(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copiar nombres separados por coma/ }));
+    expect(writeText).toHaveBeenCalledWith("PKG_A, PKG_B");
   });
 
   test("muestra el contador del tipo cargado", async () => {

@@ -25,4 +25,8 @@ export const api = {
   sessionState: (sessionId: string) => invoke<SessionState>("session_state", { sessionId }),
   listObjects: (sessionId: string, scope: Scope, objectType: ObjectType, filter: string | null) =>
     invoke<ObjectInfo[]>("list_objects", { sessionId, scope, objectType, filter }),
+  objectDdl: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
+    invoke<string>("object_ddl", { sessionId, objectType, owner, name }),
+  recompile: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
+    invoke<{ with_errors: boolean }>("recompile", { sessionId, objectType, owner, name }),
 };

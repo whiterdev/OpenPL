@@ -92,6 +92,15 @@ const TYPES: { t: ObjectType; label: string; Icon: ComponentType<IconProps>; tin
   { t: "RecycleBin", label: "Papelera", Icon: Trash, tint: STORE },
 ];
 
+const CODE_TYPES = new Set<ObjectType>(["Package", "Procedure", "Function", "Trigger", "Type", "JavaSource", "JavaClass"]);
+const DATA_TYPES = new Set<ObjectType>(["Table", "View", "MaterializedView"]);
+const TESTABLE = new Set<ObjectType>(["Package", "Procedure", "Function"]);
+const RECOMPILABLE = new Set<ObjectType>([...CODE_TYPES, "View", "MaterializedView"]);
+const DDL_TYPES = new Set<ObjectType>(
+  TYPES.map((x) => x.t).filter((t) => !["JavaClass", "DbmsJob", "RecycleBin"].includes(t)),
+);
+const RENAMEABLE = new Set<ObjectType>(["Table", "View", "Sequence", "Synonym"]);
+
 const ROW = 24;
 /** jsdom y listas cortas: sin virtualizar. Con más filas, solo se dibujan las visibles. */
 const VIRTUALIZE_ABOVE = 200;
@@ -103,9 +112,10 @@ interface Props {
   onOpenObject: (o: ObjectInfo) => void;
   onConnectionLost: () => void;
   refreshKey: number;
+  onNotice?: (message: string) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -123,34 +133,74 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
 
   function objectMenu(e: React.MouseEvent, o: ObjectInfo) {
     e.preventDefault();
+    const t = o.object_type;
     const full = o.owner ? `${o.owner}.${o.name}` : o.name;
-    setMenu({
-      x: e.clientX,
-      y: e.clientY,
-      label: full,
-      items: [
-        { label: "Abrir", keys: "Enter", run: () => onOpenObject(o) },
-        { label: commands.test.label, keys: commands.test.keys },
-        { label: "Describir" },
-        { label: "Recompilar" },
-        "sep",
-        { label: "Copiar nombre", keys: "Ctrl+C", run: () => copy(o.name) },
-        { label: "Copiar nombre con esquema", run: () => copy(full) },
-        "sep",
-        { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh },
-      ],
-    });
+    const code = CODE_TYPES.has(t);
+    const items: (ContextItem | "sep")[] = [{ label: "Abrir", keys: "Enter", run: () => onOpenObject(o) }];
+    if (t === "Package") items.push({ label: "Ver Spec y Body" }, { label: "Editar Spec y Body" });
+    else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver" }, { label: "Editar" });
+    if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys });
+    if (DATA_TYPES.has(t)) {
+      items.push("sep", { label: "Consultar datos" });
+      if (t !== "MaterializedView") items.push({ label: "Editar datos", keys: commands.editData.keys });
+      if (t === "Table") items.push({ label: "Exportar datos" });
+    }
+    items.push("sep", { label: "Describir" }, { label: "Propiedades" });
+    if (RECOMPILABLE.has(t)) items.push({ label: "Recompilar", run: () => void recompile(o) });
+    if (DDL_TYPES.has(t)) items.push({ label: "Copiar DDL", run: () => void copyDdl(o) });
+    if (code || DATA_TYPES.has(t)) items.push({ label: "Comparar con…" });
+    items.push(
+      "sep",
+      { label: "Copiar nombre", keys: "Ctrl+C", run: () => copy(o.name) },
+      { label: "Copiar nombre con esquema", run: () => copy(full) },
+      "sep",
+    );
+    if (RENAMEABLE.has(t)) items.push({ label: "Renombrar" });
+    items.push({ label: "Eliminar" }, "sep", { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh });
+    setMenu({ x: e.clientX, y: e.clientY, label: full, items });
+  }
+
+  async function copyDdl(o: ObjectInfo) {
+    try {
+      const ddl = await api.objectDdl(connection.sessionId, o.object_type, o.owner, o.name);
+      copy(ddl);
+      onNotice?.("DDL copiado");
+    } catch (err) {
+      const d = describeError(err);
+      if (d.kind === "ConnectionLost") onConnectionLost();
+      onNotice?.(d.code ? `${d.code} ${d.message}` : d.message);
+    }
+  }
+
+  async function recompile(o: ObjectInfo) {
+    if (connection.environment === "prod" && !window.confirm(`¿Recompilar ${o.name} en producción?`)) return;
+    try {
+      const r = await api.recompile(connection.sessionId, o.object_type, o.owner, o.name);
+      onNotice?.(r.with_errors ? `${o.name} compilado con errores` : `${o.name} compilado`);
+      refresh();
+    } catch (err) {
+      const d = describeError(err);
+      if (d.kind === "ConnectionLost") onConnectionLost();
+      onNotice?.(d.code ? `${d.code} ${d.message}` : d.message);
+    }
   }
 
   function typeMenu(e: React.MouseEvent, t: ObjectType, label: string) {
     e.preventDefault();
     const open = expanded.has(t);
+    const loaded = cache[keyOf(t)];
     setMenu({
       x: e.clientX,
       y: e.clientY,
       label,
       items: [
         { label: open ? "Contraer" : "Expandir", run: () => toggle(t) },
+        { label: "Nuevo…" },
+        "sep",
+        {
+          label: "Copiar nombres separados por coma",
+          run: loaded && loaded.length ? () => copy(loaded.map((o) => o.name).join(", ")) : undefined,
+        },
         { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh },
       ],
     });

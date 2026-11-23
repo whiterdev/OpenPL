@@ -41,6 +41,8 @@ pub fn run() {
             commands::reconnect,
             commands::session_state,
             commands::list_objects,
+            commands::object_ddl,
+            commands::recompile,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar OpenPL");

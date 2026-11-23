@@ -208,6 +208,34 @@ pub async fn list_objects(
     list_objects_impl(&st, session_id, scope, object_type, filter).await
 }
 
+#[tauri::command]
+pub async fn object_ddl(
+    st: St<'_>,
+    session_id: SessionId,
+    object_type: ObjectType,
+    owner: String,
+    name: String,
+) -> Result<String, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::actions::get_ddl(c, object_type, &owner, &name))
+        .await
+}
+
+#[tauri::command]
+pub async fn recompile(
+    st: St<'_>,
+    session_id: SessionId,
+    object_type: ObjectType,
+    owner: String,
+    name: String,
+) -> Result<openpl_core::actions::RecompileResult, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::actions::recompile(c, object_type, &owner, &name))
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

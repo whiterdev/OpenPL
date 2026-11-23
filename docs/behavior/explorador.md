@@ -15,3 +15,18 @@ Redactado con palabras propias a partir del diseño (§7.3) y del mockup "1 · V
 - Refrescar (Ctrl R) vuelve a consultar los tipos expandidos.
 - Si la conexión se pierde al consultar, la barra de conexión pasa a "Desconectado".
 - Listas largas (miles de objetos) se dibujan virtualizadas para no trabar la ventana.
+
+## Menú contextual (clic derecho)
+
+Observado en la herramienta de referencia y adaptado. Las opciones de ventanas que aún no
+existen se ven deshabilitadas para que se sepa dónde estarán.
+
+- **Objeto:** Abrir (Enter) · Ver / Editar (en paquetes: Ver / Editar Spec y Body) · Probar
+  (Ctrl T, paquetes, procedimientos y funciones) · Consultar datos / Editar datos (Ctrl E) /
+  Exportar datos (tablas, vistas, vistas materializadas) · Describir · Propiedades ·
+  **Recompilar** (código, vistas, Java; en producción pide confirmación) · **Copiar DDL**
+  (DBMS_METADATA) · Comparar con… · **Copiar nombre** (Ctrl C) · **Copiar nombre con esquema** ·
+  Renombrar (tablas, vistas, secuencias, sinónimos) · Eliminar · **Refrescar** (Ctrl R).
+- **Carpeta de tipo:** Expandir / Contraer · Nuevo… · **Copiar nombres separados por coma** ·
+  **Refrescar**.
+- En negrita: habilitado hoy. Al recompilar o copiar el DDL aparece un aviso breve.

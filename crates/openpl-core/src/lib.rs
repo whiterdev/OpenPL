@@ -1,5 +1,6 @@
 //! Lógica de OpenPL independiente de la interfaz.
 
+pub mod actions;
 pub mod catalog;
 pub mod error;
 pub mod profiles;
