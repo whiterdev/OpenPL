@@ -1,0 +1,59 @@
+import { useEffect, useState } from "react";
+import { Database, WarningCircle } from "@phosphor-icons/react";
+import { api } from "../api";
+import type { ClientInfo } from "../types";
+import "./StartupCheck.css";
+
+export function StartupCheck({ onReady }: { onReady: (info: ClientInfo) => void }) {
+  const [info, setInfo] = useState<ClientInfo | null>(null);
+  const [dir, setDir] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function check() {
+    const i = await api.clientInfo();
+    setInfo(i);
+    setDir(i.lib_dir ?? "");
+    if (i.version) onReady(i);
+  }
+
+  useEffect(() => {
+    void check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!info || info.version) return null;
+
+  return (
+    <main className="startup">
+      <section className="startup-card" aria-labelledby="startup-title">
+        <header>
+          <Database size={20} color="var(--accent)" aria-hidden />
+          <h1 id="startup-title">Cliente Oracle no disponible</h1>
+        </header>
+        <p className="startup-err" role="alert">
+          <WarningCircle size={15} aria-hidden />
+          {info.error?.code && <span className="mono">{info.error.code}</span>}
+          <span>{info.error?.message}</span>
+        </p>
+        <p className="startup-help">{info.help}</p>
+        <label className="startup-dir">
+          <span className="lbl">Carpeta del cliente</span>
+          <input className="fld mono" aria-label="Carpeta del cliente" value={dir} onChange={(e) => setDir(e.target.value)} />
+        </label>
+        <div className="startup-actions">
+          {saved && <span className="startup-saved">Reinicie OpenPL</span>}
+          <button className="btn" onClick={() => void check()}>Reintentar</button>
+          <button
+            className="btn primary"
+            onClick={async () => {
+              await api.setClientDir(dir.trim() || null);
+              setSaved(true);
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}

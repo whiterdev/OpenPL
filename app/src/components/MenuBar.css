@@ -1,0 +1,6 @@
+.menubar { display: flex; align-items: center; margin: 0 8px 0 2px; }
+.menubar-slot { position: relative; }
+.menubar-btn { height: 26px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font-size: 13px; }
+.menubar-btn:hover, .menubar-btn.open { background: var(--s2); }
+.menubar-menu { left: 0; top: 30px; width: 280px; }
+.menubar-menu .menu-item { gap: 16px; }

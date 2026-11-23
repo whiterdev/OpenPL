@@ -1,0 +1,18 @@
+.connbar { position: relative; display: flex; align-items: center; gap: 8px; }
+.connbar-active { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 4px;
+  background: var(--s2); color: var(--text); font-size: 12.5px; }
+.connbar-label { font-weight: 500; }
+.connbar-ver { color: var(--muted); }
+.connbar-warn { display: inline-flex; color: var(--env-qa); }
+.connbar-off { color: var(--err); font-size: 12px; }
+.connbar-menu { left: 0; top: 32px; width: 280px; }
+
+.menu { position: absolute; z-index: 50; display: flex; flex-direction: column; padding: 4px; background: #2e3035;
+  border: 1px solid var(--line2); border-radius: 6px; box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
+.menu-item { display: flex; align-items: center; gap: 10px; height: 28px; padding: 0 8px; border: 0; border-radius: 3px;
+  background: transparent; color: var(--text); text-align: left; }
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--s3); }
+.menu-item:disabled { color: var(--faint); }
+.menu-label { flex: 1; }
+.menu-kbd { font-family: var(--font-code); font-size: 11.5px; color: var(--muted); }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--line2); }

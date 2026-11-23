@@ -1,0 +1,10 @@
+.startup { height: 100%; display: flex; align-items: center; justify-content: center; background: var(--s1); }
+.startup-card { width: 560px; display: flex; flex-direction: column; gap: 14px; padding: 22px 24px; background: var(--s0);
+  border: 1px solid var(--line2); border-radius: 6px; }
+.startup-card header { display: flex; align-items: center; gap: 10px; }
+.startup-card h1 { margin: 0; font-size: 16px; font-weight: 600; }
+.startup-err { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--err); }
+.startup-help { margin: 0; color: var(--muted); line-height: 1.5; }
+.startup-dir { display: flex; flex-direction: column; gap: 6px; }
+.startup-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.startup-saved { margin-right: auto; color: var(--accent); }

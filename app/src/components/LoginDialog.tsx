@@ -1,0 +1,288 @@
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { CheckCircle, MagnifyingGlass, Plug, Plus, WarningCircle } from "@phosphor-icons/react";
+import { api } from "../api";
+import { describeError, type ActiveConnection, type ConnectionProfile, type Environment, type Role } from "../types";
+import { commands, formatKeys } from "../keymap";
+import "./LoginDialog.css";
+
+const ROLES: { id: Role; label: string }[] = [
+  { id: "Normal", label: "Normal" },
+  { id: "SysDba", label: "SYSDBA" },
+  { id: "SysOper", label: "SYSOPER" },
+];
+
+const ENVS: { id: Environment; label: string }[] = [
+  { id: "dev", label: "Desarrollo" },
+  { id: "qa", label: "Calidad" },
+  { id: "prod", label: "Producción" },
+];
+
+/** "srv:1521/ventas" → "VENTAS"; "DEVPDB" → "DEVPDB". */
+function dbLabel(db: string): string {
+  const part = db.trim().split("/").pop() ?? db;
+  return part.toUpperCase();
+}
+
+interface Props {
+  onConnected: (c: ActiveConnection) => void;
+  onCancel?: () => void;
+  clientVersion?: string | null;
+}
+
+export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
+  const [profiles, setProfiles] = useState<ConnectionProfile[]>([]);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<ConnectionProfile | null>(null);
+  const [user, setUser] = useState("");
+  const [password, setPassword] = useState("");
+  const [db, setDb] = useState("");
+  const [role, setRole] = useState<Role>("Normal");
+  const [environment, setEnvironment] = useState<Environment | null>(null);
+  const [name, setName] = useState("");
+  const [savePassword, setSavePassword] = useState(true);
+  const [error, setError] = useState<{ code: string | null; message: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = () => api.listProfiles().then(setProfiles);
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const groups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const visible = profiles.filter((p) => !q || p.name.toLowerCase().includes(q) || p.db.toLowerCase().includes(q));
+    const named = [...ENVS.map((e) => ({ id: e.id as Environment | null, label: e.label })), { id: null, label: "Sin entorno" }];
+    return named
+      .map((g) => ({ ...g, items: visible.filter((p) => p.environment === g.id) }))
+      .filter((g) => g.items.length > 0);
+  }, [profiles, search]);
+
+  async function pick(p: ConnectionProfile) {
+    setSelected(p);
+    setUser(p.user);
+    setDb(p.db);
+    setRole(p.role);
+    setEnvironment(p.environment);
+    setName(p.name);
+    setSavePassword(p.save_password);
+    setError(null);
+    setPassword("");
+    if (p.save_password) {
+      const pw = await api.storedPassword(p.id);
+      if (pw) setPassword(pw);
+    }
+  }
+
+  function currentProfile(): ConnectionProfile {
+    return {
+      id: selected?.id ?? crypto.randomUUID(),
+      name: name.trim() || `${user.trim().toUpperCase()} en ${dbLabel(db)}`,
+      user: user.trim(),
+      db: db.trim(),
+      role,
+      environment,
+      save_password: savePassword,
+    };
+  }
+
+  async function connect(e?: FormEvent) {
+    e?.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.connect({ user: user.trim(), password, db: db.trim(), role });
+      onConnected({
+        sessionId: r.session_id,
+        label: selected?.name ?? (name.trim() || `${user.trim().toUpperCase()} en ${dbLabel(db)}`),
+        environment,
+        serverVersion: r.server_version,
+        compat: r.compat,
+      });
+    } catch (err) {
+      const d = describeError(err);
+      setError({ code: d.code, message: d.message });
+      setPassword("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveProfile() {
+    const p = currentProfile();
+    await api.saveProfile(p, savePassword ? password || null : null);
+    setSelected(p);
+    await reload();
+  }
+
+  async function deleteProfile() {
+    if (!selected) return;
+    await api.deleteProfile(selected.id);
+    setSelected(null);
+    await reload();
+  }
+
+  return (
+    <div className="login-backdrop">
+      <div role="dialog" aria-modal="true" aria-labelledby="login-title" className="login">
+        <aside className="login-profiles" aria-label="Perfiles guardados">
+          <label className="login-search">
+            <MagnifyingGlass size={14} aria-hidden />
+            <input aria-label="Buscar perfil" placeholder="Buscar perfil" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </label>
+          <div className="login-groups">
+            {groups.map((g) => (
+              <div key={g.label}>
+                <div className="login-group">{g.label}</div>
+                {g.items.map((p) => (
+                  <button
+                    type="button"
+                    key={p.id}
+                    className={`login-prof ${p.environment ? `env-${p.environment}` : ""} ${selected?.id === p.id ? "sel" : ""}`}
+                    onClick={() => void pick(p)}
+                  >
+                    <span className="stripe" />
+                    <span className="login-prof-text">
+                      <span className="login-prof-name">{p.name}</span>
+                      <span className="login-prof-db mono">{p.db}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="login-new">
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                setSelected(null);
+                setUser("");
+                setPassword("");
+                setDb("");
+                setName("");
+                setEnvironment(null);
+                setRole("Normal");
+                setError(null);
+              }}
+            >
+              <Plus size={13} aria-hidden />
+              Nuevo perfil
+            </button>
+          </div>
+        </aside>
+
+        <form className="login-form" onSubmit={(e) => void connect(e)}>
+          <div className="login-head">
+            <h1 id="login-title">Conectar a Oracle</h1>
+            {clientVersion && (
+              <span className="login-client">
+                <CheckCircle size={14} aria-hidden />
+                Instant Client {clientVersion}
+              </span>
+            )}
+          </div>
+
+          <div className="login-row2">
+            <label className="login-field">
+              <span className="lbl">Usuario</span>
+              <input className="fld" aria-label="Usuario" value={user} onChange={(e) => setUser(e.target.value)} autoFocus />
+            </label>
+            <label className="login-field">
+              <span className="lbl">Contraseña</span>
+              <input
+                className="fld"
+                type="password"
+                aria-label="Contraseña"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-err" : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+          </div>
+          {error && (
+            <div id="login-err" role="alert" className="login-err">
+              <WarningCircle size={14} aria-hidden />
+              {error.code && <span className="mono">{error.code}</span>}
+              <span>{error.message}</span>
+            </div>
+          )}
+
+          <label className="login-field">
+            <span className="lbl">Base de datos</span>
+            <input
+              className="fld mono"
+              aria-label="Base de datos"
+              placeholder="alias TNS o host:puerto/servicio"
+              value={db}
+              onChange={(e) => setDb(e.target.value)}
+            />
+          </label>
+
+          <div className="login-segs">
+            <div className="login-field">
+              <span className="lbl" id="lbl-rol">Rol</span>
+              <div role="radiogroup" aria-labelledby="lbl-rol" className="seg">
+                {ROLES.map((r) => (
+                  <button type="button" role="radio" key={r.id} aria-checked={role === r.id} onClick={() => setRole(r.id)}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="login-field">
+              <span className="lbl" id="lbl-env">Entorno</span>
+              <div role="radiogroup" aria-labelledby="lbl-env" className="seg">
+                {ENVS.map((e) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    key={e.id}
+                    className={`env-${e.id}`}
+                    aria-checked={environment === e.id}
+                    onClick={() => setEnvironment(environment === e.id ? null : e.id)}
+                  >
+                    <span className="stripe" style={{ height: 14, width: 3 }} />
+                    {e.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <label className="login-field">
+            <span className="lbl">Nombre del perfil</span>
+            <input className="fld" aria-label="Nombre del perfil" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <label className="login-check">
+            <input type="checkbox" checked={savePassword} onChange={(e) => setSavePassword(e.target.checked)} />
+            Guardar contraseña
+          </label>
+
+          <div className="login-actions">
+            <button type="button" className="btn" onClick={() => void saveProfile()}>
+              Guardar perfil
+            </button>
+            {selected && (
+              <button type="button" className="btn danger" onClick={() => void deleteProfile()}>
+                Eliminar perfil
+              </button>
+            )}
+            <span style={{ flex: 1 }} />
+            {onCancel && (
+              <button type="button" className="btn ghost" onClick={onCancel}>
+                Cancelar
+              </button>
+            )}
+            <button type="submit" className="btn primary" disabled={busy} title={formatKeys(commands.connect.keys!)}>
+              <Plug size={14} aria-hidden />
+              Conectar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

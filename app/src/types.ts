@@ -93,16 +93,28 @@ export interface ActiveConnection {
 }
 
 /** Normaliza un CoreError a código + mensaje para mostrar. */
-export function describeError(e: unknown): { code: string | null; kind: ErrorKind | null; message: string } {
-  if (e === "SessionNotFound") return { code: null, kind: null, message: "La sesión no existe." };
-  if (e === "Disconnected") return { code: null, kind: "ConnectionLost", message: "Sesión desconectada." };
+export function describeError(e: unknown): {
+  code: string | null;
+  kind: ErrorKind | null;
+  message: string;
+} {
+  if (e === "SessionNotFound")
+    return { code: null, kind: null, message: "La sesión no existe." };
+  if (e === "Disconnected")
+    return {
+      code: null,
+      kind: "ConnectionLost",
+      message: "Sesión desconectada.",
+    };
   if (e && typeof e === "object") {
     const o = e as Record<string, unknown>;
     if (o.Db && typeof o.Db === "object") {
       const d = o.Db as DbError;
       return { code: d.code, kind: d.kind, message: d.message };
     }
-    for (const k of ["Io", "Json", "Secret"]) if (typeof o[k] === "string") return { code: null, kind: null, message: o[k] as string };
+    for (const k of ["Io", "Json", "Secret"])
+      if (typeof o[k] === "string")
+        return { code: null, kind: null, message: o[k] as string };
   }
   return { code: null, kind: null, message: String(e) };
 }

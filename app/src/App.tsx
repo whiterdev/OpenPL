@@ -1,51 +1,237 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
+import {
+  CheckCircle,
+  Database,
+  MagnifyingGlass,
+  Plus,
+  SidebarSimple,
+} from "@phosphor-icons/react";
+import { api } from "./api";
+import { StartupCheck } from "./components/StartupCheck";
+import { LoginDialog } from "./components/LoginDialog";
+import { ConnectionBar } from "./components/ConnectionBar";
+import { MenuBar, type MenuDef } from "./components/MenuBar";
+import { commands, formatKeys, matches, type CommandId } from "./keymap";
+import type {
+  ActiveConnection,
+  ClientInfo,
+  ObjectInfo,
+  SessionState,
+} from "./types";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  const [client, setClient] = useState<ClientInfo | null>(null);
+  const [connections, setConnections] = useState<ActiveConnection[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [states, setStates] = useState<Record<string, SessionState>>({});
+  const [showLogin, setShowLogin] = useState(false);
+  const [explorerVisible, setExplorerVisible] = useState(true);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  const active = connections.find((c) => c.sessionId === activeId) ?? null;
+
+  const actions: Partial<Record<CommandId, () => void>> = {
+    connect: () => setShowLogin(true),
+    toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
+    refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
+    disconnect: active ? () => void disconnect(active.sessionId) : undefined,
+    reconnect: active ? () => void reconnect(active.sessionId) : undefined,
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      for (const [id, run] of Object.entries(actions)) {
+        const keys = commands[id as CommandId].keys;
+        if (run && keys && matches(e, keys)) {
+          e.preventDefault();
+          run();
+          return;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  async function disconnect(id: string) {
+    await api.disconnect(id);
+    const rest = connections.filter((c) => c.sessionId !== id);
+    setConnections(rest);
+    setActiveId(rest[0]?.sessionId ?? null);
+    if (rest.length === 0) setShowLogin(true);
   }
 
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+  async function reconnect(id: string) {
+    try {
+      await api.reconnect(id);
+      setStates((s) => ({ ...s, [id]: "Connected" }));
+      setRefreshTick((t) => t + 1);
+    } catch {
+      setStates((s) => ({ ...s, [id]: "Disconnected" }));
+    }
+  }
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+  const onConnectionLost = useCallback(() => {
+    if (activeId) setStates((s) => ({ ...s, [activeId]: "Disconnected" }));
+  }, [activeId]);
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
+  const onOpenObject = useCallback((_o: ObjectInfo) => {
+    setNotice("Edición disponible en una versión posterior");
+    window.setTimeout(() => setNotice(null), 2500);
+  }, []);
+
+  const run = (id: CommandId) =>
+    actions[id] ? { command: id, run: actions[id] } : { command: id };
+  const menus: MenuDef[] = [
+    { label: "Archivo", items: [run("save"), run("closeTab")] },
+    {
+      label: "Editar",
+      items: [
+        run("comment"),
+        run("duplicateLine"),
+        run("deleteLine"),
+        "sep",
+        run("upperCase"),
+        run("lowerCase"),
+        "sep",
+        run("goToLine"),
+        run("goToDeclaration"),
+      ],
+    },
+    {
+      label: "Buscar",
+      items: [run("find"), run("replace"), "sep", run("palette")],
+    },
+    { label: "Ver", items: [run("toggleExplorer"), run("refreshExplorer")] },
+    {
+      label: "Sesión",
+      items: [
+        run("connect"),
+        run("disconnect"),
+        run("reconnect"),
+        "sep",
+        run("execute"),
+        run("executeScript"),
+        run("cancel"),
+        "sep",
+        run("commit"),
+        run("rollback"),
+        "sep",
+        run("explainPlan"),
+      ],
+    },
+    { label: "Herramientas", items: [run("test"), run("editData")] },
+    { label: "Ayuda", items: [] },
+  ];
+
+  if (!client)
+    return (
+      <StartupCheck
+        onReady={(i) => {
+          setClient(i);
+          setShowLogin(true);
         }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+      />
+    );
+
+  return (
+    <div className="shell">
+      <header className="titlebar">
+        <Database size={18} color="var(--accent)" aria-label="OpenPL" />
+        <MenuBar menus={menus} />
+        <button className="btn" disabled title="Nuevo">
+          <Plus size={13} aria-hidden />
+          Nuevo
+        </button>
+        <ConnectionBar
+          connections={connections}
+          activeId={activeId}
+          states={states}
+          onSelect={setActiveId}
+          onDisconnect={(id) => void disconnect(id)}
+          onReconnect={(id) => void reconnect(id)}
+          onNew={() => setShowLogin(true)}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+        <div className="titlebar-center">
+          <button className="search" disabled>
+            <MagnifyingGlass size={14} aria-hidden />
+            <span>Buscar</span>
+            <span className="kbd">{formatKeys(commands.palette.keys!)}</span>
+          </button>
+        </div>
+        <span className="tx">
+          <CheckCircle size={14} color="var(--env-dev)" aria-hidden />
+          Sin transacción
+        </span>
+        <button className="btn" disabled>
+          Commit{" "}
+          <span className="kbd">{formatKeys(commands.commit.keys!)}</span>
+        </button>
+        <button className="btn" disabled>
+          Rollback{" "}
+          <span className="kbd">{formatKeys(commands.rollback.keys!)}</span>
+        </button>
+      </header>
+
+      <div className="body">
+        {active && explorerVisible && (
+          <aside
+            className="explorer-slot"
+            data-tick={refreshTick}
+            data-lost={String(!!onConnectionLost)}
+            data-open={String(!!onOpenObject)}
+          />
+        )}
+        <main className="workspace">
+          {!active && <p className="empty">Sin conexión</p>}
+          {notice && (
+            <div className="toast" role="status">
+              {notice}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <footer className="statusbar">
+        <button
+          className="ib"
+          aria-label={`${commands.toggleExplorer.label} (${formatKeys(commands.toggleExplorer.keys!)})`}
+          title={`${commands.toggleExplorer.label}  ${formatKeys(commands.toggleExplorer.keys!)}`}
+          style={{ width: 22, height: 22 }}
+          disabled={!active}
+          onClick={() => setExplorerVisible((v) => !v)}
+        >
+          <SidebarSimple size={14} />
+        </button>
+        {active && (
+          <span
+            className={`status-conn ${active.environment ? `env-${active.environment}` : ""}`}
+          >
+            <span className="dot" />
+            {states[active.sessionId] === "Disconnected"
+              ? "Desconectado"
+              : "Conectado"}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {active && <span>Oracle {active.serverVersion}</span>}
+        {client.version && <span>Instant Client {client.version}</span>}
+      </footer>
+
+      {showLogin && (
+        <LoginDialog
+          clientVersion={client.version}
+          onCancel={connections.length ? () => setShowLogin(false) : undefined}
+          onConnected={(c) => {
+            setConnections((cs) => [...cs, c]);
+            setActiveId(c.sessionId);
+            setStates((s) => ({ ...s, [c.sessionId]: "Connected" }));
+            setShowLogin(false);
+          }}
+        />
+      )}
+    </div>
   );
 }
-
-export default App;

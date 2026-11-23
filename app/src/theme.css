@@ -1,0 +1,166 @@
+/* Tema grafito (v1). Tokens del mockup "v2 · grafito". */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+:root {
+    --s0: #212327;
+    --s1: #282a2f;
+    --s2: #34373d;
+    --s3: #3d4047;
+    --line: #17191c;
+    --line2: #3a3d43;
+    --text: #dad5cc;
+    --muted: #a39e95;
+    --faint: #6e6b66;
+    --accent: #c99a3b;
+    --accentText: #1e1a12;
+    --accentSoft: #3d3524;
+    --err: #e5786c;
+    --errSoft: #45292a;
+    --ok: #75c08e;
+    --okSoft: #263a2d;
+    --env-dev: #75c08e;
+    --env-qa: #d9a441;
+    --env-prod: #e5786c;
+    --kw: #8db2cb;
+    --ty: #d6b27a;
+    --st: #a7c08e;
+    --nu: #da8f6e;
+    --cm: #7e7a72;
+    --fn: #c7a2d9;
+    --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+    --font-code: "IBM Plex Mono", ui-monospace, monospace;
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+}
+body {
+    background: var(--s1);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+}
+button,
+input,
+select {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+}
+button {
+    cursor: pointer;
+}
+button:disabled {
+    cursor: default;
+    color: var(--faint);
+}
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 4px;
+    border: 1px solid var(--line2);
+    background: var(--s2);
+    color: var(--text);
+}
+.btn:hover:not(:disabled) {
+    background: var(--s3);
+}
+.btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accentText);
+    font-weight: 500;
+}
+.btn.ghost {
+    background: transparent;
+}
+.btn.danger {
+    background: transparent;
+    border-color: transparent;
+    color: var(--err);
+}
+.ib {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+}
+.ib:hover:not(:disabled) {
+    background: var(--s2);
+    color: var(--text);
+}
+.kbd {
+    font-family: var(--font-code);
+    font-size: 11px;
+    color: var(--muted);
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--s2);
+}
+.btn.primary .kbd {
+    background: transparent;
+    color: inherit;
+    opacity: 0.8;
+    padding: 0;
+}
+.fld {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 4px;
+    border: 1px solid var(--line2);
+    background: var(--s1);
+    color: var(--text);
+    outline: none;
+    width: 100%;
+}
+.fld:focus {
+    border-color: var(--accent);
+}
+.lbl {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 500;
+}
+.mono {
+    font-family: var(--font-code);
+}
+.env-dev {
+    --env: var(--env-dev);
+}
+.env-qa {
+    --env: var(--env-qa);
+}
+.env-prod {
+    --env: var(--env-prod);
+}
+.stripe {
+    width: 4px;
+    height: 16px;
+    border-radius: 1px;
+    background: var(--env, var(--line2));
+    flex-shrink: 0;
+}
