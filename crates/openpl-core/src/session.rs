@@ -164,6 +164,10 @@ impl<C: Connector> SessionManager<C> {
     pub fn close(&self, id: SessionId) {
         self.sessions.write().unwrap().remove(&id);
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.sessions.read().unwrap().is_empty()
+    }
 }
 
 /// Conector falso para pruebas de este crate y de la app.

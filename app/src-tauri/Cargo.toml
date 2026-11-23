@@ -1,0 +1,28 @@
+[package]
+name = "openpl-app"
+description = "OpenPL: IDE de escritorio para Oracle PL/SQL"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "openpl_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "rt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "6"
+openpl-oracle = { path = "../../crates/openpl-oracle" }
+openpl-core = { path = "../../crates/openpl-core" }
+
+[dev-dependencies]
+openpl-core = { path = "../../crates/openpl-core", features = ["testing"] }
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros"] }
+tempfile = "3"

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/openpl-oracle", "crates/openpl-core"]
+members = ["crates/openpl-oracle", "crates/openpl-core", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,3 +9,10 @@ license = "Apache-2.0 OR MIT"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
