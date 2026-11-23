@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  IC_VERSION: "19.23.0.0.0dbru"
+  IC_DIR: "1923000"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    services:
+      oracle:
+        # XE 18c: la imagen gratuita más cercana a 12c (no hay 12c ni 19c libres).
+        image: gvenzl/oracle-xe:18-slim
+        env:
+          ORACLE_PASSWORD: ci_admin_pw
+          APP_USER: openpl
+          APP_USER_PASSWORD: ci_openpl_pw
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 20s
+          --health-timeout 10s
+          --health-retries 15
+    env:
+      OPENPL_TEST_USER: openpl
+      OPENPL_TEST_PASSWORD: ci_openpl_pw
+      OPENPL_TEST_DB: localhost:1521/XEPDB1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema (Tauri, libaio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev librsvg2-dev libsecret-1-dev \
+            libayatana-appindicator3-dev build-essential unzip libaio1t64
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+
+      - name: Oracle Instant Client 19 (Basic Light)
+        run: |
+          curl -sSfL -o ic.zip "https://download.oracle.com/otn_software/linux/instantclient/${IC_DIR}/instantclient-basiclite-linux.x64-${IC_VERSION}.zip"
+          unzip -q ic.zip -d "$HOME/oracle"
+          echo "LD_LIBRARY_PATH=$(ls -d $HOME/oracle/instantclient_*)" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formato
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests Rust (incluye pruebas contra Oracle XE)
+        run: cargo test --workspace 2>&1 | tee test.log
+      - name: Las pruebas live no se saltaron
+        run: "! grep -q 'SKIP: OPENPL_TEST_' test.log"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Tests frontend
+        working-directory: app
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Oracle Instant Client 19 (Basic Light)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://download.oracle.com/otn_software/nt/instantclient/$env:IC_DIR/instantclient-basiclite-windows.x64-$env:IC_VERSION.zip" -OutFile ic.zip
+          Expand-Archive ic.zip -DestinationPath C:\oracle
+          $dir = (Get-ChildItem C:\oracle -Directory | Select-Object -First 1).FullName
+          Add-Content $env:GITHUB_PATH $dir
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests Rust (las pruebas live hacen SKIP)
+        run: cargo test --workspace
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Tests frontend
+        working-directory: app
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run
