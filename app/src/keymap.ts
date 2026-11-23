@@ -11,6 +11,12 @@ export type CommandId =
   | "newSql"
   | "test"
   | "newCommand"
+  | "newProgram"
+  | "openProgram"
+  | "undo"
+  | "redo"
+  | "indent"
+  | "outdent"
   | "save"
   | "closeTab"
   | "spec"
@@ -50,6 +56,12 @@ const list: Command[] = [
   { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
   { id: "test", label: "Probar", keys: "Ctrl+T" },
   { id: "newCommand", label: "Nueva ventana de comando", keys: "Ctrl+Shift+N" },
+  { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
+  { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },
+  { id: "undo", label: "Deshacer", keys: "Ctrl+Z" },
+  { id: "redo", label: "Rehacer", keys: "Ctrl+Shift+Z" },
+  { id: "indent", label: "Aumentar sangría", keys: "Ctrl+]" },
+  { id: "outdent", label: "Reducir sangría", keys: "Ctrl+[" },
   { id: "save", label: "Guardar", keys: "Ctrl+S" },
   { id: "closeTab", label: "Cerrar pestaña", keys: "Ctrl+W" },
   { id: "spec", label: "Spec", keys: "Alt+S" },

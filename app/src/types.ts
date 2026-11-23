@@ -118,6 +118,12 @@ export interface ActiveConnection {
   compat: Compat;
 }
 
+export interface ProgramPart {
+  kind: string;
+  source: string;
+  diagnostics: { line: number; column: number; text: string; warning: boolean }[];
+}
+
 /** Normaliza un CoreError a código + mensaje para mostrar. */
 export function describeError(e: unknown): {
   code: string | null;

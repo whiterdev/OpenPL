@@ -109,7 +109,7 @@ type Row = { kind: "type"; i: number } | { kind: "obj"; i: number; o: ObjectInfo
 
 interface Props {
   connection: ActiveConnection;
-  onOpenObject: (o: ObjectInfo) => void;
+  onOpenObject: (o: ObjectInfo, mode?: "view" | "edit") => void;
   onConnectionLost: () => void;
   refreshKey: number;
   onNotice?: (message: string) => void;
@@ -137,7 +137,14 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
     const full = o.owner ? `${o.owner}.${o.name}` : o.name;
     const code = CODE_TYPES.has(t);
     const items: (ContextItem | "sep")[] = [{ label: "Abrir", keys: "Enter", run: () => onOpenObject(o) }];
-    if (t === "Package") items.push({ label: "Ver Spec y Body" }, { label: "Editar Spec y Body" });
+    if (t === "Package" || t === "Type") items.push(
+      { label: "Ver Spec y Body", run: () => onOpenObject(o, "view") },
+      { label: "Editar Spec y Body", run: () => onOpenObject(o, "edit") },
+    );
+    else if (t === "Procedure" || t === "Function" || t === "Trigger") items.push(
+      { label: "Ver", run: () => onOpenObject(o, "view") },
+      { label: "Editar", run: () => onOpenObject(o, "edit") },
+    );
     else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver" }, { label: "Editar" });
     if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys });
     if (DATA_TYPES.has(t)) {

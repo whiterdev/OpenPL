@@ -21,8 +21,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
 openpl-oracle = { path = "../../crates/openpl-oracle" }
 openpl-core = { path = "../../crates/openpl-core" }
+tauri-plugin-dialog = "2"
+tempfile = "3"
 
 [dev-dependencies]
 openpl-core = { path = "../../crates/openpl-core", features = ["testing"] }
 tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros"] }
-tempfile = "3"

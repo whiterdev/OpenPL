@@ -7,6 +7,7 @@ import type {
   ConnectionProfile,
   ObjectInfo,
   ObjectType,
+  ProgramPart,
   Scope,
   SessionState,
 } from "./types";
@@ -27,6 +28,11 @@ export const api = {
     invoke<ObjectInfo[]>("list_objects", { sessionId, scope, objectType, filter }),
   objectDdl: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
     invoke<string>("object_ddl", { sessionId, objectType, owner, name }),
+  programSource: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
+    invoke<ProgramPart[]>("program_source", { sessionId, objectType, owner, name }),
+  openProgramFile: () => invoke<{ name: string; source: string } | null>("open_program_file"),
+  saveProgramFile: (source: string, extension: string, name: string | null) =>
+    invoke<string | null>("save_program_file", { source, extension, name }),
   recompile: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
     invoke<{ with_errors: boolean }>("recompile", { sessionId, objectType, owner, name }),
 };

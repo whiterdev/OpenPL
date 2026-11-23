@@ -1,26 +1,51 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle,
   MagnifyingGlass,
   Plus,
   SidebarSimple,
+  X,
 } from "@phosphor-icons/react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "./api";
 import { StartupCheck } from "./components/StartupCheck";
 import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
+import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
-import { commands, formatKeys, handleShortcut, type CommandId } from "./keymap";
+import { commands, formatKeys, handleShortcut, matches, type CommandId } from "./keymap";
 import {
   describeError,
   type ActiveConnection,
   type ClientInfo,
   type ObjectInfo,
+  type ProgramPart,
   type SessionState,
 } from "./types";
 import "./App.css";
+import "./components/ProgramWindow.css";
+
+const ProgramWindow = lazy(() => import("./components/ProgramWindow")
+  .then((module) => ({ default: module.ProgramWindow })));
+
+interface ProgramTab {
+  id: string;
+  label: string;
+  connection?: ActiveConnection;
+  readOnly: boolean;
+  dirty: boolean;
+  parts?: ProgramPart[];
+  error?: string;
+  fileName?: string;
+  load?: symbol;
+}
+
+const supportsProgram = new Set(["Package", "Type", "Procedure", "Function", "Trigger"]);
+const editorEdits = ["comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase",
+  "undo", "redo", "indent", "outdent"] as const;
 
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
@@ -32,10 +57,30 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [reconnectErrors, setReconnectErrors] = useState<Record<string, string>>({});
+  const [programs, setPrograms] = useState<ProgramTab[]>([]);
+  const [programId, setProgramId] = useState<string | null>(null);
+  const programActions = useRef<ProgramActions>(null);
+  const dirtyPrograms = useRef(false);
+  dirtyPrograms.current = programs.some((tab) => tab.dirty);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
+  const program = programs.find((tab) => tab.id === programId);
+  const currentProgramActions = Object.fromEntries(
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "goToLine", "find", "replace",
+      "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
+      .filter((id) => {
+        if (!program?.parts) return false;
+        if (id === "spec" || id === "body" || id === "sideBySide") return program.parts.length === 2;
+        return !program.readOnly || ["save", "goToDeclaration", "goToLine", "find"].includes(id);
+      })
+      .map((id) => [id, () => programActions.current?.[id]?.()]),
+  );
 
   const actions: Partial<Record<CommandId, () => void>> = {
+    ...currentProgramActions,
+    newProgram,
+    openProgram: () => void openProgram(),
+    closeTab: program ? () => closeProgram(program) : undefined,
     connect: () => setShowLogin(true),
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
     refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
@@ -45,11 +90,31 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (showLogin) {
+        if (matches(e, commands.explainPlan.keys!) || matches(e, commands.refreshExplorer.keys!)) {
+          e.preventDefault();
+        }
+        return;
+      }
+      const target = e.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable=true]")
+        && !target.closest(".cm-content") && editorEdits.some((id) => matches(e, commands[id].keys!))) return;
       handleShortcut(e, actions);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const listener = getCurrentWindow().onCloseRequested((event) => {
+      if (dirtyPrograms.current && !window.confirm("¿Descartar los cambios sin guardar?")) {
+        event.preventDefault();
+      }
+    });
+    return () => { void listener.then((unlisten) => unlisten()); };
+  }, []);
 
   async function disconnect(id: string) {
     await api.disconnect(id);
@@ -81,18 +146,89 @@ export default function App() {
     window.setTimeout(() => setNotice(null), 2500);
   }, []);
 
-  const onOpenObject = useCallback(
-    (_o: ObjectInfo) => showNotice("Edición disponible en una versión posterior"),
-    [showNotice],
-  );
+  function updateProgram(id: string, change: Partial<ProgramTab>, load?: symbol) {
+    setPrograms((tabs) => tabs.map((tab) => (
+      tab.id === id && (!load || tab.load === load) ? { ...tab, ...change } : tab
+    )));
+  }
+
+  function addProgram(tab: ProgramTab) {
+    setPrograms((tabs) => tabs.some((item) => item.id === tab.id) ? tabs : [...tabs, tab]);
+    setProgramId(tab.id);
+  }
+
+  function newProgram() {
+    addProgram({
+      id: crypto.randomUUID(), label: "Programa", readOnly: false, dirty: false,
+      parts: [{ kind: "SQL", source: "", diagnostics: [] }],
+    });
+  }
+
+  async function openProgram() {
+    try {
+      const file = await api.openProgramFile();
+      if (!file) return;
+      const name = file.name.toLowerCase();
+      const kind = name.endsWith(".pks") ? "PACKAGE" : name.endsWith(".pkb") ? "PACKAGE BODY" : "SQL";
+      addProgram({
+        id: crypto.randomUUID(), label: file.name, fileName: file.name, readOnly: false, dirty: false,
+        parts: [{ kind, source: file.source.replace(/\r\n?/g, "\n"), diagnostics: [] }],
+      });
+    } catch (error) {
+      showNotice(describeError(error).message);
+    }
+  }
+
+  function closeProgram(tab: ProgramTab) {
+    if (tab.dirty && !window.confirm("¿Descartar cambios del programa?")) return;
+    const index = programs.findIndex((item) => item.id === tab.id);
+    const remaining = programs.filter((item) => item.id !== tab.id);
+    setPrograms(remaining);
+    if (programId === tab.id) setProgramId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
+  }
+
+  async function onOpenObject(object: ObjectInfo, mode: "view" | "edit" = "view") {
+    if (!active || !supportsProgram.has(object.object_type)) {
+      showNotice("Edición disponible en una versión posterior");
+      return;
+    }
+    const connection = active;
+    const id = JSON.stringify([connection.sessionId, object.object_type, object.owner, object.name]);
+    const existing = programs.find((tab) => tab.id === id);
+    const load = Symbol();
+    if (existing) {
+      setProgramId(id);
+      if (mode === "edit") updateProgram(id, { readOnly: false });
+      if (!existing.error) return;
+      updateProgram(id, { error: undefined, load });
+    } else {
+      addProgram({
+        id, connection, label: `${object.owner}.${object.name} @ ${connection.label}`,
+        readOnly: mode === "view", dirty: false, load,
+      });
+    }
+    try {
+      const parts = [...await api.programSource(connection.sessionId, object.object_type, object.owner, object.name)];
+      const first = parts[0]?.kind;
+      if (parts.length === 1 && (first === "PACKAGE" || first === "TYPE")) {
+        parts.push({ kind: `${first} BODY`, source: "", diagnostics: [] });
+      }
+      updateProgram(id, { parts, load: undefined }, load);
+    } catch (error) {
+      const detail = describeError(error);
+      if (detail.kind === "ConnectionLost") setStates((all) => ({ ...all, [connection.sessionId]: "Disconnected" }));
+      updateProgram(id, { error: detail.code ? `${detail.code} ${detail.message}` : detail.message, load: undefined }, load);
+    }
+  }
 
   const run = (id: CommandId) =>
     actions[id] ? { command: id, run: actions[id] } : { command: id };
   const menus: MenuDef[] = [
-    { label: "Archivo", items: [run("save"), run("closeTab")] },
+    { label: "Archivo", items: [run("newProgram"), run("openProgram"), run("save"), run("closeTab")] },
     {
       label: "Editar",
       items: [
+        run("undo"), run("redo"), "sep", run("indent"), run("outdent"),
         run("comment"),
         run("duplicateLine"),
         run("deleteLine"),
@@ -145,9 +281,9 @@ export default function App() {
       <header className="titlebar">
         <Logo size={18} />
         <MenuBar menus={menus} />
-        <button className="btn" disabled title="Nuevo">
+        <button className="btn" title={`Nuevo programa (${formatKeys(commands.newProgram.keys!)})`} onClick={newProgram}>
           <Plus size={13} aria-hidden />
-          Nuevo
+          Programa
         </button>
         <ConnectionBar
           connections={connections}
@@ -186,13 +322,41 @@ export default function App() {
             key={active.sessionId}
             connection={active}
             refreshKey={refreshTick}
-            onOpenObject={onOpenObject}
+            onOpenObject={(object, mode) => void onOpenObject(object, mode)}
             onConnectionLost={onConnectionLost}
             onNotice={showNotice}
           />
         )}
         <main className="workspace">
-          {!active && <p className="empty">Sin conexión</p>}
+          {!active && !program && <p className="empty">Sin conexión</p>}
+          {!!programs.length && (
+            <div className="program-workspace">
+              <div className="program-tabs" aria-label="Programas abiertos">
+                {programs.map((tab) => (
+                  <div key={tab.id} className={`program-tab ${tab.connection?.environment ? `env-${tab.connection.environment}` : ""}`}>
+                    <button aria-pressed={tab.id === programId} onClick={() => setProgramId(tab.id)}>
+                      {tab.label}{tab.dirty ? " *" : ""}
+                    </button>
+                    <button className="ib" onClick={() => closeProgram(tab)}
+                      aria-label={`Cerrar ${tab.label}`} title={formatKeys(commands.closeTab.keys!)}>
+                      <X size={13} aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {programs.map((tab) => (
+                <div key={tab.id} className="program-document" hidden={tab.id !== programId}>
+                  {tab.parts ? (
+                    <Suspense fallback={<p role="status">Cargando editor…</p>}>
+                      <ProgramWindow parts={tab.parts} readOnly={tab.readOnly} fileName={tab.fileName}
+                        ref={tab.id === programId ? programActions : undefined}
+                        onDirty={(dirty) => updateProgram(tab.id, { dirty })} />
+                    </Suspense>
+                  ) : tab.error ? <p role="alert">{tab.error}</p> : <p role="status">Cargando fuente…</p>}
+                </div>
+              ))}
+            </div>
+          )}
           {notice && (
             <div className="toast" role="status">
               {notice}
@@ -230,7 +394,7 @@ export default function App() {
       {showLogin && (
         <LoginDialog
           clientVersion={client.version}
-          onCancel={connections.length ? () => setShowLogin(false) : undefined}
+          onCancel={() => setShowLogin(false)}
           onConnected={(c) => {
             setConnections((cs) => [...cs, c]);
             setActiveId(c.sessionId);

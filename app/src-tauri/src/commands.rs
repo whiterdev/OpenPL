@@ -223,6 +223,87 @@ pub async fn object_ddl(
 }
 
 #[tauri::command]
+pub async fn program_source(
+    st: St<'_>,
+    session_id: SessionId,
+    object_type: ObjectType,
+    owner: String,
+    name: String,
+) -> Result<Vec<openpl_core::program::ProgramPart>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::program::load_program(c, object_type, &owner, &name))
+        .await
+}
+
+#[derive(serde::Serialize)]
+pub struct ProgramFile {
+    name: String,
+    source: String,
+}
+
+#[tauri::command]
+pub async fn open_program_file(app: tauri::AppHandle) -> Result<Option<ProgramFile>, CoreError> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("PL/SQL", &["pks", "pkb", "sql"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|e| CoreError::Io(e.to_string()))?;
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let source = std::fs::read_to_string(path)?;
+    Ok(Some(ProgramFile { name, source }))
+}
+
+#[tauri::command]
+pub async fn save_program_file(
+    app: tauri::AppHandle,
+    source: String,
+    extension: String,
+    name: Option<String>,
+) -> Result<Option<String>, CoreError> {
+    use tauri_plugin_dialog::DialogExt;
+    if !matches!(extension.as_str(), "pks" | "pkb" | "sql") {
+        return Err(CoreError::Io("Extensión de programa inválida.".into()));
+    }
+    let dialog = app.dialog().file().add_filter("PL/SQL", &[&extension]);
+    let dialog = match name {
+        Some(name) => dialog.set_file_name(name),
+        None => dialog.set_file_name(format!("programa.{extension}")),
+    };
+    let Some(path) = dialog.blocking_save_file() else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|e| CoreError::Io(e.to_string()))?;
+    replace_program_file(&path, &source)?;
+    Ok(Some(
+        path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+    ))
+}
+
+fn replace_program_file(path: &std::path::Path, source: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    file.write_all(source.as_bytes())?;
+    file.as_file().sync_all()?;
+    file.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn recompile(
     st: St<'_>,
     session_id: SessionId,
@@ -244,6 +325,16 @@ mod tests {
     use openpl_core::{Environment, MemoryStore, ProfileStore};
     use openpl_oracle::{DbVersion, ErrorKind, Role};
     use std::sync::Arc;
+
+    #[test]
+    fn guardar_programa_reemplaza_archivo_completo() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("programa.sql");
+        std::fs::write(&path, "archivo anterior, más largo").unwrap();
+        replace_program_file(&path, "SELECT 1").unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "SELECT 1");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     fn state(
         server: DbVersion,

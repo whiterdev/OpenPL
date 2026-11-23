@@ -28,6 +28,7 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::client_info,
@@ -42,6 +43,9 @@ pub fn run() {
             commands::session_state,
             commands::list_objects,
             commands::object_ddl,
+            commands::program_source,
+            commands::open_program_file,
+            commands::save_program_file,
             commands::recompile,
         ])
         .run(tauri::generate_context!())

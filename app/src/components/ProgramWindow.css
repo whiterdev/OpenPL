@@ -1,0 +1,85 @@
+.program-workspace, .program-window, .program-document, .program-pane {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+.program-workspace { align-self: stretch; }
+.program-document[hidden], .program-pane[hidden] { display: none; }
+.program-tabs, .program-toolbar {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    background: var(--s1);
+    border-bottom: 1px solid var(--line);
+}
+.program-tabs { overflow-x: auto; }
+.program-toolbar { gap: 6px; padding: 4px 8px; flex-wrap: wrap; }
+.program-toolbar [aria-pressed="true"] { background: var(--s3); }
+.program-tab {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    border-right: 1px solid var(--line);
+    border-top: 2px solid transparent;
+    padding-right: 3px;
+}
+.program-tab:has([aria-pressed="true"]) {
+    background: var(--s0);
+    border-top-color: var(--env, var(--accent));
+}
+.program-tab > button:first-child, .program-outline button, .program-problems button {
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+.program-tab > button:first-child { padding: 5px 9px; }
+.program-tab > button:first-child:hover, .program-outline button:hover, .program-problems button:hover {
+    background: var(--s2);
+}
+.program-main, .program-editors { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.program-outline {
+    flex: 0 0 clamp(112px, 20%, 180px);
+    min-width: 0;
+    overflow: auto;
+    border-right: 1px solid var(--line);
+    background: var(--s1);
+}
+.program-outline > div, .program-problems > div, .program-pane-label {
+    padding: 4px 8px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+}
+.program-outline button, .program-problems button {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    width: 100%;
+    min-height: 24px;
+    padding: 3px 8px;
+    overflow-wrap: anywhere;
+}
+.program-outline small { margin-left: auto; color: var(--muted); }
+.program-pane:not([hidden]) + .program-pane:not([hidden]) { border-left: 1px solid var(--line); }
+.program-pane-label, .program-problems { background: var(--s1); }
+.program-problems { max-height: 28%; overflow: auto; border-top: 1px solid var(--line); }
+.program-problems button > span { flex: 0 0 7ch; font-family: "IBM Plex Mono", monospace; }
+.program-problems .warning { color: var(--accent); }
+.program-problems .error { color: var(--err); }
+.program-muted { color: var(--muted); }
+.program-document > p { margin: 12px; }
+.program-editor { flex: 1; min-height: 0; }
+.program-editor .cm-editor { height: 100%; background: var(--s0); }
+.program-editor .cm-scroller { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+.program-editor .cm-gutters { background: var(--s1); color: var(--muted); border-color: var(--line); }
+.program-editor .cm-editor .cm-activeLine, .program-editor .cm-editor .cm-activeLineGutter { background: var(--s2); }
+.program-editor .cm-content { caret-color: var(--text); }
+.program-editor .cm-editor .cm-cursor { border-left-color: var(--text); }
+.program-editor .cm-editor .cm-selectionBackground { background: var(--s3) !important; }
+.program-editor .cm-panels, .program-editor .cm-tooltip { background: var(--s1); color: var(--text); border-color: var(--line2); }
+.program-editor .cm-textfield, .program-editor .cm-button { background: var(--s2); color: var(--text); border-color: var(--line2); }
+.workspace .toast { z-index: 1; }

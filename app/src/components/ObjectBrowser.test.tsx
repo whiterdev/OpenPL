@@ -32,6 +32,15 @@ function renderBrowser(props: Partial<Parameters<typeof ObjectBrowser>[0]> = {})
 }
 
 describe("ObjectBrowser", () => {
+  test("Editar Spec y Body abre un borrador", async () => {
+    const onOpenObject = vi.fn();
+    renderBrowser({ onOpenObject });
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "PKG_A" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar Spec y Body" }));
+    expect(onOpenObject).toHaveBeenCalledWith(obj("PKG_A"), "edit");
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     m.listObjects.mockResolvedValue([obj("PKG_A"), obj("PKG_B", { status: "Invalid" })]);
