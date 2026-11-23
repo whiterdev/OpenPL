@@ -11,6 +11,7 @@ import { StartupCheck } from "./components/StartupCheck";
 import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
+import { ObjectBrowser } from "./components/ObjectBrowser";
 import { commands, formatKeys, matches, type CommandId } from "./keymap";
 import type {
   ActiveConnection,
@@ -177,11 +178,12 @@ export default function App() {
 
       <div className="body">
         {active && explorerVisible && (
-          <aside
-            className="explorer-slot"
-            data-tick={refreshTick}
-            data-lost={String(!!onConnectionLost)}
-            data-open={String(!!onOpenObject)}
+          <ObjectBrowser
+            key={active.sessionId}
+            connection={active}
+            refreshKey={refreshTick}
+            onOpenObject={onOpenObject}
+            onConnectionLost={onConnectionLost}
           />
         )}
         <main className="workspace">

@@ -93,9 +93,3 @@
     border-radius: 50%;
     background: var(--env, var(--ok));
 }
-.explorer-slot {
-    width: 264px;
-    flex-shrink: 0;
-    background: var(--s0);
-    border-right: 1px solid var(--line);
-}
