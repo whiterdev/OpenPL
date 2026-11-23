@@ -5,10 +5,20 @@ use openpl_oracle::{ConnectParams, DbConn, Role};
 
 fn conn() -> Option<DbConn> {
     let get = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    match (get("OPENPL_TEST_USER"), get("OPENPL_TEST_PASSWORD"), get("OPENPL_TEST_DB")) {
-        (Some(user), Some(password), Some(db)) => {
-            Some(DbConn::connect(&ConnectParams { user, password, db, role: Role::Normal }).unwrap())
-        }
+    match (
+        get("OPENPL_TEST_USER"),
+        get("OPENPL_TEST_PASSWORD"),
+        get("OPENPL_TEST_DB"),
+    ) {
+        (Some(user), Some(password), Some(db)) => Some(
+            DbConn::connect(&ConnectParams {
+                user,
+                password,
+                db,
+                role: Role::Normal,
+            })
+            .unwrap(),
+        ),
         _ => {
             eprintln!("SKIP: OPENPL_TEST_* no definidas");
             None

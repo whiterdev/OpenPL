@@ -15,12 +15,18 @@ pub struct AppSettings {
 impl AppSettings {
     /// `<config del usuario>/openpl/settings.json`
     pub fn default_path() -> PathBuf {
-        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openpl").join("settings.json")
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("openpl")
+            .join("settings.json")
     }
 
     /// Archivo ausente o inválido: valores por defecto.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
     }
 
     pub fn save(&self, path: &Path) -> Result<(), CoreError> {

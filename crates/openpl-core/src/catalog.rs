@@ -76,7 +76,11 @@ impl ObjectType {
 }
 
 /// SQL y binds nombrados para listar objetos de un tipo. Compatible con Oracle 12.1.
-pub fn objects_query(scope: Scope, t: ObjectType, filter: Option<&str>) -> (String, Vec<(String, String)>) {
+pub fn objects_query(
+    scope: Scope,
+    t: ObjectType,
+    filter: Option<&str>,
+) -> (String, Vec<(String, String)>) {
     let mut binds = Vec::new();
     let mut placeholders = Vec::new();
     for (i, ot) in t.oracle_types().iter().enumerate() {
@@ -112,8 +116,15 @@ pub fn objects_query(scope: Scope, t: ObjectType, filter: Option<&str>) -> (Stri
 pub fn merge_status(t: ObjectType, rows: Vec<RawRow>) -> Vec<ObjectInfo> {
     let mut out: Vec<ObjectInfo> = Vec::new();
     for r in rows {
-        let status = if r.status == "VALID" { ObjectStatus::Valid } else { ObjectStatus::Invalid };
-        match out.iter_mut().find(|o| o.owner == r.owner && o.name == r.name) {
+        let status = if r.status == "VALID" {
+            ObjectStatus::Valid
+        } else {
+            ObjectStatus::Invalid
+        };
+        match out
+            .iter_mut()
+            .find(|o| o.owner == r.owner && o.name == r.name)
+        {
             Some(o) => {
                 if status == ObjectStatus::Invalid {
                     o.status = ObjectStatus::Invalid;
@@ -142,8 +153,10 @@ pub fn list_objects(
     filter: Option<&str>,
 ) -> Result<Vec<ObjectInfo>, DbError> {
     let (sql, binds) = objects_query(scope, t, filter);
-    let params: Vec<(&str, &dyn oracle::sql_type::ToSql)> =
-        binds.iter().map(|(k, v)| (k.as_str(), v as &dyn oracle::sql_type::ToSql)).collect();
+    let params: Vec<(&str, &dyn oracle::sql_type::ToSql)> = binds
+        .iter()
+        .map(|(k, v)| (k.as_str(), v as &dyn oracle::sql_type::ToSql))
+        .collect();
     let rows = conn.raw().query_named(&sql, &params)?;
     let mut raw = Vec::new();
     for row in rows {
@@ -188,7 +201,10 @@ mod tests {
     #[test]
     fn query_package_incluye_body() {
         let (_, b) = objects_query(Scope::All, ObjectType::Package, None);
-        assert_eq!(b.iter().map(|x| x.1.as_str()).collect::<Vec<_>>(), ["PACKAGE", "PACKAGE BODY"]);
+        assert_eq!(
+            b.iter().map(|x| x.1.as_str()).collect::<Vec<_>>(),
+            ["PACKAGE", "PACKAGE BODY"]
+        );
     }
 
     #[test]
@@ -214,7 +230,10 @@ mod tests {
     #[test]
     fn query_excluye_recyclebin_y_ordena() {
         let (sql, _) = objects_query(Scope::All, ObjectType::Table, None);
-        assert!(sql.contains("object_name NOT LIKE 'BIN$%'") && sql.contains("ORDER BY owner, object_name"));
+        assert!(
+            sql.contains("object_name NOT LIKE 'BIN$%'")
+                && sql.contains("ORDER BY owner, object_name")
+        );
     }
 
     #[test]
@@ -232,7 +251,10 @@ mod tests {
 
     #[test]
     fn merge_conserva_nombres_en_minusculas() {
-        let out = merge_status(ObjectType::Table, vec![raw("HR", "mi_tabla", "TABLE", "VALID")]);
+        let out = merge_status(
+            ObjectType::Table,
+            vec![raw("HR", "mi_tabla", "TABLE", "VALID")],
+        );
         assert_eq!(out[0].name, "mi_tabla");
     }
 
@@ -252,7 +274,10 @@ mod tests {
     fn mismo_nombre_distinto_owner_no_se_mezcla() {
         let out = merge_status(
             ObjectType::Package,
-            vec![raw("HR", "P", "PACKAGE", "VALID"), raw("SCOTT", "P", "PACKAGE", "VALID")],
+            vec![
+                raw("HR", "P", "PACKAGE", "VALID"),
+                raw("SCOTT", "P", "PACKAGE", "VALID"),
+            ],
         );
         assert_eq!(out.len(), 2);
     }

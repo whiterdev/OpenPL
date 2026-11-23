@@ -5,8 +5,17 @@ use openpl_oracle::{ConnectParams, DbConn, DbVersion, ErrorKind, Role};
 
 fn params() -> Option<ConnectParams> {
     let get = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    match (get("OPENPL_TEST_USER"), get("OPENPL_TEST_PASSWORD"), get("OPENPL_TEST_DB")) {
-        (Some(user), Some(password), Some(db)) => Some(ConnectParams { user, password, db, role: Role::Normal }),
+    match (
+        get("OPENPL_TEST_USER"),
+        get("OPENPL_TEST_PASSWORD"),
+        get("OPENPL_TEST_DB"),
+    ) {
+        (Some(user), Some(password), Some(db)) => Some(ConnectParams {
+            user,
+            password,
+            db,
+            role: Role::Normal,
+        }),
         _ => {
             eprintln!("SKIP: OPENPL_TEST_* no definidas");
             None
@@ -35,5 +44,8 @@ fn clave_erronea_da_invalid_credentials() {
 fn servicio_inexistente_da_unknown_service() {
     let Some(mut p) = params() else { return };
     p.db = "127.0.0.1:1/no_existe".into();
-    assert_eq!(DbConn::connect(&p).err().unwrap().kind, ErrorKind::UnknownService);
+    assert_eq!(
+        DbConn::connect(&p).err().unwrap().kind,
+        ErrorKind::UnknownService
+    );
 }

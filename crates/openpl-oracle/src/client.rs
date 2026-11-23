@@ -17,7 +17,11 @@ pub fn init_client(lib_dir: Option<&Path>) -> Result<(), DbError> {
 /// Versión del cliente Oracle cargado.
 pub fn client_version() -> Result<DbVersion, DbError> {
     let v = oracle::Version::client()?;
-    Ok(DbVersion::new(v.major() as u32, v.minor() as u32, v.update() as u32))
+    Ok(DbVersion::new(
+        v.major() as u32,
+        v.minor() as u32,
+        v.update() as u32,
+    ))
 }
 
 /// Ayuda breve para configurar el cliente según el sistema operativo.

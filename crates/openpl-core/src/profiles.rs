@@ -36,7 +36,10 @@ impl ProfileStore {
 
     /// `<config del usuario>/openpl/connections.json`
     pub fn default_path() -> PathBuf {
-        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("openpl").join("connections.json")
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("openpl")
+            .join("connections.json")
     }
 
     pub fn load(&self) -> Result<Vec<ConnectionProfile>, CoreError> {

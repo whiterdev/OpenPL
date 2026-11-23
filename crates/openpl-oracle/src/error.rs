@@ -30,9 +30,8 @@ pub fn classify(code: &str) -> ErrorKind {
         "ORA-12154" | "ORA-12514" | "ORA-12541" | "ORA-12505" | "ORA-12545" | "ORA-12170" => {
             ErrorKind::UnknownService
         }
-        "ORA-03113" | "ORA-03114" | "ORA-03135" | "ORA-02396" | "ORA-00028" | "DPI-1080" | "DPI-1010" => {
-            ErrorKind::ConnectionLost
-        }
+        "ORA-03113" | "ORA-03114" | "ORA-03135" | "ORA-02396" | "ORA-00028" | "DPI-1080"
+        | "DPI-1010" => ErrorKind::ConnectionLost,
         _ => ErrorKind::Other,
     }
 }
@@ -44,7 +43,10 @@ pub(crate) fn error_code(is_oci: bool, number: i32, message: &str) -> Option<Str
     }
     for prefix in ["DPI-", "ORA-"] {
         if let Some(pos) = message.find(prefix) {
-            let digits: String = message[pos + 4..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = message[pos + 4..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             if digits.len() >= 4 {
                 return Some(format!("{prefix}{digits}"));
             }
@@ -60,10 +62,16 @@ impl DbError {
         let message = match kind {
             ErrorKind::InvalidCredentials => "Usuario o contraseña incorrectos.".to_string(),
             ErrorKind::PasswordExpired => "La contraseña expiró.".to_string(),
-            ErrorKind::ClientMissing => "No se encontró Oracle Instant Client (64 bits).".to_string(),
+            ErrorKind::ClientMissing => {
+                "No se encontró Oracle Instant Client (64 bits).".to_string()
+            }
             _ => original.to_string(),
         };
-        Self { code, kind, message }
+        Self {
+            code,
+            kind,
+            message,
+        }
     }
 }
 
@@ -90,7 +98,14 @@ mod tests {
         assert_eq!(classify("ORA-12154"), ErrorKind::UnknownService);
         assert_eq!(classify("ORA-12514"), ErrorKind::UnknownService);
         assert_eq!(classify("ORA-12541"), ErrorKind::UnknownService);
-        for c in ["ORA-03113", "ORA-03114", "ORA-03135", "ORA-02396", "DPI-1080", "DPI-1010"] {
+        for c in [
+            "ORA-03113",
+            "ORA-03114",
+            "ORA-03135",
+            "ORA-02396",
+            "DPI-1080",
+            "DPI-1010",
+        ] {
             assert_eq!(classify(c), ErrorKind::ConnectionLost, "{c}");
         }
         assert_eq!(classify("ORA-00942"), ErrorKind::Other);
@@ -98,13 +113,20 @@ mod tests {
 
     #[test]
     fn codigo_ora_desde_numero() {
-        assert_eq!(error_code(true, 1017, "ORA-01017: invalid username/password"), Some("ORA-01017".into()));
+        assert_eq!(
+            error_code(true, 1017, "ORA-01017: invalid username/password"),
+            Some("ORA-01017".into())
+        );
     }
 
     #[test]
     fn codigo_dpi_desde_mensaje() {
         assert_eq!(
-            error_code(false, 0, "DPI-1047: Cannot locate a 64-bit Oracle Client library"),
+            error_code(
+                false,
+                0,
+                "DPI-1047: Cannot locate a 64-bit Oracle Client library"
+            ),
             Some("DPI-1047".into())
         );
     }
@@ -116,10 +138,16 @@ mod tests {
 
     #[test]
     fn mensaje_amigable_por_tipo() {
-        let e = DbError::from_code(Some("ORA-01017".into()), "ORA-01017: invalid username/password; logon denied");
+        let e = DbError::from_code(
+            Some("ORA-01017".into()),
+            "ORA-01017: invalid username/password; logon denied",
+        );
         assert_eq!(e.kind, ErrorKind::InvalidCredentials);
         assert_eq!(e.message, "Usuario o contraseña incorrectos.");
-        let o = DbError::from_code(Some("ORA-00942".into()), "ORA-00942: table or view does not exist");
+        let o = DbError::from_code(
+            Some("ORA-00942".into()),
+            "ORA-00942: table or view does not exist",
+        );
         assert_eq!(o.message, "ORA-00942: table or view does not exist");
     }
 }

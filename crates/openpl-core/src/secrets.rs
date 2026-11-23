@@ -24,7 +24,9 @@ impl KeyringStore {
 
 impl SecretStore for KeyringStore {
     fn set(&self, id: Uuid, pw: &str) -> Result<(), CoreError> {
-        Self::entry(id)?.set_password(pw).map_err(|e| CoreError::Secret(e.to_string()))
+        Self::entry(id)?
+            .set_password(pw)
+            .map_err(|e| CoreError::Secret(e.to_string()))
     }
 
     fn get(&self, id: Uuid) -> Result<Option<String>, CoreError> {

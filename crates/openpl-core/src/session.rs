@@ -75,8 +75,15 @@ impl<C: Connector> Session<C> {
                 }
             })
             .map_err(|e| DbError::from_code(None, &e.to_string()))?;
-        ready_rx.recv().map_err(|e| DbError::from_code(None, &e.to_string()))??;
-        Ok(Self { tx: Mutex::new(tx), state: Arc::new(AtomicU8::new(CONNECTED)), connector, params })
+        ready_rx
+            .recv()
+            .map_err(|e| DbError::from_code(None, &e.to_string()))??;
+        Ok(Self {
+            tx: Mutex::new(tx),
+            state: Arc::new(AtomicU8::new(CONNECTED)),
+            connector,
+            params,
+        })
     }
 
     pub fn state(&self) -> SessionState {
@@ -88,7 +95,11 @@ impl<C: Connector> Session<C> {
     }
 
     fn send(&self, job: Job<C::Conn>) -> Result<(), CoreError> {
-        self.tx.lock().unwrap().send(job).map_err(|_| CoreError::Disconnected)
+        self.tx
+            .lock()
+            .unwrap()
+            .send(job)
+            .map_err(|_| CoreError::Disconnected)
     }
 
     /// Ejecuta `f` en el hilo de la sesión. Si Oracle reporta conexión perdida, la sesión queda desconectada.
@@ -103,7 +114,10 @@ impl<C: Connector> Session<C> {
         self.send(Box::new(move |conn: &mut Option<C::Conn>| {
             let r = match conn.as_ref() {
                 Some(c) => f(c),
-                None => Err(DbError::from_code(Some("DPI-1010".into()), "DPI-1010: not connected")),
+                None => Err(DbError::from_code(
+                    Some("DPI-1010".into()),
+                    "DPI-1010: not connected",
+                )),
             };
             let _ = otx.send(r);
         }))?;
@@ -144,7 +158,10 @@ pub struct SessionManager<C: Connector> {
 
 impl<C: Connector> SessionManager<C> {
     pub fn new(connector: Arc<C>) -> Self {
-        Self { connector, sessions: RwLock::new(HashMap::new()) }
+        Self {
+            connector,
+            sessions: RwLock::new(HashMap::new()),
+        }
     }
 
     pub async fn open(&self, p: ConnectParams) -> Result<SessionId, CoreError> {
@@ -158,7 +175,12 @@ impl<C: Connector> SessionManager<C> {
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<Session<C>>, CoreError> {
-        self.sessions.read().unwrap().get(&id).cloned().ok_or(CoreError::SessionNotFound)
+        self.sessions
+            .read()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .ok_or(CoreError::SessionNotFound)
     }
 
     pub fn close(&self, id: SessionId) {
@@ -187,7 +209,10 @@ pub mod fake {
 
     impl FakeConnector {
         pub fn new(server: DbVersion) -> Self {
-            Self { server, connects: AtomicUsize::new(0) }
+            Self {
+                server,
+                connects: AtomicUsize::new(0),
+            }
         }
     }
 
@@ -195,7 +220,9 @@ pub mod fake {
         type Conn = FakeConn;
         fn connect(&self, _p: &ConnectParams) -> Result<FakeConn, DbError> {
             self.connects.fetch_add(1, Ordering::SeqCst);
-            Ok(FakeConn { server: self.server })
+            Ok(FakeConn {
+                server: self.server,
+            })
         }
         fn server_version(conn: &FakeConn) -> DbVersion {
             conn.server
@@ -211,15 +238,27 @@ mod tests {
     use std::sync::Arc;
 
     fn params() -> ConnectParams {
-        ConnectParams { user: "u".into(), password: "p".into(), db: "d".into(), role: Role::Normal }
+        ConnectParams {
+            user: "u".into(),
+            password: "p".into(),
+            db: "d".into(),
+            role: Role::Normal,
+        }
     }
 
     fn lost() -> DbError {
-        DbError::from_code(Some("ORA-03113".into()), "ORA-03113: end-of-file on communication channel")
+        DbError::from_code(
+            Some("ORA-03113".into()),
+            "ORA-03113: end-of-file on communication channel",
+        )
     }
 
     fn open() -> Session<FakeConnector> {
-        Session::open(Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0))), params()).unwrap()
+        Session::open(
+            Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0))),
+            params(),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -235,7 +274,10 @@ mod tests {
         let r: Result<(), CoreError> = s.run(|_| Err(lost())).await;
         assert!(matches!(r, Err(CoreError::Db(_))));
         assert_eq!(s.state(), SessionState::Disconnected);
-        assert!(matches!(s.run(|_| Ok(1)).await, Err(CoreError::Disconnected)));
+        assert!(matches!(
+            s.run(|_| Ok(1)).await,
+            Err(CoreError::Disconnected)
+        ));
     }
 
     #[tokio::test]
@@ -250,8 +292,9 @@ mod tests {
     #[tokio::test]
     async fn error_normal_no_desconecta() {
         let s = open();
-        let r: Result<(), CoreError> =
-            s.run(|_| Err(DbError::from_code(Some("ORA-00942".into()), "ORA-00942"))).await;
+        let r: Result<(), CoreError> = s
+            .run(|_| Err(DbError::from_code(Some("ORA-00942".into()), "ORA-00942")))
+            .await;
         assert!(r.is_err());
         assert_eq!(s.state(), SessionState::Connected);
     }
@@ -259,7 +302,10 @@ mod tests {
     #[tokio::test]
     async fn manager_get_inexistente() {
         let mgr = SessionManager::new(Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0))));
-        assert!(matches!(mgr.get(SessionId(Uuid::new_v4())), Err(CoreError::SessionNotFound)));
+        assert!(matches!(
+            mgr.get(SessionId(Uuid::new_v4())),
+            Err(CoreError::SessionNotFound)
+        ));
     }
 
     #[tokio::test]
@@ -274,6 +320,11 @@ mod tests {
     #[tokio::test]
     async fn sesion_conoce_version_del_servidor() {
         let s = open();
-        assert_eq!(s.run(|c| Ok(FakeConnector::server_version(c))).await.unwrap(), DbVersion::new(19, 0, 0));
+        assert_eq!(
+            s.run(|c| Ok(FakeConnector::server_version(c)))
+                .await
+                .unwrap(),
+            DbVersion::new(19, 0, 0)
+        );
     }
 }

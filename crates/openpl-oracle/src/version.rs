@@ -19,7 +19,11 @@ pub enum Compat {
 
 impl DbVersion {
     pub const fn new(major: u32, minor: u32, update: u32) -> Self {
-        Self { major, minor, update }
+        Self {
+            major,
+            minor,
+            update,
+        }
     }
 }
 
@@ -59,12 +63,18 @@ mod tests {
 
     #[test]
     fn ic19_con_12_1_soportado() {
-        assert_eq!(check_compat(DbVersion::new(19, 3, 0), DbVersion::new(12, 1, 0)), Compat::Supported);
+        assert_eq!(
+            check_compat(DbVersion::new(19, 3, 0), DbVersion::new(12, 1, 0)),
+            Compat::Supported
+        );
     }
 
     #[test]
     fn ic21_con_19_soportado() {
-        assert_eq!(check_compat(DbVersion::new(21, 13, 0), DbVersion::new(19, 0, 0)), Compat::Supported);
+        assert_eq!(
+            check_compat(DbVersion::new(21, 13, 0), DbVersion::new(19, 0, 0)),
+            Compat::Supported
+        );
     }
 
     #[test]

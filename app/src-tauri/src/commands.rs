@@ -27,18 +27,33 @@ pub fn client_info_impl<C: Connector>(st: &AppState<C>) -> ClientInfo {
     let lib_dir = AppSettings::load(&st.settings_path).oracle_client_dir;
     let help = openpl_oracle::client_help().to_string();
     match (st.client_version)() {
-        Ok(v) => ClientInfo { version: Some(v.to_string()), error: None, help, lib_dir },
-        Err(e) => ClientInfo { version: None, error: Some(e), help, lib_dir },
+        Ok(v) => ClientInfo {
+            version: Some(v.to_string()),
+            error: None,
+            help,
+            lib_dir,
+        },
+        Err(e) => ClientInfo {
+            version: None,
+            error: Some(e),
+            help,
+            lib_dir,
+        },
     }
 }
 
-pub fn set_client_dir_impl<C: Connector>(st: &AppState<C>, dir: Option<String>) -> Result<(), CoreError> {
+pub fn set_client_dir_impl<C: Connector>(
+    st: &AppState<C>,
+    dir: Option<String>,
+) -> Result<(), CoreError> {
     let mut s = AppSettings::load(&st.settings_path);
     s.oracle_client_dir = dir.filter(|d| !d.trim().is_empty());
     s.save(&st.settings_path)
 }
 
-pub fn list_profiles_impl<C: Connector>(st: &AppState<C>) -> Result<Vec<ConnectionProfile>, CoreError> {
+pub fn list_profiles_impl<C: Connector>(
+    st: &AppState<C>,
+) -> Result<Vec<ConnectionProfile>, CoreError> {
     st.profiles.load()
 }
 
@@ -62,11 +77,17 @@ pub fn delete_profile_impl<C: Connector>(st: &AppState<C>, id: Uuid) -> Result<(
     st.profiles.delete(id)
 }
 
-pub fn stored_password_impl<C: Connector>(st: &AppState<C>, id: Uuid) -> Result<Option<String>, CoreError> {
+pub fn stored_password_impl<C: Connector>(
+    st: &AppState<C>,
+    id: Uuid,
+) -> Result<Option<String>, CoreError> {
     st.secrets.get(id)
 }
 
-pub async fn connect_impl<C: Connector>(st: &AppState<C>, params: ConnectParams) -> Result<ConnectResult, CoreError> {
+pub async fn connect_impl<C: Connector>(
+    st: &AppState<C>,
+    params: ConnectParams,
+) -> Result<ConnectResult, CoreError> {
     let client = (st.client_version)()?;
     let id = st.sessions.open(params).await?;
     let session = st.sessions.get(id)?;
@@ -74,20 +95,34 @@ pub async fn connect_impl<C: Connector>(st: &AppState<C>, params: ConnectParams)
     let compat = openpl_oracle::check_compat(client, server);
     if let Compat::Unsupported(reason) = &compat {
         st.sessions.close(id);
-        return Err(CoreError::Db(DbError { code: None, kind: openpl_oracle::ErrorKind::Other, message: reason.clone() }));
+        return Err(CoreError::Db(DbError {
+            code: None,
+            kind: openpl_oracle::ErrorKind::Other,
+            message: reason.clone(),
+        }));
     }
-    Ok(ConnectResult { session_id: id, server_version: server.to_string(), compat })
+    Ok(ConnectResult {
+        session_id: id,
+        server_version: server.to_string(),
+        compat,
+    })
 }
 
 pub fn disconnect_impl<C: Connector>(st: &AppState<C>, id: SessionId) {
     st.sessions.close(id);
 }
 
-pub async fn reconnect_impl<C: Connector>(st: &AppState<C>, id: SessionId) -> Result<(), CoreError> {
+pub async fn reconnect_impl<C: Connector>(
+    st: &AppState<C>,
+    id: SessionId,
+) -> Result<(), CoreError> {
     st.sessions.get(id)?.reconnect().await
 }
 
-pub fn session_state_impl<C: Connector>(st: &AppState<C>, id: SessionId) -> Result<SessionState, CoreError> {
+pub fn session_state_impl<C: Connector>(
+    st: &AppState<C>,
+    id: SessionId,
+) -> Result<SessionState, CoreError> {
     Ok(st.sessions.get(id)?.state())
 }
 
@@ -124,7 +159,11 @@ pub fn list_profiles(st: St<'_>) -> Result<Vec<ConnectionProfile>, CoreError> {
 }
 
 #[tauri::command]
-pub fn save_profile(st: St<'_>, profile: ConnectionProfile, password: Option<String>) -> Result<(), CoreError> {
+pub fn save_profile(
+    st: St<'_>,
+    profile: ConnectionProfile,
+    password: Option<String>,
+) -> Result<(), CoreError> {
     save_profile_impl(&st, profile, password)
 }
 
@@ -178,7 +217,10 @@ mod tests {
     use openpl_oracle::{DbVersion, ErrorKind, Role};
     use std::sync::Arc;
 
-    fn state(server: DbVersion, client: Result<DbVersion, DbError>) -> (tempfile::TempDir, AppState<FakeConnector>) {
+    fn state(
+        server: DbVersion,
+        client: Result<DbVersion, DbError>,
+    ) -> (tempfile::TempDir, AppState<FakeConnector>) {
         let dir = tempfile::tempdir().unwrap();
         let st = AppState {
             profiles: ProfileStore::new(dir.path().join("connections.json")),
@@ -203,7 +245,12 @@ mod tests {
     }
 
     fn params() -> ConnectParams {
-        ConnectParams { user: "HR".into(), password: "x".into(), db: "DEVPDB".into(), role: Role::Normal }
+        ConnectParams {
+            user: "HR".into(),
+            password: "x".into(),
+            db: "DEVPDB".into(),
+            role: Role::Normal,
+        }
     }
 
     #[test]
@@ -220,7 +267,10 @@ mod tests {
         let (_d, st) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
         let p = profile(true);
         save_profile_impl(&st, p.clone(), Some("clave".into())).unwrap();
-        assert_eq!(stored_password_impl(&st, p.id).unwrap(), Some("clave".into()));
+        assert_eq!(
+            stored_password_impl(&st, p.id).unwrap(),
+            Some("clave".into())
+        );
         assert_eq!(list_profiles_impl(&st).unwrap(), vec![p]);
     }
 
@@ -240,7 +290,10 @@ mod tests {
         let r = connect_impl(&st, params()).await.unwrap();
         assert_eq!(r.server_version, "12.1.0");
         assert_eq!(r.compat, Compat::Supported);
-        assert_eq!(session_state_impl(&st, r.session_id).unwrap(), SessionState::Connected);
+        assert_eq!(
+            session_state_impl(&st, r.session_id).unwrap(),
+            SessionState::Connected
+        );
     }
 
     #[tokio::test]
@@ -253,7 +306,10 @@ mod tests {
 
     #[test]
     fn client_info_sin_cliente_no_falla() {
-        let missing = DbError::from_code(Some("DPI-1047".into()), "DPI-1047: Cannot locate a 64-bit Oracle Client library");
+        let missing = DbError::from_code(
+            Some("DPI-1047".into()),
+            "DPI-1047: Cannot locate a 64-bit Oracle Client library",
+        );
         let (_d, st) = state(DbVersion::new(19, 0, 0), Err(missing));
         let info = client_info_impl(&st);
         assert_eq!(info.version, None);
@@ -265,6 +321,9 @@ mod tests {
     fn set_client_dir_guarda_preferencia() {
         let (_d, st) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
         set_client_dir_impl(&st, Some("C:\\oracle\\ic19".into())).unwrap();
-        assert_eq!(client_info_impl(&st).lib_dir.as_deref(), Some("C:\\oracle\\ic19"));
+        assert_eq!(
+            client_info_impl(&st).lib_dir.as_deref(),
+            Some("C:\\oracle\\ic19")
+        );
     }
 }

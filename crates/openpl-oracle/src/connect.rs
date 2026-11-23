@@ -59,7 +59,10 @@ impl DbConn {
         })?;
         let (v, _) = conn.server_version()?;
         let server_version = DbVersion::new(v.major() as u32, v.minor() as u32, v.update() as u32);
-        Ok(DbConn { conn, server_version })
+        Ok(DbConn {
+            conn,
+            server_version,
+        })
     }
 
     pub fn server_version(&self) -> DbVersion {
@@ -82,7 +85,12 @@ mod tests {
 
     #[test]
     fn debug_oculta_password() {
-        let p = ConnectParams { user: "hr".into(), password: "s3cr3t".into(), db: "dev".into(), role: Role::Normal };
+        let p = ConnectParams {
+            user: "hr".into(),
+            password: "s3cr3t".into(),
+            db: "dev".into(),
+            role: Role::Normal,
+        };
         assert!(!format!("{p:?}").contains("s3cr3t"));
     }
 }

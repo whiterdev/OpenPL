@@ -13,7 +13,8 @@ pub fn run() {
     let settings_path = AppSettings::default_path();
     let settings = AppSettings::load(&settings_path);
     // Si falla (cliente ausente), la app arranca igual y la pantalla inicial lo explica.
-    let init_error = openpl_oracle::init_client(settings.oracle_client_dir.as_deref().map(Path::new)).err();
+    let init_error =
+        openpl_oracle::init_client(settings.oracle_client_dir.as_deref().map(Path::new)).err();
 
     let state = AppState {
         profiles: ProfileStore::new(ProfileStore::default_path()),
