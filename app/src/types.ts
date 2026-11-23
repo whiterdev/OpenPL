@@ -124,6 +124,12 @@ export interface ProgramPart {
   diagnostics: { line: number; column: number; text: string; warning: boolean }[];
 }
 
+export interface ObjectColumn {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+}
+
 /** Normaliza un CoreError a código + mensaje para mostrar. */
 export function describeError(e: unknown): {
   code: string | null;

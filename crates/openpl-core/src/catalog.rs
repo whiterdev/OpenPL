@@ -420,6 +420,99 @@ pub fn list_objects(
     Ok(merge_status(t, raw))
 }
 
+const EDITOR_OBJECT_SQL: &str = "WITH requested AS (
+    SELECT :1 AS requested_name, :2 AS explicit_owner,
+           COALESCE(:3, SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')) AS context_owner
+    FROM dual
+), candidates AS (
+    SELECT r.requested_name AS name, COALESCE(r.explicit_owner, r.context_owner) AS owner,
+           CAST(NULL AS VARCHAR2(128)) AS db_link, 0 AS priority
+    FROM requested r
+    WHERE EXISTS (
+        SELECT 1 FROM all_objects o WHERE o.object_name = r.requested_name
+          AND o.owner = COALESCE(r.explicit_owner, r.context_owner)
+          AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE',
+                               'PACKAGE', 'PROCEDURE', 'FUNCTION', 'TRIGGER', 'TYPE')
+    )
+    UNION ALL
+    SELECT s.table_name, s.table_owner, s.db_link,
+           CASE WHEN s.owner = 'PUBLIC' THEN 2 ELSE 1 END
+    FROM all_synonyms s CROSS JOIN requested r
+    WHERE s.synonym_name = r.requested_name
+      AND (s.owner = COALESCE(r.explicit_owner, r.context_owner)
+           OR (r.explicit_owner IS NULL AND s.owner = 'PUBLIC'))
+), chosen AS (
+    SELECT name, owner, db_link FROM (SELECT c.* FROM candidates c ORDER BY priority)
+    WHERE ROWNUM = 1
+)
+SELECT o.owner, o.object_name, o.object_type, o.status,
+       TO_CHAR(o.last_ddl_time, 'YYYY-MM-DD\"T\"HH24:MI:SS')
+FROM all_objects o JOIN chosen c ON c.owner = o.owner AND c.name = o.object_name
+WHERE c.db_link IS NULL AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE',
+                                             'PACKAGE', 'PROCEDURE', 'FUNCTION', 'TRIGGER', 'TYPE')
+ORDER BY CASE o.object_type WHEN 'MATERIALIZED VIEW' THEN 0 WHEN 'TRIGGER' THEN 2 ELSE 1 END";
+
+/// Busca nombres exactos y sinónimos de un salto, dentro de la misma base.
+pub fn editor_object(
+    conn: &DbConn,
+    owner: Option<&str>,
+    name: &str,
+    context_owner: Option<&str>,
+) -> Result<Option<ObjectInfo>, DbError> {
+    let mut rows = conn
+        .raw()
+        .query_as::<(String, String, String, String, String)>(
+            EDITOR_OBJECT_SQL,
+            &[&name, &owner, &context_owner],
+        )?;
+    let Some((owner, name, oracle_type, status, last_ddl_time)) = rows.next().transpose()? else {
+        return Ok(None);
+    };
+    Ok(ObjectType::ALL
+        .iter()
+        .find(|kind| kind.oracle_types().contains(&oracle_type.as_str()))
+        .map(|&object_type| ObjectInfo {
+            owner,
+            name,
+            object_type,
+            status: if status == "VALID" {
+                ObjectStatus::Valid
+            } else {
+                ObjectStatus::Invalid
+            },
+            last_ddl_time,
+        }))
+}
+
+#[derive(Serialize)]
+pub struct ObjectColumn {
+    name: String,
+    data_type: String,
+    nullable: bool,
+}
+
+pub fn describe_columns(
+    conn: &DbConn,
+    owner: &str,
+    name: &str,
+) -> Result<Vec<ObjectColumn>, DbError> {
+    conn.raw()
+        .query_as::<(String, String, String)>(
+            "SELECT column_name, data_type, nullable FROM all_tab_columns
+             WHERE owner = :1 AND table_name = :2 ORDER BY column_id",
+            &[&owner, &name],
+        )?
+        .map(|row| {
+            let (name, data_type, nullable) = row?;
+            Ok(ObjectColumn {
+                name,
+                data_type,
+                nullable: nullable == "Y",
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

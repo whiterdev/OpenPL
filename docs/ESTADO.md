@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 64 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 75 de interfaz,
   más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -33,6 +33,21 @@
 - **Punto de continuación:** leer y conservar `LAST_DDL_TIME` por parte. Diseñar el conflicto de edición
   y probarlo con dobles antes de conectar F8. Ampliar la estructura para variables y sobrecargas.
   Quedan pendientes el plegado de bloques PL/SQL y el autocompletado de catálogo.
+
+### Plan 2 — Acciones de objeto desde el editor
+
+- **Clic derecho** y **Alt+Enter** reconocen nombres simples o calificados, incluidos identificadores
+  entre comillas. El menú ofrece **Describir** tablas y vistas, **Ver fuente** de PL/SQL y copiar
+  nombre, nombre con esquema o DDL. La consulta usa la sesión original del programa.
+- **Por dónde seguir:** `app/src/editorReference.ts` detecta el identificador, `EditorObjectMenu.tsx`
+  presenta opciones y columnas, y `crates/openpl-core/src/catalog.rs` resuelve el objeto. Revisar
+  primero el comportamiento documentado y las pruebas de `editorReference` y `ProgramWindow`.
+  [Nota de comportamiento](behavior/programa.md)
+- **Pendiente de validar con Oracle real:** resolución del nombre y de sinónimos locales y carga de
+  columnas. Se verificaron las columnas del diccionario en desarrollo. DBX rechazó la consulta
+  completa con `DATABASE_OUT_OF_SCOPE`.
+- La prueba de interfaz usa un catálogo simulado y verifica que el clic derecho descrito muestra
+  las columnas sin cambiar la sesión. El build de depuración de Windows incluye el menú.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 

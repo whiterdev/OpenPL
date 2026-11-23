@@ -70,6 +70,26 @@
 .program-problems button > span { flex: 0 0 7ch; font-family: "IBM Plex Mono", monospace; }
 .program-problems .warning { color: var(--accent); }
 .program-problems .error { color: var(--err); }
+.program-description {
+    max-height: 33%;
+    overflow: auto;
+    background: var(--s1);
+    border-top: 1px solid var(--line);
+}
+.program-description header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+}
+.program-description table { width: 100%; border-collapse: collapse; text-align: left; }
+.program-description th, .program-description td {
+    padding: 4px 8px;
+    border-top: 1px solid var(--line);
+}
+.program-description td:first-child { font-family: var(--font-code); }
+.program-description p { margin: 6px 8px; }
 .program-muted { color: var(--muted); }
 .program-document > p { margin: 12px; }
 .program-editor { flex: 1; min-height: 0; }

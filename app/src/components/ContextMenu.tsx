@@ -19,6 +19,7 @@ interface Props {
 /** Menú de clic derecho en la posición del puntero. Se cierra con Escape, clic fuera o al elegir. */
 export function ContextMenu({ x, y, label, items, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const hasAction = items.some((item) => item !== "sep" && item.run);
 
   useEffect(() => {
     const out = (e: MouseEvent) => {
@@ -34,11 +35,11 @@ export function ContextMenu({ x, y, label, items, onClose }: Props) {
       document.removeEventListener("mousedown", out);
       document.removeEventListener("keydown", esc);
     };
-  }, [onClose]);
+  }, [onClose, hasAction]);
 
   // Mantener el menú dentro de la ventana.
-  const left = Math.min(x, window.innerWidth - 270);
-  const top = Math.min(y, window.innerHeight - items.length * 30 - 16);
+  const left = Math.max(0, Math.min(x, window.innerWidth - 270));
+  const top = Math.max(0, Math.min(y, window.innerHeight - items.length * 30 - 16));
 
   return (
     <div ref={ref} role="menu" aria-label={label} className="menu" style={{ position: "fixed", left, top, width: 260 }}>

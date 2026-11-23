@@ -35,6 +35,7 @@ interface ProgramTab {
   id: string;
   label: string;
   connection?: ActiveConnection;
+  owner?: string;
   readOnly: boolean;
   dirty: boolean;
   parts?: ProgramPart[];
@@ -65,11 +66,15 @@ export default function App() {
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
   const program = programs.find((tab) => tab.id === programId);
+  const editorConnection = program?.connection
+    ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
+    : active;
   const currentProgramActions = Object.fromEntries(
-    (["save", "spec", "body", "sideBySide", "goToDeclaration", "goToLine", "find", "replace",
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
       .filter((id) => {
         if (!program?.parts) return false;
+        if (id === "objectActions") return !!editorConnection;
         if (id === "spec" || id === "body" || id === "sideBySide") return program.parts.length === 2;
         return !program.readOnly || ["save", "goToDeclaration", "goToLine", "find"].includes(id);
       })
@@ -187,12 +192,11 @@ export default function App() {
     if (programId === tab.id) setProgramId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
   }
 
-  async function onOpenObject(object: ObjectInfo, mode: "view" | "edit" = "view") {
-    if (!active || !supportsProgram.has(object.object_type)) {
+  async function onOpenObject(object: ObjectInfo, mode: "view" | "edit" = "view", connection = active) {
+    if (!connection || !supportsProgram.has(object.object_type)) {
       showNotice("Edición disponible en una versión posterior");
       return;
     }
-    const connection = active;
     const id = JSON.stringify([connection.sessionId, object.object_type, object.owner, object.name]);
     const existing = programs.find((tab) => tab.id === id);
     const load = Symbol();
@@ -203,7 +207,7 @@ export default function App() {
       updateProgram(id, { error: undefined, load });
     } else {
       addProgram({
-        id, connection, label: `${object.owner}.${object.name} @ ${connection.label}`,
+        id, connection, owner: object.owner, label: `${object.owner}.${object.name} @ ${connection.label}`,
         readOnly: mode === "view", dirty: false, load,
       });
     }
@@ -238,6 +242,7 @@ export default function App() {
         "sep",
         run("goToLine"),
         run("goToDeclaration"),
+        run("objectActions"),
       ],
     },
     {
@@ -349,6 +354,12 @@ export default function App() {
                   {tab.parts ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <ProgramWindow parts={tab.parts} readOnly={tab.readOnly} fileName={tab.fileName}
+                        active={tab.id === programId}
+                        catalog={tab.id === programId && editorConnection ? {
+                          sessionId: editorConnection.sessionId,
+                          owner: tab.owner ?? null,
+                          openProgram: (object) => void onOpenObject(object, "view", editorConnection),
+                        } : undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={(dirty) => updateProgram(tab.id, { dirty })} />
                     </Suspense>

@@ -223,6 +223,40 @@ pub async fn object_ddl(
 }
 
 #[tauri::command]
+pub async fn editor_object(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: Option<String>,
+    name: String,
+    context_owner: Option<String>,
+) -> Result<Option<ObjectInfo>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| {
+            openpl_core::catalog::editor_object(
+                c,
+                owner.as_deref(),
+                &name,
+                context_owner.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn describe_columns(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: String,
+    name: String,
+) -> Result<Vec<openpl_core::catalog::ObjectColumn>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::catalog::describe_columns(c, &owner, &name))
+        .await
+}
+
+#[tauri::command]
 pub async fn program_source(
     st: St<'_>,
     session_id: SessionId,

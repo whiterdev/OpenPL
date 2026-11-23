@@ -1,11 +1,13 @@
 // Envoltorios tipados de los comandos Tauri.
 import { invoke } from "@tauri-apps/api/core";
+import type { EditorReference } from "./editorReference";
 import type {
   ClientInfo,
   ConnectParams,
   ConnectResult,
   ConnectionProfile,
   ObjectInfo,
+  ObjectColumn,
   ObjectType,
   ProgramPart,
   Scope,
@@ -30,6 +32,10 @@ export const api = {
     invoke<string>("object_ddl", { sessionId, objectType, owner, name }),
   programSource: (sessionId: string, objectType: ObjectType, owner: string, name: string) =>
     invoke<ProgramPart[]>("program_source", { sessionId, objectType, owner, name }),
+  editorObject: (sessionId: string, reference: EditorReference, contextOwner: string | null) =>
+    invoke<ObjectInfo | null>("editor_object", { sessionId, ...reference, contextOwner }),
+  describeColumns: (sessionId: string, owner: string, name: string) =>
+    invoke<ObjectColumn[]>("describe_columns", { sessionId, owner, name }),
   openProgramFile: () => invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),

@@ -43,6 +43,8 @@ pub fn run() {
             commands::session_state,
             commands::list_objects,
             commands::object_ddl,
+            commands::editor_object,
+            commands::describe_columns,
             commands::program_source,
             commands::open_program_file,
             commands::save_program_file,

@@ -29,6 +29,13 @@
 - [ ] **Compilación.** Diseñar el control `LAST_DDL_TIME` por parte, el flujo de conflicto y la actualización de diagnósticos antes de exponer F8. Verificar con dobles de prueba.
 - [ ] **Editor.** Ampliar la estructura para variables globales y sobrecargas, validar plegado de bloques y añadir autocompletado con el catálogo por conexión.
 
+### Menú de objeto en el editor
+
+- [x] **Identificador.** `editorReference(state, position)` en `app/src/editorReference.ts` detecta un nombre simple o calificado bajo el puntero. Las pruebas cubren nombres entre comillas y descartan comentarios, literales, variables bind y enlaces remotos.
+- [x] **Catálogo.** `editor_object(sessionId, owner, name, contextOwner)` resuelve el nombre exacto o un sinónimo local contra el diccionario con binds. `describe_columns(sessionId, owner, name)` entrega columnas de tablas y vistas. Ambas lecturas se ejecutan en el hilo de la sesión.
+- [x] **Menú.** `ProgramEditor` obtiene la posición del clic. `ProgramWindow` reutiliza `ContextMenu` para Describir, Ver fuente, Copiar nombre y Copiar DDL. La prueba cubre la ruta de clic derecho y la sesión de origen.
+- [ ] **Oracle real.** Verificar resolución de objetos y sinónimos locales y confirmar que se describen las columnas esperadas. Las columnas del catálogo fueron verificadas con metadatos y la prueba de la consulta completa recibió `DATABASE_OUT_OF_SCOPE` en DBX.
+
 ## Verificación
 
 Ejecutar `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `npx.cmd tsc --noEmit` y `npm.cmd test` en sus carpetas correspondientes. Registrar resultados, límites y punto de continuación en [ESTADO.md](../../ESTADO.md).

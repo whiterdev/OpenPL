@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { FloppyDisk, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
@@ -6,8 +6,10 @@ import { gotoLine, openSearchPanel } from "@codemirror/search";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
-import { describeError, type ProgramPart } from "../types";
+import { describeError, type ObjectInfo, type ProgramPart } from "../types";
+import { editorReference } from "../editorReference";
 import { positionAt, ProgramEditor } from "./ProgramEditor";
+import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>>;
 
@@ -17,6 +19,8 @@ interface Props {
   onDirty: (dirty: boolean) => void;
   ref?: Ref<ProgramActions>;
   fileName?: string;
+  catalog?: ObjectCatalog;
+  active?: boolean;
 }
 
 const caption = (kind: string) => {
@@ -34,12 +38,17 @@ function declarations(source: string) {
   });
 }
 
-export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName }: Props) {
+export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog, active = true }: Props) {
   const [selected, setSelected] = useState(0);
   const [split, setSplit] = useState(false);
   const [values, setValues] = useState(() => parts.map((part) => part.source));
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
+  const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
+  const objectRequestId = useRef(0);
+  const closeObjectMenu = useCallback(() => setObjectMenu(null), []);
+  useEffect(() => { closeObjectMenu(); }, [active, catalog?.sessionId, closeObjectMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
   const names = useRef<(string | null)[]>([fileName ?? null]);
@@ -121,6 +130,13 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName }: Props
     body: canSplit ? () => focusPart(1) : undefined,
     sideBySide: canSplit ? () => setSplit((value) => !value) : undefined,
     goToDeclaration: declaration,
+    objectActions: catalog ? runInEditor((view) => {
+      const position = view.state.selection.main.head;
+      const reference = editorReference(view.state, position) ?? (position > 0 ? editorReference(view.state, position - 1) : null);
+      if (!reference) return;
+      const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
+      setObjectMenu({ reference, x: coords.left, y: coords.bottom, id: ++objectRequestId.current });
+    }) : undefined,
     goToLine: runInEditor(gotoLine),
     find: runInEditor(openSearchPanel),
     replace: readOnly ? undefined : runInEditor(openSearchPanel),
@@ -178,6 +194,9 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName }: Props
                 label={caption(entry.kind)}
                 readOnly={readOnly}
                 activate={() => setSelected(index)}
+                onObjectContext={catalog ? (reference, x, y) => {
+                  setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
+                } : undefined}
                 onView={(view) => { views.current[index] = view; }}
                 onChange={(value) => {
                   const updated = parts.map((other, i) => i === index
@@ -191,6 +210,15 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName }: Props
           ))}
         </div>
       </div>
+      {description && (
+        <ObjectDescription key={description.id} object={description.object} sessionId={description.sessionId}
+          onClose={() => setDescription(null)} />
+      )}
+      {active && catalog && objectMenu && (
+        <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
+          onMessage={setMessage}
+          onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
+      )}
       {diagnostics.length > 0 && (
         <div className="program-problems" aria-label="Problemas">
           <div>Problemas <span>{diagnostics.length}</span></div>

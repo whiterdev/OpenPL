@@ -5,9 +5,10 @@ import { foldGutter, HighlightStyle, syntaxHighlighting } from "@codemirror/lang
 import { search, highlightSelectionMatches } from "@codemirror/search";
 import { history } from "@codemirror/commands";
 import { linter } from "@codemirror/lint";
-import { PLSQL, sql } from "@codemirror/lang-sql";
+import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
+import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
 
 const syntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -29,6 +30,7 @@ interface Props {
   onView: (view: EditorView | null) => void;
   onChange: (value: string) => void;
   activate: () => void;
+  onObjectContext?: (reference: EditorReference, x: number, y: number) => void;
 }
 
 export function ProgramEditor(props: Props) {
@@ -43,7 +45,7 @@ export function ProgramEditor(props: Props) {
       doc: part.source,
       extensions: [
         lineNumbers(), foldGutter(), drawSelection(), rectangularSelection(), history(),
-        highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: PLSQL }),
+        highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(syntax),
         EditorState.phrases.of({
           Find: "Buscar", next: "siguiente", previous: "anterior", all: "todas",
@@ -63,7 +65,19 @@ export function ProgramEditor(props: Props) {
           role: "textbox", "aria-label": label, "aria-multiline": "true", "aria-readonly": String(readOnly),
           tabindex: "0",
         }),
-        EditorView.domEventHandlers({ focus: () => { latest.current.activate(); } }),
+        EditorView.domEventHandlers({
+          focus: () => { latest.current.activate(); },
+          contextmenu: (event, editor) => {
+            const open = latest.current.onObjectContext;
+            if (!open || !(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
+            const point = editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY });
+            const reference = point && editorReference(editor.state, Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0)));
+            if (!reference) return false;
+            latest.current.activate();
+            open(reference, event.clientX, event.clientY);
+            return true;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latest.current.onChange(update.state.doc.toString());
         }),

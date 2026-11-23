@@ -2,12 +2,31 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { EditorView } from "@codemirror/view";
 import { expect, test, vi } from "vitest";
 import { ProgramWindow } from "./ProgramWindow";
+import { api } from "../api";
 import "./ProgramWindow.css";
 
 const parts = [
   { kind: "PACKAGE", source: "PACKAGE PKG_A AS\n  PROCEDURE hello;\nEND;", diagnostics: [] },
   { kind: "PACKAGE BODY", source: "PACKAGE BODY PKG_A AS\nEND;", diagnostics: [] },
 ];
+
+test("clic derecho resuelve y describe una tabla de la sesión del programa", async () => {
+  const object = { owner: "HR", name: "VENTAS", object_type: "Table", status: "Valid", last_ddl_time: "" } as const;
+  const lookup = vi.spyOn(api, "editorObject").mockResolvedValue(object);
+  const describe = vi.spyOn(api, "describeColumns").mockResolvedValue([{ name: "ID", data_type: "NUMBER", nullable: false }]);
+  vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 16, assoc: 1 });
+  try {
+    render(<ProgramWindow parts={[{ kind: "SQL", source: "select * from ventas", diagnostics: [] }]}
+      readOnly onDirty={vi.fn()} catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+    fireEvent.contextMenu(screen.getByRole("textbox", { name: "Fuente" }), { clientX: 100, clientY: 100 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Describir" }));
+    expect(lookup).toHaveBeenCalledWith("s1", { owner: null, name: "VENTAS" }, "HR");
+    expect(describe).toHaveBeenCalledWith("s1", "HR", "VENTAS");
+    expect(await screen.findByRole("cell", { name: "ID" })).toBeInTheDocument();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
 
 test("guarda los borradores por parte y abre ambos editores", async () => {
   render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
