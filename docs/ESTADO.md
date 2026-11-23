@@ -4,15 +4,35 @@
 
 ## Resumen
 
-- Rama de trabajo: `feat/plan-1-base` (sin merge a `main`; el repo no tiene remoto todavía).
+- Rama de trabajo: `feat/plan-2-programa`, basada en `feat/plan-1-base`. El repositorio todavía no tiene remoto.
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
-- Tests: 66 de Rust (`cargo test --workspace`) y 60 de la interfaz (`npm test` en `app/`), en verde.
-  `cargo clippy -D warnings` sin advertencias.
+- Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
+  [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 64 de interfaz,
+  más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
+- El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
+  existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
+  manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
 - **No verificado todavía:** uso contra una base Oracle real (login, explorador, DDL, recompilar),
   las pruebas `live` (necesitan `OPENPL_TEST_*`) y el CI (nunca corrió: no hay remoto).
 
 ## Hecho
+
+### Plan 2 — Primer incremento
+
+- **Oracle:** `openpl-core/src/program.rs` lee `ALL_SOURCE` y `ALL_ERRORS` por esquema, nombre y tipo.
+  `program_source` ejecuta la lectura en el hilo de la sesión. Se verificaron columnas y acceso de lectura
+  al diccionario en desarrollo, sin ejecutar la app contra una base real.
+- **Interfaz:** `App.tsx` conserva las ventanas por sesión y objeto. `ProgramWindow.tsx` conserva los
+  borradores de Spec y Body y ofrece vista lateral, estructura básica y navegación a problemas.
+  `ProgramEditor.tsx` contiene CodeMirror con dialecto PL/SQL.
+- **Archivos:** los comandos Tauri abren el selector nativo. El guardado sustituye un archivo después de
+  escribirlo completo. Cerrar una pestaña o la aplicación con cambios pide confirmación.
+  [Comportamiento de la ventana](behavior/programa.md)
+- **Punto de continuación:** leer y conservar `LAST_DDL_TIME` por parte. Diseñar el conflicto de edición
+  y probarlo con dobles antes de conectar F8. Ampliar la estructura para variables y sobrecargas.
+  Quedan pendientes el plegado de bloques PL/SQL y el autocompletado de catálogo.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 
@@ -91,12 +111,10 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
-### Plan 2 — Ventana de programa (diseño §7.4, mockup "1 · Ventana de programa")
-- Abrir desde el explorador (doble clic / Enter / Ver / Editar / Editar Spec y Body) y desde `Nuevo ▸ Programa`.
-- Editor CodeMirror 6 con modo PL/SQL, Spec y Body en pestañas rotuladas, lado a lado (Ctrl \), Alt S / Alt B.
-- Leer fuente (`ALL_SOURCE` o `DBMS_METADATA`), compilar (F8) con errores de `ALL_ERRORS` en línea y en el panel Problemas.
-- Panel Estructura (público/privado), ir a la declaración (F12), control de `LAST_DDL_TIME` antes de compilar.
-- Pestañas de ventanas abiertas con franja de entorno; guardar/abrir archivos `.pks/.pkb/.sql`.
+### Plan 2 — Ventana de programa (en curso)
+- Continuar desde la tarea 4 del [plan de implementación](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
+- Validar manualmente la apertura de un paquete con y sin Body, la navegación a diagnósticos y el
+  selector nativo en Windows y Linux. Las pruebas de la aplicación contra Oracle serán de solo lectura.
 
 ### Plan 3 — Ventana SQL y edición en grilla (diseño §7.5, mockup "2 · Ventana SQL")
 - Sesión propia por ventana, ejecutar sentencia/selección/script, cancelar, variables `:x` y `&x`, `DBMS_OUTPUT`.
@@ -120,6 +138,7 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 |---|---|
 | Diseño del producto | `docs/superpowers/specs/2026-11-23-openpl-design.md` |
 | Plan 1 (terminado) | `docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md` |
+| Plan 2 (en curso) | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
 | Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |

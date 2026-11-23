@@ -92,6 +92,7 @@ crates/openpl-core/     lógica sin interfaz
   session.rs            Session (un hilo por conexión), SessionManager, Connector (+ fake)
   catalog.rs            ObjectType (35 tipos), objects_query, fallback_query, list_objects
   actions.rs            get_ddl (DBMS_METADATA), recompile
+  program.rs            carga de fuentes y diagnósticos del diccionario
 app/src-tauri/src/      Tauri: state.rs (AppState, AppSettings), commands.rs (IPC), lib.rs (run)
 app/src/
   api.ts / types.ts     envoltorios tipados de los comandos y tipos espejo de Rust
@@ -99,7 +100,7 @@ app/src/
   theme.css             tokens del tema grafito, botones, menús
   App.tsx               barra de título (menús, Nuevo, conexión, transacción), layout
   components/           StartupCheck, LoginDialog, ConnectionBar, MenuBar, ObjectBrowser,
-                        ContextMenu, Logo (cada uno con su .test.tsx)
+                        ContextMenu, Logo, ProgramWindow y ProgramEditor
 docs/                   diseño, planes, notas de comportamiento, estado
 design/logo/            logo maestro, variantes y guía
 .github/workflows/ci.yml
@@ -142,7 +143,9 @@ design/logo/            logo maestro, variantes y guía
 3. Antes de implementar una pantalla nueva, escribir su nota en `docs/behavior/`.
 4. Trabajar en una rama (`feat/...`), commits pequeños en español:
    `feat(app): ...`, `fix(core): ...`, `docs: ...`.
-5. Al terminar: suites en verde, actualizar `docs/ESTADO.md` (qué se hizo, decisiones, pendientes).
+5. Al cerrar cada bloque o dejar trabajo en curso, actualizar `docs/ESTADO.md` con el plan activo,
+   qué se hizo, decisiones, verificaciones ejecutadas, limitaciones y la siguiente tarea concreta.
+   Enlazar las notas de comportamiento y el plan desde el estado para que otro agente pueda continuar.
 
 ## No hacer
 
