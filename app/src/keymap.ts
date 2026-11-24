@@ -64,7 +64,6 @@ const list: Command[] = [
   { id: "exportData", label: "Exportar CSV", keys: "Ctrl+Shift+X" },
   { id: "selectGridRows", label: "Seleccionar filas cargadas", keys: "Ctrl+A" },
   { id: "copyGrid", label: "Copiar", keys: "Ctrl+C" },
-  // TODO(plan 4): ventana de prueba. TODO(fases posteriores): plan de ejecución, paleta, ventana de comando.
   { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
   { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
   { id: "commit", label: "Commit", keys: "F10" },

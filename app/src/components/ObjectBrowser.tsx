@@ -45,6 +45,7 @@ import {
 import { api } from "../api";
 import { commands, formatKeys } from "../keymap";
 import { objectMenuItems, type InspectMode } from "../objectMenu";
+import { createDraft, dropDraft, type DraftAction } from "../objectDraft";
 import { describeError, type ActiveConnection, type ObjectInfo, type ObjectType, type Scope } from "../types";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
 import "./ObjectBrowser.css";
@@ -112,10 +113,11 @@ interface Props {
   onEditData?: (o: ObjectInfo) => void;
   onExportData?: (o: ObjectInfo) => void;
   onInspect?: (object: ObjectInfo, mode: InspectMode) => void;
+  onDraft?: (action: DraftAction, type: ObjectType, object?: ObjectInfo) => void;
   onTest?: (o: ObjectInfo, x: number, y: number) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onInspect, onTest }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onInspect, onDraft, onTest }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -147,6 +149,8 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       editData: onEditData && (() => onEditData(o)),
       exportData: onExportData && (() => onExportData(o)),
       inspect: onInspect && ((mode) => onInspect(o, mode)),
+      draft: onDraft && ((action) => onDraft(action, o.object_type, o)),
+      canDrop: !!dropDraft(o),
       test: onTest && (() => onTest(o, e.clientX, e.clientY)),
     });
     setMenu({ x: e.clientX, y: e.clientY, label: full, items });
@@ -187,7 +191,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       label,
       items: [
         { label: open ? "Contraer" : "Expandir", run: () => toggle(t) },
-        { label: "Nuevo…", pending: true },
+        ...(createDraft(t) ? [{ label: "Nuevo…", run: () => onDraft?.("create", t) }] : []),
         "sep",
         {
           label: "Copiar nombres separados por coma",

@@ -77,10 +77,12 @@ describe("objectMenuItems", () => {
     expect(labels(t)).toContain("Recompilar");
   });
 
-  test("usuario: editar usuario y privilegios pendientes, Copiar DDL activo", () => {
-    const h = handlers();
-    expectPending(item("User", "Editar usuario", h));
-    expectPending(item("User", "Privilegios", h));
+  test("usuario: editar usuario y consultar privilegios", () => {
+    const draft = vi.fn();
+    const h = handlers({ draft });
+    item("User", "Editar usuario", h)?.run?.();
+    item("User", "Privilegios", h)?.run?.();
+    expect(draft.mock.calls).toEqual([["account"], ["privileges"]]);
     item("User", "Copiar DDL", h)?.run?.();
     expect(h.copyDdl).toHaveBeenCalled();
     expect(labels("User")).not.toContain("Consultar datos");
@@ -104,7 +106,6 @@ describe("objectMenuItems", () => {
       "Propiedades",
       "Copiar nombre",
       "Copiar nombre con esquema",
-      "Eliminar",
       "Refrescar",
     ]);
   });

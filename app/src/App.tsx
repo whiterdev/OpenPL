@@ -26,6 +26,8 @@ import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
 import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
+import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
+import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
@@ -139,6 +141,7 @@ const editorEdits = [
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
   const [inspection, setInspection] = useState<Inspection | null>(null);
+  const [draft, setDraft] = useState<{ object: ObjectInfo; connection: ActiveConnection; action: "rename" | "account" } | null>(null);
   const [connections, setConnections] = useState<ActiveConnection[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, SessionState>>({});
@@ -268,7 +271,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (showLogin || showTheme || showPalette) {
+      if (showLogin || showTheme || showPalette || inspection || draft) {
         if (
           matches(e, commands.explainPlan.keys!) ||
           matches(e, commands.refreshExplorer.keys!)
@@ -905,6 +908,21 @@ export default function App() {
             onEditData={(object) => queryData(object, true)}
             onExportData={(object) => queryData(object, false, true)}
             onInspect={(object, mode) => setInspection({ object, mode, sessionId: active.sessionId })}
+            onDraft={(action, type, object) => {
+              if (action === "create") {
+                const sql = createDraft(type);
+                if (sql) void openSql(active, sql);
+              } else if (object) {
+                if (action === "drop") {
+                  const sql = dropDraft(object);
+                  if (sql) void openSql(active, sql);
+                } else if (action === "privileges") {
+                  void openSql(active, privilegesQuery(object.name), true);
+                } else {
+                  setDraft({ object, connection: active, action });
+                }
+              }
+            }}
             onTest={(object, x, y) => void testObject(active, object, x, y)}
           />
         )}
@@ -1120,6 +1138,8 @@ export default function App() {
         />
       )}
       {inspection && <ObjectInspector {...inspection} onClose={() => setInspection(null)} />}
+      {draft && <ObjectDraftDialog object={draft.object} action={draft.action} onClose={() => setDraft(null)}
+        onPrepare={(sql) => { void openSql(draft.connection, sql); setDraft(null); }} />}
     </div>
   );
 }

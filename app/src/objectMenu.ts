@@ -1,5 +1,6 @@
 import type { ContextItem } from "./components/ContextMenu";
 import { commands } from "./keymap";
+import { canRename, type DraftAction } from "./objectDraft";
 import type { ObjectType } from "./types";
 
 export type MenuEntry = ContextItem | "sep";
@@ -19,6 +20,8 @@ export interface ObjectMenuHandlers {
   editData?: () => void;
   exportData?: () => void;
   inspect?: (mode: InspectMode) => void;
+  draft?: (action: DraftAction) => void;
+  canDrop?: boolean;
   test?: () => void;
 }
 
@@ -27,7 +30,6 @@ const DATA_TYPES = new Set<ObjectType>(["Table", "View", "MaterializedView"]);
 const TESTABLE = new Set<ObjectType>(["Package", "Procedure", "Function"]);
 const RECOMPILABLE = new Set<ObjectType>([...CODE_TYPES, "View", "MaterializedView"]);
 const NO_DDL = new Set<ObjectType>(["JavaClass", "DbmsJob", "RecycleBin"]);
-const RENAMEABLE = new Set<ObjectType>(["Table", "View", "Sequence", "Synonym"]);
 
 function dataGroup(t: ObjectType, h: ObjectMenuHandlers): MenuEntry[] {
   const editKeys = commands.editData.keys;
@@ -48,6 +50,7 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
   const code = CODE_TYPES.has(t);
   const data = DATA_TYPES.has(t);
   const user = t === "User";
+  const draft = h.draft;
   const items: MenuEntry[] = [{ label: "Abrir", keys: "Enter", run: h.open }];
   if (t === "Package" || t === "Type") items.push(
     { label: "Ver Spec y Body", run: h.view },
@@ -63,8 +66,8 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
   if (data) items.push(...dataGroup(t, h));
   if (user) items.push(
     "sep",
-    { label: "Editar usuario", pending: true },
-    { label: "Privilegios", pending: true },
+    { label: "Editar usuario", run: draft && (() => draft("account")) },
+    { label: "Privilegios", run: draft && (() => draft("privileges")) },
     { label: "Copiar DDL", run: h.copyDdl },
   );
   const inspect = h.inspect;
@@ -81,7 +84,8 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Copiar nombre con esquema", run: h.copyFullName },
     "sep",
   );
-  if (RENAMEABLE.has(t)) items.push({ label: "Renombrar", pending: true });
-  items.push({ label: "Eliminar", pending: true }, "sep", { label: "Refrescar", keys: commands.refreshExplorer.keys, run: h.refresh });
+  if (canRename(t)) items.push({ label: "Renombrar", run: draft && (() => draft("rename")) });
+  if (h.canDrop) items.push({ label: "Eliminar", run: draft && (() => draft("drop")) });
+  items.push({ label: "Refrescar", keys: commands.refreshExplorer.keys, run: h.refresh });
   return items;
 }

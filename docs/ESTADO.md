@@ -4,6 +4,9 @@
 
 ## Resumen
 
+- Plan 5 implementado para la 1.0.0: consola, paleta, plan estimado, CSV, inspector y borradores SQL desde el explorador. [Plan 5](superpowers/plans/2026-11-24-openpl-05-acciones-v1.md), [consola](behavior/comandos.md), [explorador](behavior/acciones-explorador.md) y [auditoría](../anti-slop/audit-acciones-v1-2026-11-24.md).
+- El plan requiere acceso a `PLAN_TABLE` y los privilegios requieren las vistas administrativas del diccionario. Se verificaron sus columnas con DBX en solo lectura. Pendiente la validación manual de escritorio contra Oracle.
+
 - Rama de cierre: `feat/cierre-v1`, creada desde `main`. [Calificación de la candidata](RELEASE-v1.md).
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").

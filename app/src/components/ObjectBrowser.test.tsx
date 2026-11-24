@@ -290,8 +290,8 @@ describe("ObjectBrowser", () => {
     await userEvent.click(screen.getByRole("treeitem", { name: "Usuarios" }));
     fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /HR/ }));
     const menu = screen.getByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: /Editar usuario.*Próximamente/ })).toBeDisabled();
-    expect(within(menu).getByRole("menuitem", { name: /Privilegios.*Próximamente/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: "Editar usuario" })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: "Privilegios" })).toBeDisabled();
     fireEvent.click(within(menu).getByRole("menuitem", { name: /Copiar DDL/ }));
     expect(m.objectDdl).toHaveBeenCalledWith("s1", "User", "", "HR");
   });
