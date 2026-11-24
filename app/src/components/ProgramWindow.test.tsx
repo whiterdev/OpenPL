@@ -348,6 +348,28 @@ test("Compilar (F8) compila la pestaña activa sin recrear el editor", async () 
   expect(reader).toHaveBeenCalledTimes(2);
 });
 
+test("compilar guarda la parte activa y conserva cambios pendientes en la otra", async () => {
+  const ref = createRef<ProgramActions>();
+  const onDirty = vi.fn();
+  const program = parts.map((part) => ({ ...part, source: "CREATE OR REPLACE " + part.source }));
+  const compile = compiler();
+  render(<ProgramWindow ref={ref} parts={program} readOnly={false} onDirty={onDirty}
+    readCurrentProgram={vi.fn().mockResolvedValue(program)} compilationTarget={hrTarget} compile={compile} />);
+  function edit(label: string) {
+    const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: label }).closest<HTMLElement>(".cm-editor")!)!;
+    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n-- cambio" } }));
+  }
+  edit("Spec");
+  fireEvent.click(screen.getByRole("tab", { name: /Body/ }));
+  edit("Body");
+  await act(async () => ref.current?.execute?.());
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("tab", { name: /Spec/ }));
+  await act(async () => ref.current?.execute?.());
+  expect(compile.run).toHaveBeenCalledTimes(2);
+  expect(onDirty).toHaveBeenLastCalledWith(false);
+});
+
 test("un error de compilación llena Problemas y marca el editor", async () => {
   const ref = createRef<ProgramActions>();
   const compile = compiler(vi.fn().mockRejectedValue({

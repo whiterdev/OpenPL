@@ -315,6 +315,8 @@ export function ProgramWindow({
         // ORA-24344: Oracle guardó el objeto con errores; los detalles llegan con la fuente releída.
         if (describeError(error).code !== "ORA-24344") throw error;
       }
+      saved.current[index] = text;
+      onDirty(parts.some((_, i) => (views.current[i]?.state.doc.toString() ?? values[i]) !== saved.current[i]));
       const current = readCurrentProgram ? await latestPart() : null;
       const diagnostics = current?.diagnostics ?? [];
       const view = views.current[index];
