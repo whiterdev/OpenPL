@@ -25,6 +25,8 @@ vi.mock("./api", () => ({
     sqlCommit: vi.fn(),
     sqlRollback: vi.fn(),
     sqlCancel: vi.fn(),
+    sqlEditTarget: vi.fn(),
+    sqlApply: vi.fn(),
   },
 }));
 
@@ -257,4 +259,35 @@ test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
   fireEvent.click(screen.getByRole("menuitem", { name: /Consultar datos/ }));
   expect(await screen.findByRole("grid", { name: "Resultados" })).toBeInTheDocument();
   expect(api.sqlExecute).toHaveBeenCalledWith("w3", 'SELECT * FROM "HR"."CLIENTES"', []);
+});
+
+test("Editar datos del explorador abre la grilla en edición", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([{
+    owner: "HR", name: "CLIENTES", object_type: "Table", status: "Valid", last_ddl_time: "",
+  }]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w4");
+  vi.mocked(api.sqlEditTarget).mockResolvedValue({
+    owner: "HR", name: "CLIENTES", columns: [{ name: "ID", data_type: "NUMBER", nullable: false, editable: true }],
+  });
+  vi.mocked(api.sqlExecute)
+    .mockResolvedValueOnce({
+      result: { kind: "Query", cursor: 1, columns: [{ name: "ID", type_name: "NUMBER", numeric: true }], page: { rows: [["1"]], more: false } },
+      elapsed_ms: 1, output: [], transaction: false,
+    })
+    .mockResolvedValueOnce({
+      result: {
+        kind: "Query", cursor: 2,
+        columns: [{ name: "OPENPL$ROWID", type_name: "ROWID", numeric: false }, { name: "ID", type_name: "NUMBER", numeric: true }],
+        page: { rows: [["AAA1", "1"]], more: false },
+      },
+      elapsed_ms: 1, output: [], transaction: false,
+    });
+  render(<App />);
+  await connectAs();
+  fireEvent.click(await screen.findByRole("treeitem", { name: "Tablas" }));
+  fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "CLIENTES" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Editar datos/ }));
+  expect(await screen.findByRole("button", { name: /Editando/ })).toHaveAttribute("aria-pressed", "true");
+  expect(api.sqlEditTarget).toHaveBeenCalledWith("w4", "HR", "CLIENTES");
 });

@@ -21,7 +21,7 @@
 - Las posiciones de error de Oracle se trasladan al editor sumando el inicio de la sentencia.
 - Los comandos SQL*Plus no se envían a Oracle: se informan y el script sigue.
 
-## Incremento 1 — Ejecutar y ver
+## Incremento 1 — Ejecutar y ver (hecho)
 
 ### Núcleo
 
@@ -44,7 +44,10 @@
 
 ## Incremento 2 — Edición en grilla
 
-- Candado Editar (Ctrl E) en consultas de una sola tabla con `ROWID` oculto; editar, insertar y borrar filas; Aplicar (Ctrl Shift Enter) con `SELECT ... FOR UPDATE NOWAIT` y comparación de valores; conflictos fila por fila. Sin vista previa del SQL (decisión 8 de ESTADO).
+- [x] **Núcleo.** `crates/openpl-core/src/grid.rs`: `edit_target` (resuelve sinónimos, solo tablas, columnas editables por tipo), `apply` (savepoint, bloqueo `FOR UPDATE NOWAIT` y comparación de todas las filas, después UPDATE/DELETE/INSERT por ROWID; con conflicto o error vuelve al savepoint). IPC `sql_edit_target`, `sql_apply`.
+- [x] **Consulta editable.** `app/src/sqlEdit.ts`: `editableQuery(sql)` agrega `alias.ROWID AS "OPENPL$ROWID"` y rechaza joins, agrupaciones, uniones, subconsultas y enlaces remotos.
+- [x] **Grilla.** `ResultGrid.tsx` con selección y edición por teclado; `gridEdits.ts` arma los cambios y las filas aplicadas; `SqlWindow.tsx` con Editar (Ctrl E), agregar y borrar filas, Descartar, Aplicar (Ctrl Shift Enter), panel Conflictos y aviso de producción. Explorador: Editar datos en tablas.
+- Diseño original de este incremento: candado Editar (Ctrl E) en consultas de una sola tabla con `ROWID` oculto; editar, insertar y borrar filas; Aplicar (Ctrl Shift Enter) con `SELECT ... FOR UPDATE NOWAIT` y comparación de valores; conflictos fila por fila. Sin vista previa del SQL (decisión 8 de ESTADO).
 
 ## Verificación
 

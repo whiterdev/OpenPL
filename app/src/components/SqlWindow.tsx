@@ -1,14 +1,19 @@
 import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
-import { FloppyDisk, Play, PlayCircle, Stop, Trash } from "@phosphor-icons/react";
+import { FloppyDisk, Lock, LockOpen, Minus, Play, PlayCircle, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { gotoLine, openSearchPanel } from "@codemirror/search";
 import { startCompletion } from "@codemirror/autocomplete";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
-import { describeError, type BindKind, type ExecOutcome, type ProgramPart, type SqlColumn } from "../types";
+import {
+  describeError, type BindKind, type BindValue, type Conflict, type EditTarget, type Environment, type ExecOutcome,
+  type ProgramPart, type SqlColumn,
+} from "../types";
+import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
+import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
+import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
 import { applySubstitutions, findVariables } from "../sqlBinds";
 import type { CompletionCatalog } from "../programCompletion";
@@ -21,6 +26,9 @@ interface Props {
   initialSql?: string;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
   runOnOpen?: boolean;
+  /** Además, abrir la grilla en edición (Editar datos). */
+  editOnOpen?: boolean;
+  environment?: Environment;
   onTransaction: (open: boolean) => void;
   onDirty: (dirty: boolean) => void;
   completion?: CompletionCatalog | null;
@@ -33,6 +41,14 @@ interface Grid {
   rows: (string | null)[][];
   more: boolean;
   elapsed: number;
+  /** La columna 0 es el ROWID agregado para editar; no se muestra. */
+  hiddenRowid: boolean;
+}
+
+interface EditSession {
+  target: EditTarget;
+  /** Columna de la tabla para cada columna visible, o null si no se edita. */
+  names: (string | null)[];
 }
 
 interface OutputLine {
@@ -48,22 +64,20 @@ interface HistoryEntry {
 }
 
 type Tab = "results" | "output" | "history";
-const ROW = 24;
-// Con pocas filas se dibujan todas; desde aquí se virtualiza.
-const VIRTUALIZE_ABOVE = 300;
 const FETCH_ALL = 1000;
 const CANCELLED = "ORA-01013";
 const KINDS: { id: BindKind; label: string }[] = [
   { id: "Text", label: "Texto" }, { id: "Number", label: "Número" }, { id: "Date", label: "Fecha" },
 ];
 
-const columnWidth = (column: SqlColumn, rows: (string | null)[][], index: number) => {
-  let longest = column.name.length;
-  for (const row of rows.slice(0, 100)) longest = Math.max(longest, (row[index] ?? "NULL").length);
-  return Math.min(360, Math.max(64, longest * 7.5 + 20));
+const REASONS: Record<Conflict["reason"], string> = {
+  Changed: "cambió en Oracle", Locked: "bloqueada por otra sesión", Missing: "ya no existe",
 };
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction, onDirty, completion, ref }: Props) {
+export function SqlWindow({
+  sessionId, initialSql = "", runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+}: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,6 +101,12 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
   const saved = useRef(initialSql);
   const fileName = useRef<string | null>(null);
   const started = useRef(false);
+  const lastQueryRef = useRef<{ sql: string; binds: BindValue[] } | null>(null);
+  const [editSession, setEditSession] = useState<EditSession | null>(null);
+  const [pending, setPending] = useState<Pending>(emptyPending);
+  const [selected, setSelected] = useState<CellPosition | null>(null);
+  const [conflicts, setConflicts] = useState<{ list: Conflict[]; rowsOf: number[] } | null>(null);
+  const [applying, setApplying] = useState(false);
 
   const statements = useMemo(() => splitScript(source), [source]);
   const current = statementAt(statements, cursor);
@@ -124,6 +144,10 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
       }
     }
     setRunning(true);
+    setEditSession(null);
+    setPending(emptyPending());
+    setConflicts(null);
+    setSelected(null);
     let lastQuery = false;
     try {
       for (const statement of list) {
@@ -142,6 +166,7 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
         let outcome: ExecOutcome;
         try {
           outcome = await api.sqlExecute(sessionId, sql, binds);
+          if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
         } catch (error) {
           const detail = describeError(error);
           setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: false }, ...h]);
@@ -161,7 +186,7 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
-          setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms });
+          setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false });
           setSummary(null);
           lastQuery = true;
         } else {
@@ -207,6 +232,148 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
     }
   }
 
+  async function toggleEdit() {
+    if (editSession) {
+      const count = pendingCount(pending);
+      if (count && !window.confirm(`¿Descartar ${plural(count, "cambio pendiente", "cambios pendientes")}?`)) return;
+      setEditSession(null);
+      setPending(emptyPending());
+      setConflicts(null);
+      return;
+    }
+    const query = lastQueryRef.current;
+    if (!query) {
+      setAlert("Ejecuta una consulta para editar sus filas");
+      return;
+    }
+    const editable = editableQuery(query.sql);
+    if (!editable) {
+      setAlert("Solo se edita una consulta sobre una tabla, sin joins ni agrupaciones");
+      return;
+    }
+    setAlert("");
+    try {
+      const target = await api.sqlEditTarget(sessionId, editable.table.owner, editable.table.name);
+      if (!target) {
+        setAlert("Solo se editan tablas");
+        return;
+      }
+      const outcome = await api.sqlExecute(sessionId, editable.sql, query.binds);
+      if (outcome.result.kind !== "Query") return;
+      const { cursor: id, columns, page } = outcome.result;
+      const visible = columns.slice(1);
+      setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: columns[0]?.name === ROWID_COLUMN });
+      setEditSession({
+        target,
+        names: visible.map((c) => target.columns.find((t) => t.name === c.name && t.editable)?.name ?? null),
+      });
+      setPending(emptyPending());
+      setSelected({ row: 0, col: 0 });
+      setTab("results");
+    } catch (error) {
+      const detail = describeError(error);
+      log("error", detail.code && !detail.message.startsWith(detail.code) ? `${detail.code} ${detail.message}` : detail.message);
+      setTab("output");
+    }
+  }
+
+  function editCell({ row, col }: CellPosition, value: Cell) {
+    if (!grid) return;
+    setConflicts(null);
+    setPending((p) => {
+      if (row >= grid.rows.length) {
+        const inserts = p.inserts.map((cells, i) => i === row - grid.rows.length
+          ? cells.map((cell, c) => (c === col ? value : cell)) : cells);
+        return { ...p, inserts };
+      }
+      const current = p.edits[row];
+      if (current?.kind === "delete") return p;
+      const values = { ...(current?.values ?? {}) };
+      if (grid.rows[row][col + 1] === value) delete values[col];
+      else values[col] = value;
+      const edits = { ...p.edits };
+      if (Object.keys(values).length) edits[row] = { kind: "update", values };
+      else delete edits[row];
+      return { ...p, edits };
+    });
+  }
+
+  function addRow() {
+    if (!grid || !editSession) return;
+    const width = grid.columns.length - 1;
+    setPending((p) => ({ ...p, inserts: [...p.inserts, Array<Cell>(width).fill(null)] }));
+    const firstEditable = Math.max(0, editSession.names.findIndex(Boolean));
+    setSelected({ row: grid.rows.length + pending.inserts.length, col: firstEditable });
+  }
+
+  function deleteRow() {
+    if (!grid || !selected) return;
+    const row = selected.row;
+    setConflicts(null);
+    setPending((p) => {
+      if (row >= grid.rows.length) {
+        return { ...p, inserts: p.inserts.filter((_, i) => i !== row - grid.rows.length) };
+      }
+      const edits = { ...p.edits };
+      if (edits[row]?.kind === "delete") delete edits[row];
+      else edits[row] = { kind: "delete" };
+      return { ...p, edits };
+    });
+  }
+
+  async function applyChanges(rows = grid?.rows) {
+    if (!grid || !rows || !editSession || applying) return;
+    const { changes, rowsOf } = buildChanges(rows, editSession.names, pending);
+    if (!changes.length) return;
+    setApplying(true);
+    try {
+      const result = await api.sqlApply(sessionId, editSession.target, changes);
+      if (result.kind === "Conflicts") {
+        setGrid({ ...grid, rows });
+        setConflicts({ list: result.conflicts, rowsOf });
+        return;
+      }
+      setGrid({ ...grid, rows: appliedRows(rows, pending, result.inserted) });
+      setPending(emptyPending());
+      setConflicts(null);
+      setSelected(null);
+      onTransaction(result.transaction);
+      const parts = [
+        result.updated && plural(result.updated, "fila actualizada", "filas actualizadas"),
+        result.deleted && plural(result.deleted, "fila borrada", "filas borradas"),
+        result.inserted.length && plural(result.inserted.length, "fila insertada", "filas insertadas"),
+      ].filter(Boolean);
+      log("info", `Cambios aplicados: ${parts.join(", ")}`);
+    } catch (error) {
+      const detail = describeError(error);
+      log("error", detail.code && !detail.message.startsWith(detail.code) ? `${detail.code} ${detail.message}` : detail.message);
+      setAlert("No se aplicó ningún cambio");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function retryConflicts() {
+    if (!grid || !conflicts || !editSession) return;
+    const rows = grid.rows.map((row) => [...row]);
+    for (const conflict of conflicts.list) {
+      const row = conflicts.rowsOf[conflict.index];
+      if (!conflict.current || row >= rows.length) continue;
+      editSession.names.forEach((name, col) => {
+        if (name && name in conflict.current!) rows[row][col + 1] = conflict.current![name];
+      });
+    }
+    setConflicts(null);
+    void applyChanges(rows);
+  }
+
+  function discardConflicts() {
+    if (!conflicts) return;
+    const rows = new Set(conflicts.list.map((c) => conflicts.rowsOf[c.index]));
+    setPending((p) => ({ ...p, edits: Object.fromEntries(Object.entries(p.edits).filter(([row]) => !rows.has(Number(row)))) }));
+    setConflicts(null);
+  }
+
   async function save() {
     const text = view.current?.state.doc.toString() ?? source;
     try {
@@ -229,6 +396,8 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
     cancel: running ? () => void api.sqlCancel(sessionId) : undefined,
+    editData: grid ? () => void toggleEdit() : undefined,
+    applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
     commit: () => void transaction("commit"),
     rollback: () => void transaction("rollback"),
     save: () => void save(),
@@ -253,11 +422,36 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
     view.current = editor;
     if (editor && runOnOpen && !started.current) {
       started.current = true;
-      queueMicrotask(() => void run(splitScript(editor.state.doc.toString())));
+      queueMicrotask(async () => {
+        await run(splitScript(editor.state.doc.toString()));
+        if (editOnOpen) await toggleEdit();
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const offset = grid?.hiddenRowid ? 1 : 0;
+  const visibleColumns: SqlColumn[] = grid ? grid.columns.slice(offset) : [];
+  const displayRows: Cell[][] = grid ? [
+    ...grid.rows.map((row, index) => {
+      const cells = row.slice(offset);
+      const edit = pending.edits[index];
+      return edit?.kind === "update" ? cells.map((cell, c) => (c in edit.values ? edit.values[c] : cell)) : cells;
+    }),
+    ...pending.inserts,
+  ] : [];
+  const conflictRows = new Set(conflicts?.list.map((c) => conflicts.rowsOf[c.index]) ?? []);
+  const status: (RowStatus | null)[] = displayRows.map((_, row) => {
+    if (conflictRows.has(row)) return "conflict";
+    if (grid && row >= grid.rows.length) return "insert";
+    const edit = pending.edits[row];
+    return edit ? (edit.kind === "delete" ? "delete" : "update") : null;
+  });
+  const isModified = (row: number, col: number) => {
+    const edit = pending.edits[row];
+    return edit?.kind === "update" && col in edit.values;
+  };
+  const count = pendingCount(pending);
   const rowCount = grid?.rows.length ?? 0;
   const footer = running ? null
     : grid && tab === "results"
@@ -368,6 +562,30 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
           {tab === "results" && grid?.more && (
             <button className="btn" disabled={fetching} onClick={() => void fetchMore(true)}>Traer todas</button>
           )}
+          {tab === "results" && grid && (
+            <button className="btn" aria-pressed={!!editSession} onClick={actions.editData} disabled={running}>
+              {editSession ? <LockOpen size={14} aria-hidden /> : <Lock size={14} aria-hidden />}
+              {editSession ? "Editando" : "Editar"} <span className="kbd">{key("editData")}</span>
+            </button>
+          )}
+          {tab === "results" && editSession && (
+            <>
+              <button className="ib" aria-label="Agregar fila" title="Agregar fila" onClick={addRow}>
+                <Plus size={15} aria-hidden />
+              </button>
+              <button className="ib" aria-label="Borrar fila" title="Borrar fila (o recuperarla)" onClick={deleteRow} disabled={!selected}>
+                <Minus size={15} aria-hidden />
+              </button>
+              {count > 0 && <span className="program-muted">{plural(count, "pendiente", "pendientes")}</span>}
+              <button className="btn" disabled={!count || applying} onClick={() => {
+                setPending(emptyPending());
+                setConflicts(null);
+              }}>Descartar</button>
+              <button className="btn primary" disabled={!count || applying} onClick={actions.applyChanges}>
+                Aplicar cambios <span className="kbd">{key("applyChanges")}</span>
+              </button>
+            </>
+          )}
           {tab === "output" && output.length > 0 && (
             <button className="ib" aria-label="Limpiar salida" title="Limpiar salida" onClick={() => setOutput([])}>
               <Trash size={15} aria-hidden />
@@ -377,7 +595,41 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
         <div role="tabpanel" id="sql-panel-results" aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
           {running && !grid ? null
             : !grid ? <p className="sql-empty">Sin resultados. Ejecuta con F8.</p>
-              : <ResultGrid grid={grid} onNearEnd={() => void fetchMore()} />}
+              : (
+                <>
+                  {editSession && environment === "prod" && (
+                    <div role="note" className="sql-prod"><Warning size={14} aria-hidden /> Editando datos de producción</div>
+                  )}
+                  {conflicts && (
+                    <section role="region" aria-label="Conflictos" className="sql-conflicts">
+                      {conflicts.list.map((conflict) => {
+                        const row = conflicts.rowsOf[conflict.index];
+                        const diffs = conflict.current && editSession
+                          ? editSession.names.flatMap((name, col) => {
+                            if (!name || !(name in conflict.current!)) return [];
+                            const original = grid.rows[row]?.[col + 1] ?? null;
+                            const now = conflict.current![name];
+                            return now === original ? [] : [`${name}: «${now ?? "NULL"}» (leído «${original ?? "NULL"}»)`];
+                          })
+                          : [];
+                        return (
+                          <p key={conflict.index}>
+                            Fila {row + 1}: {REASONS[conflict.reason]}{diffs.length ? `. ${diffs.join("; ")}` : ""}
+                          </p>
+                        );
+                      })}
+                      <div>
+                        <button className="btn primary" onClick={retryConflicts} disabled={applying}>Reintentar con valores actuales</button>
+                        <button className="btn" onClick={discardConflicts} disabled={applying}>Descartar cambios en conflicto</button>
+                      </div>
+                    </section>
+                  )}
+                  <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
+                    isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
+                    selected={selected} onSelect={setSelected} onEdit={editCell}
+                    more={grid.more} onNearEnd={() => void fetchMore()} />
+                </>
+              )}
         </div>
         <div role="tabpanel" id="sql-panel-output" aria-label="Salida" hidden={tab !== "output"} className="sql-panel sql-output">
           {output.length === 0 ? <p className="sql-empty">Sin salida. DBMS_OUTPUT y los mensajes aparecen aquí.</p>
@@ -402,56 +654,5 @@ export function SqlWindow({ sessionId, initialSql = "", runOnOpen, onTransaction
         {footer && <div className="sql-footer">{footer}</div>}
       </div>
     </section>
-  );
-}
-
-function ResultGrid({ grid, onNearEnd }: { grid: Grid; onNearEnd: () => void }) {
-  const scroll = useRef<HTMLDivElement>(null);
-  const widths = useMemo(() => grid.columns.map((c, i) => columnWidth(c, grid.rows, i)),
-    // Los anchos se calculan con la primera página para que no salten al traer más.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [grid.columns, grid.cursor]);
-  const template = `56px ${widths.map((w) => `${w}px`).join(" ")}`;
-  const virtualized = grid.rows.length > VIRTUALIZE_ABOVE;
-  const virtual = useVirtualizer({
-    count: virtualized ? grid.rows.length : 0,
-    getScrollElement: () => scroll.current,
-    estimateSize: () => ROW,
-    overscan: 20,
-    initialRect: { width: 800, height: 400 },
-  });
-  const items = virtualized
-    ? virtual.getVirtualItems()
-    : grid.rows.map((_, index) => ({ index, start: index * ROW }));
-
-  if (!grid.rows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
-  return (
-    <div className="sql-grid-scroll" ref={scroll} tabIndex={0} onScroll={(event) => {
-      const box = event.currentTarget;
-      if (grid.more && box.scrollTop + box.clientHeight >= box.scrollHeight - ROW * 20) onNearEnd();
-    }}>
-      <div role="grid" aria-label="Resultados" aria-rowcount={grid.rows.length + 1} className="sql-grid"
-        style={{ width: 56 + widths.reduce((a, b) => a + b, 0) }}>
-        <div role="row" className="sql-row sql-head" style={{ gridTemplateColumns: template }}>
-          <div role="columnheader" aria-label="Fila" className="sql-cell sql-rownum" />
-          {grid.columns.map((c) => (
-            <div key={c.name} role="columnheader" className={`sql-cell${c.numeric ? " num" : ""}`} title={c.type_name}>{c.name}</div>
-          ))}
-        </div>
-        <div style={{ height: grid.rows.length * ROW, position: "relative" }}>
-          {items.map((item) => (
-            <div key={item.index} role="row" aria-rowindex={item.index + 2} className="sql-row"
-              style={{ gridTemplateColumns: template, transform: `translateY(${item.start}px)` }}>
-              <div role="rowheader" className="sql-cell sql-rownum">{item.index + 1}</div>
-              {grid.rows[item.index].map((value, i) => (
-                <div key={i} role="gridcell" className={`sql-cell${grid.columns[i]?.numeric ? " num" : ""}`}>
-                  {value === null ? <span className="sql-null">NULL</span> : value}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }

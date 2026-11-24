@@ -7,6 +7,9 @@ import type {
   BindValue,
   ExecOutcome,
   QueryPage,
+  EditTarget,
+  RowChange,
+  ApplyResult,
   ConnectParams,
   ConnectResult,
   ConnectionProfile,
@@ -53,6 +56,10 @@ export const api = {
   sqlCancel: (sessionId: string) => invoke<boolean>("sql_cancel", { sessionId }),
   sqlCommit: (sessionId: string) => invoke<boolean>("sql_commit", { sessionId }),
   sqlRollback: (sessionId: string) => invoke<boolean>("sql_rollback", { sessionId }),
+  sqlEditTarget: (sessionId: string, owner: string | null, name: string) =>
+    invoke<EditTarget | null>("sql_edit_target", { sessionId, owner, name }),
+  sqlApply: (sessionId: string, target: EditTarget, changes: RowChange[]) =>
+    invoke<ApplyResult>("sql_apply", { sessionId, target, changes }),
   openProgramFile: () => invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),

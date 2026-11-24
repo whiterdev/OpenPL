@@ -59,6 +59,34 @@ export type ExecResult =
   | { kind: "Query"; cursor: number; columns: SqlColumn[]; page: QueryPage }
   | { kind: "Done"; message: string };
 
+export interface EditColumn {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  editable: boolean;
+}
+
+export interface EditTarget {
+  owner: string;
+  name: string;
+  columns: EditColumn[];
+}
+
+export type RowChange =
+  | { kind: "Update"; rowid: string; original: Record<string, string | null>; values: Record<string, string | null> }
+  | { kind: "Delete"; rowid: string; original: Record<string, string | null> }
+  | { kind: "Insert"; values: Record<string, string | null> };
+
+export interface Conflict {
+  index: number;
+  reason: "Locked" | "Changed" | "Missing";
+  current: Record<string, string | null> | null;
+}
+
+export type ApplyResult =
+  | { kind: "Applied"; updated: number; deleted: number; inserted: string[]; transaction: boolean }
+  | { kind: "Conflicts"; conflicts: Conflict[] };
+
 export interface ExecOutcome {
   result: ExecResult;
   elapsed_ms: number;

@@ -117,9 +117,10 @@ interface Props {
   refreshKey: number;
   onNotice?: (message: string) => void;
   onQueryData?: (o: ObjectInfo) => void;
+  onEditData?: (o: ObjectInfo) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -155,7 +156,10 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       items.push("sep", onQueryData
         ? { label: "Consultar datos", run: () => onQueryData(o) }
         : { label: "Consultar datos", pending: true });
-      if (t !== "MaterializedView") items.push({ label: "Editar datos", keys: commands.editData.keys, pending: true });
+      // v1 edita filas de tablas; vistas y vistas materializadas se consultan.
+      if (t === "Table") items.push(onEditData
+        ? { label: "Editar datos", keys: commands.editData.keys, run: () => onEditData(o) }
+        : { label: "Editar datos", keys: commands.editData.keys, pending: true });
       if (t === "Table") items.push({ label: "Exportar datos", pending: true });
     }
     items.push("sep", { label: "Describir", pending: true }, { label: "Propiedades", pending: true });

@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (plan 3, incremento 1). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (plan 3 implementado). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -9,8 +9,8 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 81 pruebas de Rust sin base y 152 de interfaz,
-  más el chequeo de TypeScript. Las siete pruebas Rust `live` se omitieron sin credenciales.
+- Verificación local en Windows: `cargo fmt`, Clippy, 86 pruebas de Rust sin base y 170 de interfaz,
+  más el chequeo de TypeScript. Las ocho pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
@@ -122,8 +122,19 @@
   diálogo al cerrar con transacción abierta; **Consultar datos** desde el explorador.
 - **Sin verificar contra Oracle real:** la prueba `live` nueva (paginación, `DBMS_OUTPUT`, posición de
   error) espera credenciales `OPENPL_TEST_*`. Falta mirar la ventana en la app nativa.
-- **Siguiente:** incremento 2, edición en grilla (candado Ctrl E, filas nuevas y borradas, Aplicar con
-  `FOR UPDATE NOWAIT` y conflictos).
+
+### Plan 3 — Ventana SQL, incremento 2 (edición en grilla)
+
+- **Editar** (Ctrl E) reejecuta la consulta con el ROWID oculto (`app/src/sqlEdit.ts`); solo consultas
+  sobre una tabla. Celdas editables con teclado, filas nuevas y borradas, Descartar, **Aplicar cambios**
+  (Ctrl Shift Enter). Explorador: **Editar datos** en tablas.
+- `crates/openpl-core/src/grid.rs` aplica todo o nada: savepoint, `SELECT ... FOR UPDATE NOWAIT` y
+  comparación de cada fila tocada; con un conflicto (bloqueada, cambiada o inexistente) vuelve al
+  savepoint y la interfaz ofrece reintentar con los valores actuales o descartar esos cambios.
+- **Sin verificar contra Oracle real** (nada de esto se probó escribiendo en una base; las pruebas
+  `live` son de solo lectura). Validar en desarrollo: tipos DATE y TIMESTAMP al comparar y al guardar,
+  números con decimales, CLOB, `RETURNING ROWID` en inserciones y el aviso de producción.
+- **Siguiente:** validar el plan 3 contra una base de desarrollo; después el plan 4 (ventana de prueba).
 
 ### Auditoría antislop 001
 
@@ -219,7 +230,7 @@ producto; estas decisiones son posteriores y mandan sobre él:
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
 ### Plan 3 — Ventana SQL (en curso)
-- Incremento 1 hecho. Sigue el incremento 2 (edición en grilla) del [plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md).
+- Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la validación contra Oracle real.
 
 ### Plan 2 — Ventana de programa (implementado)
 - Tareas de implementación terminadas. Falta la validación manual contra Oracle del [plan](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).

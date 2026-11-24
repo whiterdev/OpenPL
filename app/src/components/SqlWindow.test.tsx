@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { createRef } from "react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { ROWID_COLUMN } from "../sqlEdit";
 import { SqlWindow } from "./SqlWindow";
 import type { ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
@@ -135,4 +136,128 @@ test("las pestañas de resultado se recorren con flechas", () => {
   fireEvent.keyDown(results, { key: "ArrowRight" });
   expect(screen.getByRole("tab", { name: "Salida" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tab", { name: "Salida" })).toHaveFocus();
+});
+
+describe("edición en grilla", () => {
+  const target = {
+    owner: "HR", name: "CLIENTES",
+    columns: [
+      { name: "ID", data_type: "NUMBER", nullable: false, editable: true },
+      { name: "NOMBRE", data_type: "VARCHAR2", nullable: true, editable: true },
+    ],
+  };
+  const editable = (rows: (string | null)[][]): ExecOutcome => ({
+    result: {
+      kind: "Query", cursor: 2,
+      columns: [
+        { name: ROWID_COLUMN, type_name: "ROWID", numeric: false },
+        { name: "ID", type_name: "NUMBER", numeric: true },
+        { name: "NOMBRE", type_name: "VARCHAR2(40)", numeric: false },
+      ],
+      page: { rows, more: false },
+    },
+    elapsed_ms: 5, output: [], transaction: false,
+  });
+
+  async function startEditing(props: Partial<Parameters<typeof SqlWindow>[0]> = {}) {
+    const exec = vi.spyOn(api, "sqlExecute")
+      .mockResolvedValueOnce(query([["1", "Ana"], ["2", "Beto"]]))
+      .mockResolvedValueOnce(editable([["AAA1", "1", "Ana"], ["AAA2", "2", "Beto"]]));
+    const lookup = vi.spyOn(api, "sqlEditTarget").mockResolvedValue(target);
+    const result = setup("select id, nombre from clientes", props);
+    await act(async () => result.ref.current!.execute!());
+    await act(async () => result.ref.current!.editData!());
+    return { ...result, exec, lookup };
+  }
+
+  function editCell(row: number, column: string, value: string) {
+    const grid = screen.getByRole("grid", { name: "Resultados" });
+    const cell = within(grid).getAllByRole("gridcell", { name: new RegExp(`^${column} `) })[row];
+    fireEvent.doubleClick(cell);
+    const input = within(grid).getByRole("textbox", { name: `Editar ${column}` });
+    fireEvent.change(input, { target: { value } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  test("Ctrl E agrega el ROWID oculto y Aplicar envía solo lo cambiado", async () => {
+    const { exec, lookup, ref, onTransaction } = await startEditing();
+    expect(lookup).toHaveBeenCalledWith("w1", null, "CLIENTES");
+    expect(exec).toHaveBeenLastCalledWith("w1", `select clientes.ROWID AS "${ROWID_COLUMN}", id, nombre from clientes`, []);
+    expect(screen.queryByRole("columnheader", { name: ROWID_COLUMN })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Editando/ })).toHaveAttribute("aria-pressed", "true");
+
+    editCell(1, "NOMBRE", "Beatriz");
+    expect(screen.getByText("1 pendiente")).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "2, modificada" })).toBeInTheDocument();
+    const apply = vi.spyOn(api, "sqlApply").mockResolvedValue({
+      kind: "Applied", updated: 1, deleted: 0, inserted: [], transaction: true,
+    });
+    await act(async () => ref.current!.applyChanges!());
+    expect(apply).toHaveBeenCalledWith("w1", target, [{
+      kind: "Update", rowid: "AAA2",
+      original: { ID: "2", NOMBRE: "Beto" }, values: { ID: "2", NOMBRE: "Beatriz" },
+    }]);
+    expect(screen.queryByText("1 pendiente")).not.toBeInTheDocument();
+    expect(screen.getByText("Beatriz")).toBeInTheDocument();
+    expect(onTransaction).toHaveBeenLastCalledWith(true);
+  });
+
+  test("agrega y borra filas, y Descartar vuelve al estado leído", async () => {
+    const { ref } = await startEditing();
+    const grid = within(screen.getByRole("grid", { name: "Resultados" }));
+    fireEvent.click(grid.getAllByRole("gridcell", { name: /^ID / })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Borrar fila" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar fila" }));
+    editCell(2, "ID", "3");
+    expect(screen.getByText("2 pendientes")).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "1, borrada" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "3, nueva" })).toBeInTheDocument();
+    const apply = vi.spyOn(api, "sqlApply").mockResolvedValue({
+      kind: "Applied", updated: 0, deleted: 1, inserted: ["AAA3"], transaction: true,
+    });
+    await act(async () => ref.current!.applyChanges!());
+    expect(apply.mock.calls[0][2]).toEqual([
+      { kind: "Delete", rowid: "AAA1", original: { ID: "1", NOMBRE: "Ana" } },
+      { kind: "Insert", values: { ID: "3", NOMBRE: null } },
+    ]);
+    expect(screen.queryByText("Ana")).not.toBeInTheDocument();
+
+    editCell(0, "NOMBRE", "Otro");
+    fireEvent.click(screen.getByRole("button", { name: "Descartar" }));
+    expect(screen.queryByText("1 pendiente")).not.toBeInTheDocument();
+    expect(screen.getByText("Beto")).toBeInTheDocument();
+  });
+
+  test("un conflicto no aplica nada y permite reintentar con los valores actuales", async () => {
+    const { ref } = await startEditing();
+    editCell(0, "NOMBRE", "Anabel");
+    const apply = vi.spyOn(api, "sqlApply")
+      .mockResolvedValueOnce({ kind: "Conflicts", conflicts: [{ index: 0, reason: "Changed", current: { ID: "1", NOMBRE: "Ana María" } }] })
+      .mockResolvedValueOnce({ kind: "Applied", updated: 1, deleted: 0, inserted: [], transaction: true });
+    await act(async () => ref.current!.applyChanges!());
+    const conflicts = within(screen.getByRole("region", { name: "Conflictos" }));
+    expect(conflicts.getByText(/Fila 1: cambió en Oracle/)).toBeInTheDocument();
+    expect(conflicts.getByText(/NOMBRE: «Ana María»/)).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "1, en conflicto" })).toBeInTheDocument();
+    await act(async () => fireEvent.click(conflicts.getByRole("button", { name: "Reintentar con valores actuales" })));
+    expect(apply).toHaveBeenLastCalledWith("w1", target, [{
+      kind: "Update", rowid: "AAA1", original: { ID: "1", NOMBRE: "Ana María" }, values: { ID: "1", NOMBRE: "Anabel" },
+    }]);
+    expect(screen.queryByRole("region", { name: "Conflictos" })).not.toBeInTheDocument();
+  });
+
+  test("una consulta con join no se puede editar", async () => {
+    vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"]]));
+    const lookup = vi.spyOn(api, "sqlEditTarget");
+    const { ref } = setup("select a.id, b.nombre from a join b on a.id = b.id");
+    await act(async () => ref.current!.execute!());
+    await act(async () => ref.current!.editData!());
+    expect(lookup).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Solo se edita una consulta sobre una tabla");
+  });
+
+  test("en producción la edición lo avisa", async () => {
+    await startEditing({ environment: "prod" });
+    expect(screen.getByRole("note")).toHaveTextContent("Editando datos de producción");
+  });
 });

@@ -54,7 +54,7 @@ export interface Command {
 
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
-  // TODO(plan 3, incremento 2): edición en grilla. TODO(plan 4): ventana de prueba. TODO: plan, paleta, comando.
+  // TODO(plan 4): ventana de prueba. TODO(fases posteriores): plan de ejecución, paleta, ventana de comando.
   { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
   { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
   { id: "commit", label: "Commit", keys: "F10" },
@@ -89,8 +89,8 @@ const list: Command[] = [
   { id: "deleteLine", label: "Borrar línea", keys: "Ctrl+Shift+K" },
   { id: "upperCase", label: "Mayúsculas", keys: "Ctrl+Shift+U" },
   { id: "lowerCase", label: "Minúsculas", keys: "Ctrl+Alt+U" },
-  { id: "editData", label: "Editar datos", keys: "Ctrl+E", pending: true },
-  { id: "applyChanges", label: "Aplicar cambios", keys: "Ctrl+Shift+Enter", pending: true },
+  { id: "editData", label: "Editar datos", keys: "Ctrl+E" },
+  { id: "applyChanges", label: "Aplicar cambios", keys: "Ctrl+Shift+Enter" },
   { id: "connect", label: "Conectar", keys: "Ctrl+Shift+L" },
   { id: "disconnect", label: "Desconectar" },
   { id: "reconnect", label: "Reconectar" },

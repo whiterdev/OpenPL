@@ -39,7 +39,7 @@ const SqlWindow = lazy(() => import("./components/SqlWindow")
   .then((module) => ({ default: module.SqlWindow })));
 
 const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
-const sqlTabActions = ["execute", "executeScript", "cancel", "commit", "rollback", "save", "complete", "foldBlock",
+const sqlTabActions = ["execute", "executeScript", "cancel", "commit", "rollback", "editData", "applyChanges", "save", "complete", "foldBlock",
   "unfoldBlock", "goToLine", "find", "replace", "comment", "duplicateLine", "deleteLine", "undo", "redo", "indent",
   "outdent"] as const;
 
@@ -55,7 +55,7 @@ interface ProgramTab {
   fileName?: string;
   load?: symbol;
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
-  sql?: { sessionId: string; initial: string; run: boolean; transaction: boolean };
+  sql?: { sessionId: string; initial: string; run: boolean; edit?: boolean; transaction: boolean };
 }
 
 const supportsProgram = new Set(["Package", "Type", "Procedure", "Function", "Trigger"]);
@@ -230,13 +230,13 @@ export default function App() {
     }
   }
 
-  async function openSql(connection: ActiveConnection, initial = "", run = false) {
+  async function openSql(connection: ActiveConnection, initial = "", run = false, edit = false) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
       sqlCount.current += 1;
       addProgram({
         id: crypto.randomUUID(), label: `SQL ${sqlCount.current}`, connection, readOnly: false, dirty: false,
-        sql: { sessionId, initial, run, transaction: false },
+        sql: { sessionId, initial, run, edit, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -244,9 +244,9 @@ export default function App() {
     }
   }
 
-  function queryData(object: ObjectInfo) {
+  function queryData(object: ObjectInfo, edit = false) {
     if (!active) return;
-    void openSql(active, `SELECT * FROM ${quoteName(object.owner)}.${quoteName(object.name)}`, true);
+    void openSql(active, `SELECT * FROM ${quoteName(object.owner)}.${quoteName(object.name)}`, true, edit);
   }
 
   function removeTab(tab: ProgramTab) {
@@ -468,7 +468,8 @@ export default function App() {
             onOpenObject={(object, mode) => void onOpenObject(object, mode)}
             onConnectionLost={onConnectionLost}
             onNotice={showNotice}
-            onQueryData={queryData}
+            onQueryData={(object) => queryData(object)}
+            onEditData={(object) => queryData(object, true)}
           />
         )}
         <main className="workspace">
@@ -505,6 +506,7 @@ export default function App() {
                   {tab.sql ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <SqlWindow sessionId={tab.sql.sessionId} initialSql={tab.sql.initial} runOnOpen={tab.sql.run}
+                        editOnOpen={tab.sql.edit} environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={(dirty) => updateProgram(tab.id, { dirty })}
                         onTransaction={(open) => setPrograms((all) => all.map((item) => item.id === tab.id && item.sql
