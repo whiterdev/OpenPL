@@ -3,6 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { expect, test, vi } from "vitest";
 import { ProgramWindow } from "./ProgramWindow";
 import { api } from "../api";
+import type { ProgramPart } from "../types";
 import "./ProgramWindow.css";
 
 const parts = [
@@ -52,6 +53,47 @@ test("un error de lectura conserva el editor abierto", async () => {
   fireEvent.click(screen.getByRole("button", { name: /Comparar con Oracle/ }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Sesión desconectada");
   fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
+  expect(screen.getByRole("textbox", { name: "Spec" })).toHaveTextContent("PACKAGE PKG_A");
+});
+
+test("preparar la compilación exige confirmar la exportación si Oracle cambió", async () => {
+  const original = { ...parts[0], source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND;", last_ddl_time: "2026-01-01T12:00:00" };
+  const reader = vi.fn().mockResolvedValue([{ ...original, source: original.source + " -- remoto" }]);
+  const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("compilar-programa.sql");
+  try {
+    render(<ProgramWindow parts={[original]} readOnly={false} onDirty={vi.fn()}
+      readCurrentProgram={reader} compilationTarget={{ owner: "HR", name: "PKG_A" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Preparar compilación/ }));
+    expect(await screen.findByText("Cambio en Oracle")).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar pese al cambio" }));
+    expect(save).toHaveBeenCalledWith(expect.stringContaining('CREATE OR REPLACE PACKAGE "HR"."PKG_A"'), "sql", "compilar-programa.sql");
+    expect(await screen.findByText("Script guardado")).toBeInTheDocument();
+  } finally {
+    save.mockRestore();
+  }
+});
+
+test("F8 no ofrece exportar si la marca de DDL no es visible", async () => {
+  const original = { ...parts[0], source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND;" };
+  render(<ProgramWindow parts={[original]} readOnly={false} onDirty={vi.fn()}
+    readCurrentProgram={vi.fn().mockResolvedValue([original])} compilationTarget={{ owner: "HR", name: "PKG_A" }} />);
+  fireEvent.click(screen.getByRole("button", { name: /Preparar compilación/ }));
+  expect(await screen.findByText("Marca de DDL no disponible")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Guardar script" })).not.toBeInTheDocument();
+});
+
+test("cerrar la comprobación ignora una respuesta pendiente", async () => {
+  const original = { ...parts[0], source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND;", last_ddl_time: "2026-01-01T12:00:00" };
+  let respond!: (parts: ProgramPart[]) => void;
+  const pending = new Promise<ProgramPart[]>((resolve) => { respond = resolve; });
+  render(<ProgramWindow parts={[original]} readOnly={false} onDirty={vi.fn()}
+    readCurrentProgram={() => pending} compilationTarget={{ owner: "HR", name: "PKG_A" }} />);
+  fireEvent.click(screen.getByRole("button", { name: /Preparar compilación/ }));
+  expect(screen.getByText("Leyendo Oracle…")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
+  await act(async () => respond([original]));
+  expect(screen.queryByRole("button", { name: "Guardar script" })).not.toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Spec" })).toHaveTextContent("PACKAGE PKG_A");
 });
 

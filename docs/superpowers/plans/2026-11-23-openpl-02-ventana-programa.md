@@ -26,7 +26,7 @@
 - [x] **Lectura.** `crates/openpl-core/src/program.rs` define `load_program(&DbConn, ObjectType, &str, &str) -> Result<Vec<ProgramPart>, DbError>`. Cada parte incluye tipo, texto y diagnósticos. IPC `program_source(sessionId, objectType, owner, name)` en `commands.rs`, registro en `lib.rs` y contrato en `api.ts`/`types.ts`. Pruebas de tipos y conservación de líneas en `crates/openpl-core/tests/program.rs`.
 - [x] **Ventana.** `App.tsx` mantiene identidad y selección de documentos. `ObjectBrowser.tsx` envía el objeto y modo de apertura. `ProgramWindow.tsx` edita Spec/Body, navega estructura y problemas y alterna vista lateral. Las pruebas de los componentes cubren apertura, borradores, modo de solo lectura y navegación.
 - [x] **Archivos.** Los comandos `open_program_file()` y `save_program_file(source, extension, name)` abren un selector nativo. El guardado usa reemplazo en el directorio de destino. `App.test.tsx` cubre cancelación, guardado y cierre con cambios.
-- [ ] **Compilación.** Diseñar el control `LAST_DDL_TIME` por parte, el flujo de conflicto y la actualización de diagnósticos antes de exponer F8. Verificar con dobles de prueba.
+- [x] **Preparación de compilación.** F8 verifica la versión y abre la comparación antes de ofrecer el guardado de un script manual. El detalle y las pruebas están en la sección de preparación.
 - [ ] **Editor.** Ampliar la estructura para variables globales y sobrecargas, validar plegado de bloques y añadir autocompletado con el catálogo por conexión.
 
 ### Menú de objeto en el editor
@@ -40,7 +40,13 @@
 
 - [x] **Versión por parte.** `load_program` carga el texto y `LAST_DDL_TIME` en la misma consulta por tipo. `ProgramPart.last_ddl_time` viaja como cadena o `null`. Una consulta sin fuentes devuelve una lista vacía. La apertura inicial sigue mostrando «Fuente no disponible» en ese caso.
 - [x] **Comparación.** `ProgramWindow` consulta de nuevo en la sesión de origen y compara la parte solicitada con la versión abierta y el borrador local. `ProgramComparison.tsx` muestra diferencias con CodeMirror MergeView en modo de solo lectura. Las pruebas cubren cambios en el mismo segundo, cambios de metadatos, errores de lectura, ausencia de Body y conservación de cambios locales.
-- [ ] **Compilación.** Reutilizar la comparación para detectar conflictos antes de F8. El prechequeo de lectura no impide que dos sesiones actúen entre la verificación y la escritura. Verificar la operación con dobles y mantener las pruebas contra Oracle en solo lectura.
+- [x] **Control de cambios.** F8 reutiliza la comparación para detectar conflictos antes de ofrecer un script manual. El prechequeo de lectura refleja el momento de la consulta.
+
+### Preparación de compilación con F8
+
+- [x] **Script local.** `prepareProgramScript(source, kind, target)` valida tipo, nombre y esquema del encabezado contra el objeto abierto. Escribe un nombre calificado y un terminador para SQL*Plus. Las pruebas cubren nombres entre comillas, encabezados de otro objeto y separadores ambiguos.
+- [x] **Verificación previa.** F8 consulta la fuente actual con la sesión original, reutiliza la comparación y habilita **Guardar script** si se pudo verificar la versión. Si hay cambios, muestra las diferencias y requiere elegir **Guardar pese al cambio**. Una fuente o marca de DDL no visible impide exportar desde F8.
+- [x] **Guardado.** `save_program_file` escribe el script para revisión y ejecución manual. El guardado conserva el borrador. Las pruebas cubren el descarte de lecturas pendientes al cerrar y el atajo F8 después de cambiar la conexión activa.
 
 ## Verificación
 

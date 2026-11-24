@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 80 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 88 de interfaz,
   más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -57,10 +57,21 @@
   La comparación revisa ambos. Así detecta cambios de texto con la misma marca de tiempo y cambios
   de metadatos con texto idéntico. Una fuente ausente o inaccesible se informa por separado.
   [Referencia de ALL_OBJECTS en Oracle 12.1](https://docs.oracle.com/database/121/REFRN/GUID-AA6DEF8B-F04F-482A-8440-DBCB18F6C976.htm)
-- **Punto de continuación:** usar el mismo criterio para el prechequeo de F8, diseñar las opciones
-  cuando haya un conflicto y actualizar los diagnósticos después de compilar. La comparación actual
-  es de solo lectura. La consulta compuesta y la interfaz nativa quedan por verificar contra Oracle.
+- El cruce entre fuente y marca de DDL se verificó con una consulta agregada de solo lectura en
+  desarrollo. De 1.096 filas con la primera línea de fuente, 1.094 tenían la marca visible. Queda
+  pendiente la prueba de la comparación completa desde la aplicación nativa.
+
+### Plan 2 — Preparación de compilación
+
+- **Preparar compilación** (F8) funciona en modo **Editar** sobre una fuente abierta desde Oracle.
+  Valida el encabezado, consulta la versión con la sesión original y muestra una comparación. Si
+  detecta cambios, ofrece **Guardar pese al cambio** como acción explícita. Si falta la fuente o
+  su marca de DDL, el panel conserva el borrador y carece de opción de exportación.
+- `app/src/programScript.ts` arma el archivo SQL local con el nombre calificado a partir del
+  borrador. El script se revisa y ejecuta manualmente. Ejecutar F8 en la app solo hace lecturas.
   [Nota de comportamiento](behavior/programa.md)
+- **Punto de continuación:** ampliar el panel Estructura para variables y sobrecargas. La ejecución
+  de DDL y la actualización automática de diagnósticos tras compilar siguen fuera de este flujo.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 

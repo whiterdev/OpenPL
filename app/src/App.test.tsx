@@ -71,10 +71,11 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
     owner: "HR", name: "PKG_A", object_type: "Package", status: "Valid", last_ddl_time: "2026-01-01T12:00:00",
   }]);
   const spec = {
-    kind: "PACKAGE", source: "PACKAGE PKG_A AS\nEND;", last_ddl_time: "2026-01-01T12:00:00", diagnostics: [],
+    kind: "PACKAGE", source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND;", last_ddl_time: "2026-01-01T12:00:00", diagnostics: [],
   };
   vi.mocked(api.programSource).mockResolvedValueOnce([spec])
-    .mockResolvedValueOnce([{ ...spec, source: "PACKAGE PKG_A AS\nEND; -- remoto" }]);
+    .mockResolvedValueOnce([{ ...spec, source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND; -- remoto" }])
+    .mockResolvedValueOnce([spec]);
   render(<App />);
 
   async function login(service: string) {
@@ -91,13 +92,17 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
   await login("DEV");
   fireEvent.click(await screen.findByRole("treeitem", { name: "Paquetes" }));
   const object = await screen.findByRole("treeitem", { name: "PKG_A" });
-  fireEvent.doubleClick(object);
+  fireEvent.contextMenu(object);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Editar Spec y Body" }));
   await screen.findByRole("textbox", { name: "Spec" });
   fireEvent.keyDown(window, { key: "l", ctrlKey: true, shiftKey: true });
   await login("QA");
   fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });
 
   expect(await screen.findByText("Cambio en Oracle")).toBeInTheDocument();
-  expect(api.programSource).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
+  fireEvent.keyDown(window, { key: "F8" });
+  expect(await screen.findByRole("button", { name: "Guardar script" })).toBeInTheDocument();
+  expect(api.programSource).toHaveBeenCalledTimes(3);
   expect(api.programSource).toHaveBeenLastCalledWith("s1", "Package", "HR", "PKG_A");
 });

@@ -71,12 +71,13 @@ export default function App() {
     ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
     : active;
   const currentProgramActions = Object.fromEntries(
-    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "compareProgram", "goToLine", "find", "replace",
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "compareProgram", "execute", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
       .filter((id) => {
         if (!program?.parts) return false;
         if (id === "objectActions") return !!editorConnection;
         if (id === "compareProgram") return !!program.object && !!editorConnection;
+        if (id === "execute") return !program.readOnly && !!program.object && !!editorConnection;
         if (id === "spec" || id === "body" || id === "sideBySide") return program.parts.length === 2;
         return !program.readOnly || ["save", "goToDeclaration", "goToLine", "find"].includes(id);
       })
@@ -270,7 +271,7 @@ export default function App() {
         run("disconnect"),
         run("reconnect"),
         "sep",
-        run("execute"),
+        program?.object ? { ...run("execute"), label: "Preparar compilación" } : run("execute"),
         run("executeScript"),
         run("cancel"),
         "sep",
@@ -376,6 +377,7 @@ export default function App() {
                         readCurrentProgram={tab.id === programId && editorConnection && programObject
                           ? () => fetchProgram(editorConnection.sessionId, programObject)
                           : undefined}
+                        compilationTarget={tab.object}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={(dirty) => updateProgram(tab.id, { dirty })} />
                     </Suspense>

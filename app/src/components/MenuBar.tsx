@@ -5,6 +5,7 @@ import "./MenuBar.css";
 
 export interface MenuItemDef {
   command: CommandId;
+  label?: string;
   /** Sin `run`, el comando aparece deshabilitado (aún no disponible). */
   run?: () => void;
 }
@@ -61,7 +62,7 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
                       it.run?.();
                     }}
                   >
-                    <span className="menu-label">{commands[it.command].label}</span>
+                    <span className="menu-label">{it.label ?? commands[it.command].label}</span>
                     {commands[it.command].keys && <span className="menu-kbd">{formatKeys(commands[it.command].keys!)}</span>}
                   </button>
                 ),
