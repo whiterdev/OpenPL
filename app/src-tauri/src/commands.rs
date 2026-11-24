@@ -264,6 +264,7 @@ pub async fn complete_objects(
     owner: Option<String>,
     prefix: String,
     context_owner: Option<String>,
+    scope: Option<openpl_core::catalog::CompletionScope>,
 ) -> Result<Vec<openpl_core::catalog::CompletionObject>, CoreError> {
     st.sessions
         .get(session_id)?
@@ -273,6 +274,7 @@ pub async fn complete_objects(
                 owner.as_deref(),
                 &prefix,
                 context_owner.as_deref(),
+                scope.unwrap_or_default(),
             )
         })
         .await

@@ -529,13 +529,33 @@ pub fn completion_pattern(prefix: &str) -> String {
     out
 }
 
+/// Qué objetos sugiere el completado: todos, o solo los que pueden ir tras FROM/JOIN.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompletionScope {
+    #[default]
+    Any,
+    Relations,
+}
+
+const COMPLETE_ANY_TYPES: &str = "'TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PACKAGE',
+                            'PROCEDURE', 'FUNCTION', 'TYPE', 'SYNONYM'";
+const COMPLETE_RELATION_TYPES: &str = "'TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SYNONYM'";
+
+fn complete_objects_sql(scope: CompletionScope) -> String {
+    let types = match scope {
+        CompletionScope::Any => COMPLETE_ANY_TYPES,
+        CompletionScope::Relations => COMPLETE_RELATION_TYPES,
+    };
+    COMPLETE_OBJECTS_SQL.replace("{types}", types)
+}
+
 const COMPLETE_OBJECTS_SQL: &str = "SELECT owner, object_name, object_type FROM (
     SELECT o.owner, o.object_name, o.object_type
     FROM all_objects o
     WHERE o.object_name LIKE :prefix ESCAPE '\\'
       AND o.object_name NOT LIKE 'BIN$%'
-      AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PACKAGE',
-                            'PROCEDURE', 'FUNCTION', 'TYPE', 'SYNONYM')
+      AND o.object_type IN ({types})
       AND ((:owner IS NOT NULL AND o.owner = :owner)
            OR (:owner IS NULL
                AND (o.owner = COALESCE(CAST(:context AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
@@ -558,15 +578,17 @@ pub fn complete_objects(
     owner: Option<&str>,
     prefix: &str,
     context_owner: Option<&str>,
+    scope: CompletionScope,
 ) -> Result<Vec<CompletionObject>, DbError> {
     let pattern = completion_pattern(prefix);
+    let sql = complete_objects_sql(scope);
     let params: [(&str, &dyn oracle::sql_type::ToSql); 3] = [
         ("prefix", &pattern),
         ("owner", &owner),
         ("context", &context_owner),
     ];
     conn.raw()
-        .query_named(COMPLETE_OBJECTS_SQL, &params)?
+        .query_named(&sql, &params)?
         .map(|row| {
             let row = row?;
             Ok(CompletionObject {
@@ -613,9 +635,51 @@ mod tests {
 
     #[test]
     fn completado_limita_filas_y_usa_binds() {
-        assert!(COMPLETE_OBJECTS_SQL.contains("LIKE :prefix ESCAPE"));
-        assert!(COMPLETE_OBJECTS_SQL.contains(&format!("ROWNUM <= {COMPLETION_LIMIT}")));
-        assert!(!COMPLETE_OBJECTS_SQL.contains("PACKAGE BODY"));
+        for scope in [CompletionScope::Any, CompletionScope::Relations] {
+            let sql = complete_objects_sql(scope);
+            assert!(sql.contains("LIKE :prefix ESCAPE"));
+            assert!(sql.contains(&format!("ROWNUM <= {COMPLETION_LIMIT}")));
+            assert!(sql.contains("CAST(:context AS VARCHAR2(4000))"));
+            assert!(!sql.contains("PACKAGE BODY"));
+        }
+    }
+
+    #[test]
+    fn completado_de_relaciones_solo_trae_tablas_vistas_y_sinonimos() {
+        let sql = complete_objects_sql(CompletionScope::Relations);
+        for t in ["'TABLE'", "'VIEW'", "'MATERIALIZED VIEW'", "'SYNONYM'"] {
+            assert!(sql.contains(t), "falta {t}");
+        }
+        for t in ["PACKAGE", "PROCEDURE", "FUNCTION", "SEQUENCE", "'TYPE'"] {
+            assert!(!sql.contains(t), "sobra {t}");
+        }
+    }
+
+    #[test]
+    fn completado_general_conserva_los_nueve_tipos() {
+        let sql = complete_objects_sql(CompletionScope::Any);
+        for t in [
+            "'TABLE'",
+            "'VIEW'",
+            "'MATERIALIZED VIEW'",
+            "'SEQUENCE'",
+            "'PACKAGE'",
+            "'PROCEDURE'",
+            "'FUNCTION'",
+            "'TYPE'",
+            "'SYNONYM'",
+        ] {
+            assert!(sql.contains(t), "falta {t}");
+        }
+    }
+
+    #[test]
+    fn alcance_de_completado_se_lee_en_minusculas() {
+        let any: CompletionScope = serde_json::from_str("\"any\"").unwrap();
+        let rel: CompletionScope = serde_json::from_str("\"relations\"").unwrap();
+        assert_eq!(any, CompletionScope::Any);
+        assert_eq!(rel, CompletionScope::Relations);
+        assert_eq!(CompletionScope::default(), CompletionScope::Any);
     }
 
     // Un bind NULL dentro de COALESCE o UNION ALL da ORA-12704 si no se tipa como VARCHAR2.
@@ -627,7 +691,9 @@ mod tests {
                 "falta CAST en {bind}"
             );
         }
-        assert!(COMPLETE_OBJECTS_SQL.contains("CAST(:context AS VARCHAR2(4000))"));
+        for scope in [CompletionScope::Any, CompletionScope::Relations] {
+            assert!(complete_objects_sql(scope).contains("CAST(:context AS VARCHAR2(4000))"));
+        }
     }
 
     #[test]

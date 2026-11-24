@@ -201,6 +201,9 @@ export interface ProgramPart {
   }[];
 }
 
+/** "relations" limita el completado a tablas, vistas, vistas materializadas y sinónimos. */
+export type CompletionScope = "any" | "relations";
+
 export interface CompletionObject {
   owner: string;
   name: string;

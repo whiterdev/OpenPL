@@ -55,8 +55,11 @@ fn todos_los_tipos_consultan_sin_error() {
 #[test]
 fn completa_objetos_y_columnas_sin_error() {
     let Some(c) = conn() else { return };
-    let objects = openpl_core::catalog::complete_objects(&c, None, "", None).unwrap();
-    assert!(objects.len() <= openpl_core::catalog::COMPLETION_LIMIT);
+    use openpl_core::catalog::CompletionScope;
+    for scope in [CompletionScope::Any, CompletionScope::Relations] {
+        let objects = openpl_core::catalog::complete_objects(&c, None, "", None, scope).unwrap();
+        assert!(objects.len() <= openpl_core::catalog::COMPLETION_LIMIT);
+    }
     openpl_core::catalog::object_columns(&c, None, "DUAL", None).unwrap();
 }
 

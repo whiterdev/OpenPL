@@ -4,6 +4,7 @@ import type { EditorReference } from "./editorReference";
 import type {
   ClientInfo,
   CompletionObject,
+  CompletionScope,
   BindValue,
   ExecOutcome,
   QueryPage,
@@ -83,12 +84,14 @@ export const api = {
     owner: string | null,
     prefix: string,
     contextOwner: string | null,
+    scope?: CompletionScope,
   ) =>
     invoke<CompletionObject[]>("complete_objects", {
       sessionId,
       owner,
       prefix,
       contextOwner,
+      scope: scope ?? null,
     }),
   objectColumns: (
     sessionId: string,
