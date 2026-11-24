@@ -14,10 +14,10 @@ function press(key: "Tab" | "Shift-Tab", doc: string, selection: EditorSelection
 }
 
 describe("indentKeys", () => {
-  it("Tab con el cursor inserta un tabulador", () => {
+  it("Tab con el cursor inserta dos espacios", () => {
     const result = press("Tab", "begin\nnull;", EditorSelection.single(6));
     expect(result.handled).toBe(true);
-    expect(result.doc).toBe("begin\n\tnull;");
+    expect(result.doc).toBe("begin\n  null;");
   });
 
   it("Tab con tres líneas seleccionadas las indenta", () => {

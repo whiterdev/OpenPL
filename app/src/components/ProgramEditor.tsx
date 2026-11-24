@@ -3,9 +3,9 @@ import { EditorState } from "@codemirror/state";
 import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type KeyBinding,
 } from "@codemirror/view";
-import { foldGutter, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { foldGutter, HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { search, highlightSelectionMatches } from "@codemirror/search";
-import { history, indentLess, indentMore, insertTab } from "@codemirror/commands";
+import { history, indentLess, indentMore } from "@codemirror/commands";
 import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
@@ -23,6 +23,8 @@ export const programSyntax = HighlightStyle.define([
   { tag: tags.comment, color: "var(--muted)" },
 ]);
 
+const INDENT = "  ";
+
 // Devuelven true siempre para que Tab no saque el foco del editor.
 export const indentKeys: KeyBinding[] = [{
   key: "Tab",
@@ -30,7 +32,7 @@ export const indentKeys: KeyBinding[] = [{
     const { doc, selection } = view.state;
     const multiline = selection.ranges.some((r) => doc.lineAt(r.from).number !== doc.lineAt(r.to).number);
     if (multiline) indentMore(view);
-    else insertTab(view);
+    else view.dispatch(view.state.update(view.state.replaceSelection(INDENT), { scrollIntoView: true, userEvent: "input" }));
     return true;
   },
   shift: (view) => {
@@ -86,7 +88,7 @@ export function ProgramEditor(props: Props) {
       extensions: [
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
-        syntaxHighlighting(programSyntax),
+        syntaxHighlighting(programSyntax), indentUnit.of(INDENT),
         readOnly ? [] : autocompletion({
           override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
           icons: false,
