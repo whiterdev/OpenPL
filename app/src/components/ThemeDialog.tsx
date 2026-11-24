@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Copy, WarningCircle } from "@phosphor-icons/react";
+import { Check, Copy, WarningCircle } from "@phosphor-icons/react";
 import {
   activeTheme,
   activeThemeId,
@@ -238,6 +238,7 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
                       {edits[t.id] && (!stored.has(t.id) || !sameTheme(edits[t.id], t)) ? " · sin guardar" : ""}
                     </span>
                   </span>
+                  {t.id === selectedId && <Check className="td-selected" size={16} aria-hidden="true" />}
                 </button>
               );
             })}
