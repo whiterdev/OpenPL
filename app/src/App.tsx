@@ -28,6 +28,7 @@ import { ObjectBrowser } from "./components/ObjectBrowser";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
+import { routineDraft, type RoutineOverload } from "./routineTest";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
@@ -136,6 +137,10 @@ export default function App() {
   const [showTheme, setShowTheme] = useState(false);
   const [themeMode, setThemeMode] = useState(() => activeTheme().mode);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
+  const [routineOptions, setRoutineOptions] = useState<{
+    x: number; y: number; name: string; items: ContextItem[];
+  } | null>(null);
+  const closeRoutineOptions = useCallback(() => setRoutineOptions(null), []);
   const closeNewMenu = useCallback(() => setNewMenu(null), []);
   const pick = (run: () => void) => () => {
     setNewMenu(null);
@@ -190,6 +195,7 @@ export default function App() {
         "objectActions",
         "complete",
         "compareProgram",
+        "test",
         "execute",
         "cancel",
         "goToLine",
@@ -209,6 +215,7 @@ export default function App() {
       .filter((id) => {
         if (!program?.parts) return false;
         if (id === "objectActions") return !!editorConnection;
+        if (id === "test") return !!program.object && !!editorConnection;
         if (id === "compareProgram")
           return !!program.object && !!editorConnection;
         if (id === "execute" || id === "cancel")
@@ -442,6 +449,32 @@ export default function App() {
       true,
       edit,
     );
+  }
+
+  async function testRoutine(connection: ActiveConnection, object: Pick<ObjectInfo, "owner" | "name" | "object_type">, name: string, x: number, y: number) {
+    const packageName = object.object_type === "Package" ? object.name : null;
+    const path = packageName ? [object.owner, packageName, name] : [object.owner, object.name];
+    function prepare(signature: RoutineOverload) {
+      try {
+        void openSql(connection, routineDraft(path, signature));
+      } catch (error) {
+        showNotice(describeError(error).message);
+      }
+    }
+    try {
+      const signatures = await api.routineOverloads(connection.sessionId, object.owner, packageName, name);
+      if (signatures.length === 1) {
+        prepare(signatures[0]);
+      } else {
+        setRoutineOptions({ x, y, name, items: signatures.map((signature) => ({
+          label: `${signature.subprogram_id} · (${signature.parameters.map(({ declaration }) =>
+            [declaration.name, declaration.direction, declaration.data_type].filter(Boolean).join(" ")).join(", ")})`,
+          run: () => prepare(signature),
+        })) });
+      }
+    } catch (error) {
+      showNotice(describeError(error).message);
+    }
   }
 
   function removeTab(tab: ProgramTab) {
@@ -733,6 +766,8 @@ export default function App() {
             ]}
           />
         )}
+        {routineOptions && <ContextMenu x={routineOptions.x} y={routineOptions.y} label={routineOptions.name}
+          items={routineOptions.items} onClose={closeRoutineOptions} width={360} className="program-declaration-menu" />}
         <ConnectionBar
           connections={connections}
           activeId={activeId}
@@ -922,6 +957,9 @@ export default function App() {
                             : undefined
                         }
                         compilationTarget={tab.object}
+                        onTestRoutine={tab.id === programId && editorConnection && programObject
+                          ? (name, x, y) => void testRoutine(editorConnection, programObject, name, x, y)
+                          : undefined}
                         compile={
                           tab.id === programId &&
                           editorConnection &&

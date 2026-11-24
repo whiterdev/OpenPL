@@ -42,6 +42,7 @@ pub fn run() {
             commands::reconnect,
             commands::session_state,
             commands::list_objects,
+            commands::routine_overloads,
             commands::object_ddl,
             commands::editor_object,
             commands::describe_columns,
