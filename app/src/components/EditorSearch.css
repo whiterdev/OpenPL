@@ -1,0 +1,114 @@
+/* Barra flotante de búsqueda: capa sobre el código, por eso lleva la sombra de los menús. */
+.cm-panels-top:has(> .editor-search:only-child) {
+    border-bottom: 0;
+    background: transparent;
+}
+.editor-search {
+    position: absolute;
+    top: 6px;
+    right: 16px;
+    width: 360px;
+    max-width: calc(100% - 32px);
+}
+.editor-search-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px;
+    background: var(--s1);
+    border: 1px solid var(--line2);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+}
+.editor-search-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.editor-search-gap {
+    width: 24px;
+    flex-shrink: 0;
+}
+.editor-search-field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 1px 0 8px;
+    border: 1px solid var(--field-line);
+    border-radius: 4px;
+    background: var(--s0);
+}
+/* El borde ocre del contenedor reemplaza el contorno del campo. */
+.editor-search-field:focus-within {
+    border-color: var(--accent);
+}
+.editor-search-field input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font-code);
+    font-size: 12px;
+}
+.editor-search-field input::placeholder {
+    color: var(--muted);
+}
+.editor-search-ib {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 15px;
+}
+.editor-search-field .editor-search-ib {
+    width: 22px;
+    height: 22px;
+}
+.editor-search-ib:hover {
+    background: var(--s3);
+    color: var(--text);
+}
+.editor-search-ib:active {
+    background: var(--s2);
+}
+.editor-search-ib[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accentSoft);
+    color: var(--text);
+}
+.editor-search-count {
+    flex-shrink: 0;
+    min-width: 64px;
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+.editor-search-count.failed {
+    color: var(--err);
+}
+.editor-search-btn {
+    flex-shrink: 0;
+    padding: 0 8px;
+}
+.editor-search-btn:active {
+    background: var(--s1);
+}

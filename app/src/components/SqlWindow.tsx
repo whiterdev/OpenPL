@@ -2,7 +2,8 @@ import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref }
 import { FloppyDisk, Lock, LockOpen, Minus, Play, PlayCircle, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
-import { gotoLine, openSearchPanel } from "@codemirror/search";
+import { gotoLine } from "@codemirror/search";
+import { openFind, openReplace } from "./EditorSearch";
 import { startCompletion } from "@codemirror/autocomplete";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
@@ -444,8 +445,8 @@ export function SqlWindow({
     foldBlock: inEditor(foldCode),
     unfoldBlock: inEditor(unfoldCode),
     goToLine: inEditor(gotoLine),
-    find: inEditor(openSearchPanel),
-    replace: inEditor(openSearchPanel),
+    find: inEditor(openFind),
+    replace: inEditor(openReplace),
     comment: inEditor(toggleComment),
     duplicateLine: inEditor(copyLineDown),
     deleteLine: inEditor(deleteLine),

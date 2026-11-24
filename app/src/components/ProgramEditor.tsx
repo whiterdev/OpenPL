@@ -4,7 +4,7 @@ import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type KeyBinding,
 } from "@codemirror/view";
 import { foldGutter, HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { search, highlightSelectionMatches } from "@codemirror/search";
+import { highlightSelectionMatches } from "@codemirror/search";
 import { history, indentLess, indentMore } from "@codemirror/commands";
 import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
@@ -14,6 +14,7 @@ import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
 import { programFolding } from "../programFolding";
 import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
+import { editorSearch } from "./EditorSearch";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -87,18 +88,16 @@ export function ProgramEditor(props: Props) {
       doc: part.source,
       extensions: [
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
-        highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
+        highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax), indentUnit.of(INDENT),
         readOnly ? [] : autocompletion({
           override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
           icons: false,
         }),
         readOnly ? [] : keymap.of(indentKeys),
+        // Los anuncios de búsqueda para lectores de pantalla siguen saliendo de @codemirror/search.
         EditorState.phrases.of({
-          Find: "Buscar", next: "siguiente", previous: "anterior", all: "todas",
-          Replace: "Reemplazar", replace: "reemplazar", "replace all": "reemplazar todo",
-          "match case": "Mayúsculas y minúsculas", regexp: "Expresión regular",
-          "by word": "Palabra completa", close: "Cerrar", "current match": "Coincidencia actual",
+          "current match": "Coincidencia actual",
           "on line": "en la línea", "replaced match on line $": "Coincidencia reemplazada en la línea $",
           "replaced $ matches": "$ coincidencias reemplazadas",
           "Go to line": "Ir a línea", go: "Ir", "Fold line": "Plegar línea", "Unfold line": "Desplegar línea",
