@@ -58,6 +58,10 @@
 - **Probar** genera llamadas alineadas, usa los nombres de los parámetros para los binds y abre las entradas tipadas debajo del código. La acción prepara el bloque para ejecutarlo con F8.
 - [Auditoría antislop](../anti-slop/audit-formato-prueba-2026-11-24.md). Queda pendiente la comprobación en escritorio y la ejecución manual en una base habilitada para pruebas.
 
+### Sintaxis de Papel
+
+- Se aplicaron los valores de la captura del usuario al tema claro incluido. Las palabras clave y los comentarios conservan el aviso de contraste. [Auditoría](../anti-slop/audit-papel-sintaxis-2026-11-24.md).
+
 ### Diálogo de conexión y selección de resultados
 
 - El diálogo de conexión usa la misma capa que los demás diálogos de la aplicación, por encima del encabezado fijo de resultados.
