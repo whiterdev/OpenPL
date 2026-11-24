@@ -38,6 +38,10 @@ interface Baseline {
 
 const NO_MARKERS: EditorMarker[] = [];
 
+const baselineOf = (entry: ProgramPart): Baseline => ({
+  text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
+});
+
 interface Props {
   parts: ProgramPart[];
   readOnly: boolean;
@@ -92,9 +96,7 @@ interface DeclarationTarget {
 export function ProgramWindow({
   parts, readOnly, onReadOnlyChange, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
 }: Props) {
-  const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map((entry) => ({
-    text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
-  })));
+  const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
   const [compiling, setCompiling] = useState(false);
   const compilation = useRef<{ stopped: boolean } | null>(null);
   const [selected, setSelected] = useState(0);
@@ -126,6 +128,42 @@ export function ProgramWindow({
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
   const names = useRef<(string | null)[]>([fileName ?? null]);
+  const root = useRef<HTMLElement>(null);
+  const shownParts = useRef(parts);
+  const wasActive = useRef(active);
+
+  // Una recarga reemplaza el texto con dispatch para no perder el historial; un borrador con cambios no se toca.
+  useEffect(() => {
+    if (shownParts.current === parts) return;
+    shownParts.current = parts;
+    const reloaded = parts.map((entry, index) => {
+      const view = views.current[index];
+      const text = view?.state.doc.toString() ?? entry.source;
+      const previous = saved.current[index];
+      if (previous !== undefined && text !== previous) return false;
+      saved.current[index] = entry.source;
+      if (view && text !== entry.source) {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: entry.source } });
+      }
+      return true;
+    });
+    saved.current.length = parts.length;
+    const current = parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);
+    setBaselines((all) => parts.map((entry, index) => reloaded[index] || !all[index] ? baselineOf(entry) : all[index]));
+    setValues(current);
+    setSelected((index) => index < parts.length ? index : 0);
+    onDirty(current.some((text, index) => text !== saved.current[index]));
+  }, [parts, onDirty]);
+
+  useEffect(() => {
+    const activated = active && !wasActive.current;
+    wasActive.current = active;
+    if (!activated || comparison) return;
+    const focused = document.activeElement;
+    if (focused && root.current?.contains(focused)) return;
+    if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
+    views.current[selected]?.focus();
+  }, [active, selected, comparison]);
   const canSplit = parts.length === 2;
   const firstOutline = useMemo(() => programStructure(values[0]), [values[0]]);
   const secondOutline = useMemo(() => values[1] ? programStructure(values[1]) : [], [values[1]]);
@@ -421,7 +459,7 @@ export function ProgramWindow({
   const keyLabel = (id: CommandId) => formatKeys(commands[id].keys!);
 
   return (
-    <section className="program-window" aria-label="Ventana de programa">
+    <section ref={root} className="program-window" aria-label="Ventana de programa">
       <div className="program-toolbar">
         {canSplit && (
           <div className="program-parts" role="tablist" aria-label="Partes del programa">
@@ -547,7 +585,10 @@ export function ProgramWindow({
       )}
       {!comparison && description && (
         <ObjectDescription key={description.id} object={description.object} sessionId={description.sessionId}
-          onClose={() => setDescription(null)} />
+          onClose={() => {
+            setDescription(null);
+            views.current[selected]?.focus();
+          }} />
       )}
       {active && catalog && objectMenu && (
         <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}

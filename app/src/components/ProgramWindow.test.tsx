@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { foldedRanges } from "@codemirror/language";
+import { undo } from "@codemirror/commands";
 import { createRef, useState } from "react";
 import { expect, test, vi } from "vitest";
 import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
@@ -530,4 +531,90 @@ test("sin Solo lectura el editor igual ofrece sus acciones", () => {
   const menu = screen.getByRole("menu", { name: "Editor" });
   expect(within(menu).queryByRole("menuitemcheckbox", { name: "Solo lectura" })).not.toBeInTheDocument();
   expect(within(menu).getByRole("menuitem", { name: /^Pegar/ })).toHaveFocus();
+});
+
+const viewOf = (name: string) =>
+  EditorView.findFromDOM(screen.getByRole("textbox", { name }).closest<HTMLElement>(".cm-editor")!)!;
+
+function ActivationHost({ active, dialog = false }: { active: boolean; dialog?: boolean }) {
+  return (
+    <>
+      <input aria-label="Afuera" />
+      {dialog && <div role="dialog" aria-modal="true" aria-label="Aviso"><button>Aceptar</button></div>}
+      <ProgramWindow parts={parts} readOnly onDirty={vi.fn()} active={active} />
+    </>
+  );
+}
+
+test("al activarse la pestaña, el editor de la parte seleccionada recibe el foco", () => {
+  const { rerender } = render(<ActivationHost active={false} />);
+  fireEvent.keyDown(screen.getByRole("tab", { name: /^Spec/ }), { key: "ArrowRight" });
+  screen.getByRole("textbox", { name: "Afuera" }).focus();
+  rerender(<ActivationHost active />);
+  expect(screen.getByRole("textbox", { name: "Body" })).toHaveFocus();
+});
+
+test("al activarse no le quita el foco a un diálogo abierto", () => {
+  const { rerender } = render(<ActivationHost active={false} dialog />);
+  const accept = screen.getByRole("button", { name: "Aceptar" });
+  accept.focus();
+  rerender(<ActivationHost active dialog />);
+  expect(accept).toHaveFocus();
+});
+
+test("al activarse respeta el foco que ya está dentro de la ventana", () => {
+  const { rerender } = render(<ActivationHost active={false} />);
+  const sideBySide = screen.getByRole("button", { name: "Lado a lado" });
+  sideBySide.focus();
+  rerender(<ActivationHost active />);
+  expect(sideBySide).toHaveFocus();
+});
+
+test("cerrar la descripción devuelve el foco al editor", async () => {
+  const object = { owner: "HR", name: "VENTAS", object_type: "Table", status: "Valid", last_ddl_time: "" } as const;
+  vi.spyOn(api, "editorObject").mockResolvedValue(object);
+  vi.spyOn(api, "describeColumns").mockResolvedValue([{ name: "ID", data_type: "NUMBER", nullable: false }]);
+  vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 16, assoc: 1 });
+  try {
+    render(<ProgramWindow parts={[{ kind: "SQL", source: "select * from ventas", diagnostics: [], last_ddl_time: null }]}
+      readOnly onDirty={vi.fn()} catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+    fireEvent.contextMenu(screen.getByRole("textbox", { name: "Fuente" }), { clientX: 100, clientY: 100 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Describir" }));
+    const close = await screen.findByRole("button", { name: "Cerrar descripción" });
+    close.focus();
+    fireEvent.click(close);
+    expect(screen.getByRole("textbox", { name: "Fuente" })).toHaveFocus();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+test("recargar con el mismo texto conserva el editor", () => {
+  const { rerender } = render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
+  const view = viewOf("Spec");
+  rerender(<ProgramWindow parts={parts.map((entry) => ({ ...entry }))} readOnly={false} onDirty={vi.fn()} />);
+  expect(viewOf("Spec")).toBe(view);
+});
+
+test("recargar con texto nuevo de Oracle lo muestra y se puede deshacer", () => {
+  const onDirty = vi.fn();
+  const { rerender } = render(<ProgramWindow parts={parts} readOnly={false} onDirty={onDirty} />);
+  const view = viewOf("Spec");
+  const remote = "PACKAGE PKG_A AS\n  PROCEDURE hello;\n  PROCEDURE bye;\nEND;";
+  rerender(<ProgramWindow parts={[{ ...parts[0], source: remote }, parts[1]]} readOnly={false} onDirty={onDirty} />);
+  expect(viewOf("Spec")).toBe(view);
+  expect(view.state.doc.toString()).toBe(remote);
+  expect(screen.getByRole("button", { name: /Procedimiento bye/ })).toBeInTheDocument();
+  expect(onDirty).not.toHaveBeenLastCalledWith(true);
+  act(() => { undo(view); });
+  expect(view.state.doc.toString()).toBe(parts[0].source);
+});
+
+test("recargar no pisa un borrador con cambios locales", () => {
+  const { rerender } = render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
+  const view = viewOf("Spec");
+  act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n-- borrador" } }));
+  rerender(<ProgramWindow parts={[{ ...parts[0], source: "PACKAGE PKG_A AS\nEND; -- remoto" }, parts[1]]}
+    readOnly={false} onDirty={vi.fn()} />);
+  expect(viewOf("Spec").state.doc.toString()).toBe(parts[0].source + "\n-- borrador");
 });

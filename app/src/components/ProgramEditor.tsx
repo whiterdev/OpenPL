@@ -10,7 +10,7 @@ import {
   deleteLineBoundaryForward, deleteToLineEnd, history, indentLess, indentMore, insertNewlineAndIndent,
   insertNewlineKeepIndent, splitLine, standardKeymap, transposeChars,
 } from "@codemirror/commands";
-import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import { forceLinting, linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
@@ -124,7 +124,7 @@ export function ProgramEditor(props: Props) {
     let keyboardMenu = false;
     const view = new EditorView({
       parent: host.current!,
-      doc: part.source,
+      doc: latest.current.part.source,
       extensions: [
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
@@ -181,8 +181,9 @@ export function ProgramEditor(props: Props) {
         linter((editor) => {
           const markers = latest.current.markers;
           if (markers) return markerDiagnostics(markers, editor.state.doc.length);
-          if (editor.state.doc.toString() !== part.source) return [];
-          return part.diagnostics.filter((item) => item.line > 0).map((item) => {
+          const { part: current } = latest.current;
+          if (editor.state.doc.toString() !== current.source) return [];
+          return current.diagnostics.filter((item) => item.line > 0).map((item) => {
             const from = positionAt(editor, item.line, item.column);
             return {
               from, to: Math.min(from + 1, editor.state.doc.length),
@@ -199,7 +200,13 @@ export function ProgramEditor(props: Props) {
       latest.current.onView(null);
       view.destroy();
     };
-  }, [part, label, editing, editingExtensions]);
+  }, [label, editing, editingExtensions]);
+
+  // El texto nuevo lo aplica ProgramWindow con dispatch; aquí solo se recalculan los diagnósticos de la parte.
+  useEffect(() => {
+    const editor = viewRef.current;
+    if (editor && !latest.current.markers) forceLinting(editor);
+  }, [part]);
 
   useEffect(() => {
     const view = viewRef.current;
