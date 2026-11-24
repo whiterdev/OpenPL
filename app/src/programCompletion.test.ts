@@ -11,7 +11,9 @@ import {
   catalogCompletion,
   completionTarget,
   keywordCompletion,
+  sqlContext,
   statementAliases,
+  statementTables,
   type CompletionCatalog,
 } from "./programCompletion";
 
@@ -80,6 +82,59 @@ describe("statementAliases", () => {
   });
 });
 
+describe("statementTables", () => {
+  test("lista cada tabla con su alias", () => {
+    const { doc, position } = at(
+      "select | from hr.ventas v join clientes on 1 = 1, pedidos as p",
+    );
+    expect(statementTables(doc, position)).toEqual([
+      { ref: { owner: "HR", name: "VENTAS" }, alias: "V" },
+      { ref: { owner: null, name: "CLIENTES" }, alias: null },
+      { ref: { owner: null, name: "PEDIDOS" }, alias: "P" },
+    ]);
+  });
+
+  test.each([
+    "SELECT x| INTO v FROM t",
+    "select x| from t for update nowait",
+  ])("en %s solo cuenta la tabla real", (source) => {
+    const { doc, position } = at(source);
+    expect(statementTables(doc, position)).toEqual([
+      { ref: { owner: null, name: "T" }, alias: null },
+    ]);
+  });
+
+  test("INTO tras INSERT es una tabla", () => {
+    const { doc, position } = at("insert into hr.ventas (|) values (1)");
+    expect(statementTables(doc, position)).toEqual([
+      { ref: { owner: "HR", name: "VENTAS" }, alias: null },
+    ]);
+  });
+});
+
+describe("sqlContext", () => {
+  test.each([
+    ["SELECT * FROM cl|", "source"],
+    ["select * from clientes c join ped|", "source"],
+    ["select * from clientes c, ped|", "source"],
+    ["select * from t where id in (select id from cl|", "source"],
+    ["insert into cl|", "source"],
+    ["SELECT | FROM clientes", "select"],
+    ["select a, b|", "select"],
+    ["SELECT x INTO v|", null],
+    ["select * from t where cl|", null],
+    ["select * from clientes c join pedidos p on c.id = p.id and cl|", null],
+    ["select * from (cl|", null],
+    ["select count(cl|", null],
+    ["select * from t -- from cl|", null],
+    ["select 'from cl|' from dual", null],
+    ["select * from t;\nbegin cl|", null],
+  ])("%s", (source, expected) => {
+    const { state, position } = at(source);
+    expect(sqlContext(state, position)).toBe(expected);
+  });
+});
+
 describe("completionTarget", () => {
   test("separa calificador y prefijo", () => {
     const { state, position } = at("select v.cli|");
@@ -120,7 +175,7 @@ describe("catalogCompletion", () => {
       "select * from ven|",
       catalogCompletion(() => current),
     );
-    expect(current.objects).toHaveBeenCalledWith(null, "VEN");
+    expect(current.objects).toHaveBeenCalledWith(null, "VEN", "relations");
     expect(result?.options.map((option) => option.label)).toEqual([
       "VENTAS",
       "Ventas 2026",
@@ -170,7 +225,84 @@ describe("catalogCompletion", () => {
       catalogCompletion(() => current),
       true,
     );
-    expect(current.objects).toHaveBeenCalledWith(null, "");
+    expect(current.objects).toHaveBeenCalledWith(null, "", "relations");
+  });
+
+  test.each(["SELECT * FROM cl|", "select * from clientes c join ped|"])(
+    "tras FROM o JOIN solo pide tablas y vistas: %s",
+    async (source) => {
+      const current = catalog();
+      await complete(source, catalogCompletion(() => current));
+      expect(current.objects).toHaveBeenCalledWith(
+        null,
+        expect.any(String),
+        "relations",
+      );
+      expect(current.columns).not.toHaveBeenCalled();
+    },
+  );
+
+  test("tras FROM no abre con un espacio", async () => {
+    const current = catalog();
+    expect(
+      await complete("SELECT * FROM |", catalogCompletion(() => current)),
+    ).toBeNull();
+    expect(current.objects).not.toHaveBeenCalled();
+  });
+
+  test.each(["SELECT i| FROM clientes", "SELECT i| INTO v FROM clientes"])(
+    "con una sola tabla sin alias ofrece sus columnas: %s",
+    async (source) => {
+      const current = catalog();
+      const result = await complete(source, catalogCompletion(() => current));
+      expect(current.columns).toHaveBeenCalledWith(null, "CLIENTES");
+      expect(result?.options[0]).toEqual(
+        expect.objectContaining({ label: "ID", detail: "NUMBER" }),
+      );
+    },
+  );
+
+  test("al pedirlo con el cursor tras SELECT ofrece columnas", async () => {
+    const current = catalog();
+    const result = await complete(
+      "SELECT | FROM clientes",
+      catalogCompletion(() => current),
+      true,
+    );
+    expect(current.columns).toHaveBeenCalledWith(null, "CLIENTES");
+    expect(result?.options.map((option) => option.label)).toContain("ID");
+  });
+
+  test.each(["SELECT i| FROM clientes c", "SELECT i| FROM clientes, pedidos"])(
+    "con alias o varias tablas no ofrece columnas: %s",
+    async (source) => {
+      const current = catalog();
+      const result = await complete(source, catalogCompletion(() => current));
+      expect(current.columns).not.toHaveBeenCalled();
+      expect(result?.options.map((option) => option.label)).not.toContain(
+        "ID",
+      );
+    },
+  );
+
+  test.each([
+    "select * from t -- from cl|",
+    "select 'from cl|' from dual",
+  ])("en comentarios y cadenas no consulta: %s", async (source) => {
+    const current = catalog();
+    expect(await complete(source, catalogCompletion(() => current))).toBeNull();
+    expect(current.objects).not.toHaveBeenCalled();
+    expect(current.columns).not.toHaveBeenCalled();
+  });
+
+  test("tras INTO de un SELECT no sugiere tablas", async () => {
+    const current = catalog();
+    await complete("SELECT x INTO v| FROM t", catalogCompletion(() => current));
+    expect(current.objects).not.toHaveBeenCalledWith(
+      null,
+      expect.any(String),
+      "relations",
+    );
   });
 
   test("descarta resultados si cambió la sesión durante la consulta", async () => {
@@ -218,5 +350,21 @@ describe("keywordCompletion", () => {
         new CompletionContext(qualified.state, qualified.position, false),
       ),
     ).toBeNull();
+  });
+
+  test("tras FROM o JOIN no tapa las tablas", async () => {
+    for (const source of ["select * from cl|", "select * from a join ped|"]) {
+      const { state, position } = at(source);
+      expect(
+        await keywordCompletion(new CompletionContext(state, position, true)),
+      ).toBeNull();
+    }
+  });
+
+  test("en la lista del SELECT sigue ofreciendo palabras clave", async () => {
+    const { state, position } = at("SELECT i| FROM clientes");
+    expect(
+      await keywordCompletion(new CompletionContext(state, position, false)),
+    ).not.toBeNull();
   });
 });

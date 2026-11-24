@@ -177,12 +177,32 @@ test("completa objetos con la sesión del programa y cambia con ella", async () 
     act(() => view.dispatch({ selection: { anchor: view.state.doc.length } }));
     act(() => ref.current?.complete?.());
     expect(await screen.findByRole("option", { name: /VENTAS/ })).toBeInTheDocument();
-    expect(objects).toHaveBeenCalledWith("s1", null, "VEN", "HR");
+    expect(objects).toHaveBeenCalledWith("s1", null, "VEN", "HR", "relations");
 
     rerender(<ProgramWindow ref={ref} parts={[source]} readOnly={false} onDirty={vi.fn()}
       catalog={{ sessionId: "s2", owner: "QA", openProgram: vi.fn() }} />);
     act(() => ref.current?.complete?.());
-    await waitFor(() => expect(objects).toHaveBeenLastCalledWith("s2", null, "VEN", "QA"));
+    await waitFor(() => expect(objects).toHaveBeenLastCalledWith("s2", null, "VEN", "QA", "relations"));
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+test("la caché de completado separa tablas de cualquier objeto", async () => {
+  const objects = vi.spyOn(api, "completeObjects").mockResolvedValue([{ owner: "HR", name: "VENTAS", object_type: "TABLE" }]);
+  const ref = createRef<ProgramActions>();
+  const source = { kind: "SQL", source: "select * from ven", diagnostics: [], last_ddl_time: null };
+  try {
+    render(<ProgramWindow ref={ref} parts={[source]} readOnly={false} onDirty={vi.fn()}
+      catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+    const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Fuente" }).closest<HTMLElement>(".cm-editor")!)!;
+    act(() => view.dispatch({ selection: { anchor: view.state.doc.length } }));
+    act(() => ref.current?.complete?.());
+    await waitFor(() => expect(objects).toHaveBeenCalledWith("s1", null, "VEN", "HR", "relations"));
+    act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "begin ven" },
+      selection: { anchor: "begin ven".length } }));
+    act(() => ref.current?.complete?.());
+    await waitFor(() => expect(objects).toHaveBeenLastCalledWith("s1", null, "VEN", "HR", "any"));
   } finally {
     vi.restoreAllMocks();
   }

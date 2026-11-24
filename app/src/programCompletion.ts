@@ -9,7 +9,11 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { oracleDialect } from "./editorReference";
 import { tokenize, type Token } from "./programStructure";
-import type { CompletionObject, ObjectColumn } from "./types";
+import type {
+  CompletionObject,
+  CompletionScope,
+  ObjectColumn,
+} from "./types";
 
 export const COMPLETION_LIMIT = 100;
 
@@ -17,6 +21,7 @@ export interface CompletionCatalog {
   objects: (
     owner: string | null,
     prefix: string,
+    scope?: CompletionScope,
   ) => Promise<CompletionObject[]>;
   columns: (owner: string | null, name: string) => Promise<ObjectColumn[]>;
 }
@@ -124,12 +129,13 @@ const nameOf = (text: string) =>
 const quoted = (value: string) =>
   plainName.test(value) ? value : `"${value.replace(/"/g, '""')}"`;
 
-/** Tablas y alias de la sentencia que contiene `position`, con la clave normalizada como Oracle. */
-export function statementAliases(
-  source: string,
-  position: number,
-): Map<string, TableReference> {
-  const tokens = tokenize(source);
+export interface StatementTable {
+  ref: TableReference;
+  alias: string | null;
+}
+
+/** Límites [start, end) en `tokens` de la sentencia que contiene `position`. */
+function statementBounds(tokens: Token[], position: number) {
   let start = 0;
   let end = tokens.length;
   for (let i = 0; i < tokens.length; i += 1) {
@@ -140,8 +146,21 @@ export function statementAliases(
       break;
     }
   }
+  return { start, end };
+}
 
-  const aliases = new Map<string, TableReference>();
+/**
+ * Tablas de la sentencia. Con `strict`, INTO solo introduce una tabla tras INSERT o MERGE (en
+ * SELECT ... INTO son variables) y FOR UPDATE no se lee como tabla.
+ */
+function scanTables(
+  source: string,
+  position: number,
+  strict: boolean,
+): StatementTable[] {
+  const tokens = tokenize(source);
+  const { start, end } = statementBounds(tokens, position);
+  const tables: StatementTable[] = [];
   const readTable = (next: number) => {
     if (!isName(tokens[next]) || clauseWords.has(tokens[next].key)) return;
     let reference: TableReference = {
@@ -157,25 +176,106 @@ export function statementAliases(
       next += 2;
     }
     if (tokens[next]?.key === "@") return;
-    aliases.set(reference.name, reference);
     if (tokens[next]?.key === "AS") next += 1;
-    if (isName(tokens[next]) && !clauseWords.has(tokens[next].key))
-      aliases.set(nameOf(tokens[next].text), reference);
+    const alias =
+      isName(tokens[next]) && !clauseWords.has(tokens[next].key)
+        ? nameOf(tokens[next].text)
+        : null;
+    tables.push({ ref: reference, alias });
   };
+  let writes = false;
   // Por nivel de paréntesis: si una coma introduce otra tabla de la lista FROM.
   const tableList: boolean[] = [false];
   for (let i = start; i < end; i += 1) {
     const { key } = tokens[i];
+    if (key === "INSERT" || key === "MERGE") writes = true;
     if (key === "(") tableList.push(false);
     else if (key === ")") {
       if (tableList.length > 1) tableList.pop();
     } else if (sourceKeywords.has(key)) {
       if (key !== "JOIN") tableList[tableList.length - 1] = key === "FROM";
-      readTable(i + 1);
+      const skip =
+        strict &&
+        ((key === "INTO" && !writes) ||
+          (key === "UPDATE" && tokens[i - 1]?.key === "FOR"));
+      if (!skip) readTable(i + 1);
     } else if (key === "," && tableList[tableList.length - 1]) readTable(i + 1);
     else if (listEnds.has(key)) tableList[tableList.length - 1] = false;
   }
+  return tables;
+}
+
+/** Tablas de la sentencia que contiene `position`, cada una con su alias si lo tiene. */
+export function statementTables(
+  source: string,
+  position: number,
+): StatementTable[] {
+  return scanTables(source, position, true);
+}
+
+/** Tablas y alias de la sentencia que contiene `position`, con la clave normalizada como Oracle. */
+export function statementAliases(
+  source: string,
+  position: number,
+): Map<string, TableReference> {
+  const aliases = new Map<string, TableReference>();
+  for (const { ref, alias } of scanTables(source, position, false)) {
+    aliases.set(ref.name, ref);
+    if (alias) aliases.set(alias, ref);
+  }
   return aliases;
+}
+
+export type SqlContext = "source" | "select";
+
+const typing = new RegExp(String.raw`^${word}$`, "u");
+const clauseEnds = new Set([...listEnds, "ON", "USING"]);
+
+/**
+ * "source" si en `position` va el nombre de una tabla (tras FROM, JOIN, una coma de la lista FROM
+ * o INTO de un INSERT); "select" si está en la lista de un SELECT; null en otro caso.
+ */
+export function sqlContext(
+  state: EditorState,
+  position: number,
+): SqlContext | null {
+  const node = syntaxTree(state).resolveInner(position, -1);
+  if (/Comment|String/.test(node.name)) return null;
+  const tokens = tokenize(state.doc.toString());
+  const { start } = statementBounds(tokens, position);
+  let end = start;
+  while (end < tokens.length && tokens[end].from < position) end += 1;
+  const last = tokens[end - 1];
+  if (
+    end > start &&
+    last.from + last.text.length >= position &&
+    typing.test(last.text)
+  )
+    end -= 1;
+
+  type Clause = "select" | "from" | "into" | null;
+  const levels: { clause: Clause; writes: boolean }[] = [
+    { clause: null, writes: false },
+  ];
+  for (let i = start; i < end; i += 1) {
+    const { key } = tokens[i];
+    const level = levels[levels.length - 1];
+    if (key === "(") levels.push({ clause: null, writes: false });
+    else if (key === ")") {
+      if (levels.length > 1) levels.pop();
+    } else if (key === "INSERT" || key === "MERGE") level.writes = true;
+    else if (key === "SELECT") level.clause = "select";
+    else if (key === "FROM" || key === "JOIN") level.clause = "from";
+    else if (key === "INTO") level.clause = level.writes ? "into" : null;
+    else if (clauseEnds.has(key)) level.clause = null;
+  }
+
+  const previous = end > start ? tokens[end - 1].key : null;
+  const { clause } = levels[levels.length - 1];
+  if (previous === "FROM" || previous === "JOIN") return "source";
+  if (previous === "INTO") return clause === "into" ? "source" : null;
+  if (previous === "," && clause === "from") return "source";
+  return clause === "select" ? "select" : null;
 }
 
 /** Nombre que se está escribiendo y su calificador, o null en comentarios, literales y binds. */
@@ -261,9 +361,22 @@ export function catalogCompletion(
         complete = objects.length < COMPLETION_LIMIT;
         options = [...columns.map(columnOption), ...objects.map(objectOption)];
       } else {
-        const objects = await catalog.objects(null, target.prefix);
+        const place = sqlContext(context.state, context.pos);
+        const tables =
+          place === "select"
+            ? statementTables(context.state.doc.toString(), context.pos)
+            : [];
+        const only = tables.length === 1 && !tables[0].alias ? tables[0] : null;
+        const [columns, objects] = await Promise.all([
+          only
+            ? catalog.columns(only.ref.owner, only.ref.name)
+            : Promise.resolve([]),
+          place === "source"
+            ? catalog.objects(null, target.prefix, "relations")
+            : catalog.objects(null, target.prefix),
+        ]);
         complete = objects.length < COMPLETION_LIMIT;
-        options = objects.map(objectOption);
+        options = [...columns.map(columnOption), ...objects.map(objectOption)];
       }
     } catch {
       return null;
@@ -279,12 +392,13 @@ export function catalogCompletion(
 
 const keywords = keywordCompletionSource(oracleDialect, true);
 
-/** Palabras clave PL/SQL, salvo tras un calificador. */
+/** Palabras clave PL/SQL, salvo tras un calificador o donde va el nombre de una tabla. */
 export const keywordCompletion: CompletionSource = (context) => {
   const before = context.state.sliceDoc(
     context.state.doc.lineAt(context.pos).from,
     context.pos,
   );
   if (/\.\s*[\p{L}\p{N}_$#]*$/u.test(before)) return null;
+  if (sqlContext(context.state, context.pos) === "source") return null;
   return keywords(context);
 };

@@ -142,8 +142,8 @@ export function ProgramWindow({
       return value;
     };
     return {
-      objects: (owner, prefix) => cached(`o\0${owner ?? ""}\0${prefix}`,
-        () => api.completeObjects(sessionId, owner, prefix, contextOwner)),
+      objects: (owner, prefix, scope = "any") => cached(`o\0${owner ?? ""}\0${prefix}\0${scope}`,
+        () => api.completeObjects(sessionId, owner, prefix, contextOwner, scope)),
       columns: (owner, name) => cached(`c\0${owner ?? ""}\0${name}`,
         () => api.objectColumns(sessionId, owner, name, contextOwner)),
     };
