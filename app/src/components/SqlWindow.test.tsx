@@ -24,7 +24,8 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   const ref = createRef<ProgramActions>();
   const onTransaction = vi.fn();
   render(<SqlWindow ref={ref} sessionId="w1" initialSql={source} onTransaction={onTransaction} onDirty={vi.fn()} {...props} />);
-  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "SQL" }).closest<HTMLElement>(".cm-editor")!)!;
+  const editor = screen.queryByRole("textbox", { name: "SQL" });
+  const view = (editor && EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!))!;
   return { ref, view, onTransaction };
 }
 
@@ -55,6 +56,8 @@ test("la consola acumula un bloque PL/SQL hasta recibir la barra", async () => {
     await act(async () => { fireEvent.submit(prompt.closest("form")!); });
   }
   await enter("BEGIN");
+  expect(screen.getByText("SQL> BEGIN")).toBeVisible();
+  expect(screen.getByText("2", { selector: "label" })).toBeVisible();
   await enter("dbms_output.put_line('Hola');");
   await enter("END;");
   expect(execute).not.toHaveBeenCalled();
@@ -67,15 +70,21 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
   setup("", { command: true });
   const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  expect(screen.queryByRole("textbox", { name: "SQL" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   fireEvent.change(prompt, { target: { value: "PROMPT Hola" } });
   await act(async () => { fireEvent.submit(prompt.closest("form")!); });
   expect(screen.getByText("Hola")).toBeVisible();
   expect(execute).not.toHaveBeenCalled();
   fireEvent.change(prompt, { target: { value: "SELECT 7 FROM DUAL;" } });
-  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  await act(async () => { fireEvent.keyDown(prompt, { key: "Enter" }); });
   expect(execute).toHaveBeenCalledWith("w1", "SELECT 7 FROM DUAL", []);
   expect(screen.getByText("SQL> SELECT 7 FROM DUAL;")).toBeVisible();
   expect(screen.getByText(/^7\s+Ana$/)).toBeVisible();
+  const transcript = screen.getByRole("log");
+  const row = within(transcript).getByText(/^7\s+Ana$/);
+  expect(row.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(transcript.parentElement).toContainElement(prompt);
   fireEvent.keyDown(prompt, { key: "ArrowUp" });
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
 });

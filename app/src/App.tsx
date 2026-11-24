@@ -193,6 +193,7 @@ export default function App() {
   const sqlActions = program?.sql
     ? Object.fromEntries(
         sqlTabActions
+          .filter((id) => !program.sql!.command || ["exportData", "cancel", "commit", "rollback"].includes(id))
           .filter(
             (id) =>
               (id !== "commit" && id !== "rollback") ||
