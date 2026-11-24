@@ -23,6 +23,8 @@ openpl-oracle = { path = "../../crates/openpl-oracle" }
 openpl-core = { path = "../../crates/openpl-core" }
 tauri-plugin-dialog = "2"
 tempfile = "3"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-window-state = "2"
 
 [dev-dependencies]
 openpl-core = { path = "../../crates/openpl-core", features = ["testing"] }

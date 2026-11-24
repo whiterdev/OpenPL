@@ -1,5 +1,6 @@
 // Envoltorios tipados de los comandos Tauri.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import * as tauriClipboard from "@tauri-apps/plugin-clipboard-manager";
 import type { EditorReference } from "./editorReference";
 import type { RoutineOverload, TestOutputBind } from "./routineTest";
 import type {
@@ -154,4 +155,12 @@ export const api = {
       owner,
       name,
     }),
+};
+
+// En el navegador (vite dev sin Tauri) no existe el plugin.
+export const clipboard = {
+  readText: (): Promise<string> =>
+    isTauri() ? tauriClipboard.readText() : navigator.clipboard.readText(),
+  writeText: (text: string): Promise<void> =>
+    isTauri() ? tauriClipboard.writeText(text) : navigator.clipboard.writeText(text),
 };
