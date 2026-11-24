@@ -103,7 +103,19 @@ export interface ExecOutcome {
   elapsed_ms: number;
   output: string[];
   transaction: boolean;
+  test_outputs?: TestOutput[];
 }
+
+export interface ExplainPlan {
+  columns: SqlColumn[];
+  page: QueryPage;
+}
+
+export type TestOutput = { name: string } & (
+  | { kind: "Scalar"; value: string | null }
+  | { kind: "Cursor"; columns: SqlColumn[]; page: QueryPage }
+  | { kind: "Error"; message: string }
+);
 
 export type CoreError =
   | { Io: string }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phosphor-icons/react";
 import type { SqlColumn } from "../types";
@@ -46,6 +46,7 @@ const clampWidth = (width: number) => Math.min(RESIZE.max, Math.max(RESIZE.min, 
 export function ResultGrid(props: Props) {
   const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, fetching, fetchError } = props;
   const localScroll = useRef<HTMLDivElement>(null);
+  const cellPrefix = useId();
   const scroll = props.scrollRef ?? localScroll;
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -135,7 +136,7 @@ export function ResultGrid(props: Props) {
   }
 
   if (!rows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
-  const activeId = selected ? `sql-cell-${selected.row}-${selected.col}` : undefined;
+  const activeId = selected ? `${cellPrefix}-cell-${selected.row}-${selected.col}` : undefined;
   const table = (
     <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}
       onContextMenu={(event) => {
@@ -210,7 +211,7 @@ export function ResultGrid(props: Props) {
                     (selected?.row === row && (selected.scope === "row" || selected.col === col));
                   const isEditing = editing?.position.row === row && editing.position.col === col;
                   return (
-                    <div key={col} id={`sql-cell-${row}-${col}`} role="gridcell" aria-selected={isSelected}
+                    <div key={col} id={`${cellPrefix}-cell-${row}-${col}`} role="gridcell" aria-selected={isSelected}
                       aria-label={`${column.name} ${value ?? "NULL"}`}
                       className={`sql-cell${column.numeric ? " num" : ""}${isSelected ? " selected" : ""}${isModified(row, col) ? " modified" : ""}`}
                       onMouseDown={(event) => { if (event.button === 0) onSelect({ row, col }); }}

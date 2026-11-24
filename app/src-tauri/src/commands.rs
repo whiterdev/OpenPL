@@ -348,12 +348,40 @@ pub async fn sql_execute(
     sql: String,
     binds: Vec<openpl_core::sql::BindValue>,
     page_size: Option<usize>,
+    test_outputs: Option<Vec<openpl_core::sql::TestOutputBind>>,
 ) -> Result<openpl_core::sql::ExecOutcome, CoreError> {
     let size = page_size.unwrap_or(openpl_core::sql::PAGE_SIZE);
     st.sessions
         .get(session_id)?
-        .run(move |c| openpl_core::sql::execute(c, &sql, &binds, size))
+        .run(move |c| {
+            openpl_core::sql::execute_with_outputs(
+                c,
+                &sql,
+                &binds,
+                size,
+                &test_outputs.unwrap_or_default(),
+            )
+        })
         .await
+}
+
+#[tauri::command]
+pub async fn sql_explain(
+    st: St<'_>,
+    session_id: SessionId,
+    sql: String,
+) -> Result<openpl_core::sql::ExplainPlan, CoreError> {
+    let sibling = st.sessions.open_sibling(session_id).await?;
+    let result = async {
+        let id = uuid::Uuid::new_v4().simple().to_string()[..30].to_owned();
+        st.sessions
+            .get(sibling)?
+            .run(move |conn| openpl_core::sql::explain(conn, &sql, &id))
+            .await
+    }
+    .await;
+    st.sessions.close(sibling);
+    result
 }
 
 #[tauri::command]
@@ -444,6 +472,7 @@ pub async fn open_program_file(app: tauri::AppHandle) -> Result<Option<ProgramFi
         .dialog()
         .file()
         .add_filter("PL/SQL", &["pks", "pkb", "sql"])
+        .add_filter("Pruebas", &["tst"])
         .blocking_pick_file()
     else {
         return Ok(None);
@@ -466,10 +495,17 @@ pub async fn save_program_file(
     name: Option<String>,
 ) -> Result<Option<String>, CoreError> {
     use tauri_plugin_dialog::DialogExt;
-    if !matches!(extension.as_str(), "pks" | "pkb" | "sql") {
+    if !matches!(extension.as_str(), "pks" | "pkb" | "sql" | "tst" | "csv") {
         return Err(CoreError::Io("Extensión de programa inválida.".into()));
     }
-    let dialog = app.dialog().file().add_filter("PL/SQL", &[&extension]);
+    let dialog = app.dialog().file().add_filter(
+        match extension.as_str() {
+            "tst" => "Prueba",
+            "csv" => "CSV",
+            _ => "PL/SQL",
+        },
+        &[&extension],
+    );
     let dialog = match name {
         Some(name) => dialog.set_file_name(name),
         None => dialog.set_file_name(format!("programa.{extension}")),

@@ -25,10 +25,15 @@ import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
+import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
+import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
+import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
+import { CommandPalette } from "./components/CommandPalette";
 import { routineDraft, type RoutineOverload } from "./routineTest";
+import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
@@ -66,7 +71,9 @@ const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const sqlTabActions = [
   "execute",
   "executeScript",
+  "explainPlan",
   "fetchAllRows",
+  "exportData",
   "cancel",
   "commit",
   "rollback",
@@ -104,8 +111,10 @@ interface ProgramTab {
     sessionId: string;
     initial: string;
     run: boolean;
+    exportOnOpen?: boolean;
     edit?: boolean;
-    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"];
+    test?: TestSettings;
+    command?: boolean;
     transaction: boolean;
   };
 }
@@ -131,11 +140,14 @@ const editorEdits = [
 
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
+  const [inspection, setInspection] = useState<Inspection | null>(null);
+  const [draft, setDraft] = useState<{ object: ObjectInfo; connection: ActiveConnection; action: "rename" | "account" } | null>(null);
   const [connections, setConnections] = useState<ActiveConnection[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, SessionState>>({});
   const [showLogin, setShowLogin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   const [themeMode, setThemeMode] = useState(() => activeTheme().mode);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const [routineOptions, setRoutineOptions] = useState<{
@@ -242,6 +254,8 @@ export default function App() {
     ...currentProgramActions,
     ...sqlActions,
     newSql: active ? () => void openSql(active) : undefined,
+    newTest: active ? () => void openSql(active, "", false, false, { bindKinds: {}, outputs: [] }) : undefined,
+    newCommand: active ? () => void openSql(active, "", false, false, undefined, true) : undefined,
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
@@ -251,12 +265,13 @@ export default function App() {
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnect(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
+    palette: () => setShowPalette(true),
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (showLogin || showTheme) {
+      if (showLogin || showTheme || showPalette || inspection || draft) {
         if (
           matches(e, commands.explainPlan.keys!) ||
           matches(e, commands.refreshExplorer.keys!)
@@ -392,6 +407,12 @@ export default function App() {
       const file = await api.openProgramFile();
       if (!file) return;
       const name = file.name.toLowerCase();
+      if (name.endsWith(".tst")) {
+        if (!active) throw new Error("Conéctate para abrir la prueba.");
+        const { source, bindKinds, outputs } = parseTestFile(file.source);
+        await openSql(active, source, false, false, { bindKinds, outputs, fileName: file.name });
+        return;
+      }
       const kind = name.endsWith(".pks")
         ? "PACKAGE"
         : name.endsWith(".pkb")
@@ -420,20 +441,21 @@ export default function App() {
   async function openSql(
     connection: ActiveConnection,
     initial = "",
-    run = false,
+    run: boolean | "export" = false,
     edit = false,
-    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"],
+    test?: TestSettings,
+    command = false,
   ) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
       sqlCount.current += 1;
       addProgram({
         id: crypto.randomUUID(),
-        label: `SQL ${sqlCount.current}`,
+        label: test?.fileName ?? `${command ? "Comando" : test ? "Prueba" : "SQL"} ${sqlCount.current}`,
         connection,
         readOnly: false,
         dirty: false,
-        sql: { sessionId, initial, run, edit, bindKinds, transaction: false },
+        sql: { sessionId, initial, run: !!run, exportOnOpen: run === "export", edit, test, command, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -443,12 +465,12 @@ export default function App() {
     }
   }
 
-  function queryData(object: ObjectInfo, edit = false) {
+  function queryData(object: ObjectInfo, edit = false, exportCsv = false) {
     if (!active) return;
     void openSql(
       active,
       `SELECT t.* FROM ${quoteName(object.owner)}.${quoteName(object.name)} t`,
-      true,
+      exportCsv ? "export" : true,
       edit,
     );
   }
@@ -459,7 +481,9 @@ export default function App() {
     function prepare(signature: RoutineOverload, overloaded = false) {
       try {
         const draft = routineDraft(path, signature, overloaded);
-        void openSql(connection, draft.source, false, false, draft.bindKinds);
+        void openSql(connection, draft.source, false, false, {
+          bindKinds: draft.bindKinds, outputs: draft.outputs, routine: { path, signature, overloaded },
+        });
       } catch (error) {
         showNotice(describeError(error).message);
       }
@@ -475,6 +499,31 @@ export default function App() {
           run: () => prepare(signature, true),
         })) });
       }
+    } catch (error) {
+      showNotice(describeError(error).message);
+    }
+  }
+
+  async function testObject(connection: ActiveConnection, object: ObjectInfo, x: number, y: number) {
+    if (object.object_type !== "Package") {
+      await testRoutine(connection, object, object.name, x, y);
+      return;
+    }
+    try {
+      const [parts, { programStructure }] = await Promise.all([
+        fetchProgram(connection.sessionId, object),
+        import("./programStructure"),
+      ]);
+      const spec = parts.find((part) => part.kind === "PACKAGE");
+      const names = new Set(programStructure(spec?.source ?? "")
+        .filter((entry) => entry.kind === "procedure" || entry.kind === "function").map((entry) => entry.name));
+      if (!names.size) {
+        showNotice("Paquete sin rutinas públicas");
+        return;
+      }
+      setRoutineOptions({ x, y, name: object.name, items: [...names].map((name) => ({
+        label: name, run: () => void testRoutine(connection, object, name, x, y),
+      })) });
     } catch (error) {
       showNotice(describeError(error).message);
     }
@@ -544,8 +593,18 @@ export default function App() {
     mode: "view" | "edit" = "view",
     connection = active,
   ) {
-    if (!connection || !supportsProgram.has(object.object_type)) {
-      showNotice("Edición disponible en una versión posterior");
+    if (!connection) return;
+    if (!supportsProgram.has(object.object_type)) {
+      if (mode === "edit") {
+        try {
+          const ddl = await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name);
+          await openSql(connection, ddl);
+        } catch (error) {
+          showNotice(describeError(error).message);
+        }
+      } else {
+        setInspection({ object, sessionId: connection.sessionId, mode: "describe" });
+      }
       return;
     }
     const id = JSON.stringify([
@@ -751,7 +810,7 @@ export default function App() {
               ...(
                 [
                   ["newSql", "Ventana SQL"],
-                  ["test", "Ventana de prueba"],
+                  ["newTest", "Ventana de prueba"],
                   ["newCommand", "Ventana de comando"],
                 ] as const
               ).map(([id, label]): ContextItem => ({
@@ -784,8 +843,8 @@ export default function App() {
         <div className="titlebar-center">
           <button
             className="search"
-            disabled
-            title="Buscar comando · Próximamente"
+            title="Buscar comando"
+            onClick={actions.palette}
           >
             <MagnifyingGlass size={14} aria-hidden />
             <span>Buscar</span>
@@ -835,6 +894,7 @@ export default function App() {
         </button>
       </header>
 
+      {showPalette && <CommandPalette actions={actions} onClose={() => setShowPalette(false)} />}
       <div className="body">
         {active && explorerVisible && (
           <ObjectBrowser
@@ -846,6 +906,24 @@ export default function App() {
             onNotice={showNotice}
             onQueryData={(object) => queryData(object)}
             onEditData={(object) => queryData(object, true)}
+            onExportData={(object) => queryData(object, false, true)}
+            onInspect={(object, mode) => setInspection({ object, mode, sessionId: active.sessionId })}
+            onDraft={(action, type, object) => {
+              if (action === "create") {
+                const sql = createDraft(type);
+                if (sql) void openSql(active, sql);
+              } else if (object) {
+                if (action === "drop") {
+                  const sql = dropDraft(object);
+                  if (sql) void openSql(active, sql);
+                } else if (action === "privileges") {
+                  void openSql(active, privilegesQuery(object.name), true);
+                } else {
+                  setDraft({ object, connection: active, action });
+                }
+              }
+            }}
+            onTest={(object, x, y) => void testObject(active, object, x, y)}
           />
         )}
         <main className="workspace">
@@ -908,8 +986,10 @@ export default function App() {
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
-                        initialBindKinds={tab.sql.bindKinds}
+                        command={tab.sql.command}
+                        testSettings={tab.sql.test}
                         runOnOpen={tab.sql.run}
+                        exportOnOpen={tab.sql.exportOnOpen}
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
@@ -1057,6 +1137,9 @@ export default function App() {
           }}
         />
       )}
+      {inspection && <ObjectInspector {...inspection} onClose={() => setInspection(null)} />}
+      {draft && <ObjectDraftDialog object={draft.object} action={draft.action} onClose={() => setDraft(null)}
+        onPrepare={(sql) => { void openSql(draft.connection, sql); setDraft(null); }} />}
     </div>
   );
 }

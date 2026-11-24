@@ -1,5 +1,7 @@
 # OpenPL Plan 4: Ventana de prueba
 
+Plan inicial. La implementación actual y las decisiones que reemplazan sus bloqueos se documentan en el [plan de cierre](2026-11-24-openpl-04-cierre-v1.md).
+
 **Objetivo:** probar un procedimiento o una función desde una ventana con sesión propia. El núcleo lee la firma, genera un bloque anónimo editable con un bind por parámetro, lo ejecuta con binds de entrada y de salida y devuelve las salidas, `DBMS_OUTPUT` y el tiempo. La interfaz muestra la grilla de variables, la salida y el control de la transacción. La prueba se guarda y se reabre como `.tst`.
 
 **Arquitectura:** la ventana reutiliza la sesión hermana de la Ventana SQL (`sql_open`, `sql_close`, `sql_cancel`, `sql_commit`, `sql_rollback`). `sql::execute` solo acepta binds de entrada, así que la ejecución con salidas vive en un módulo nuevo, `testrun.rs`. La firma (`routine.rs`) y el generador del bloque (`testblock.rs`) son independientes de la ejecución: el generador es una función pura y se prueba sin Oracle. La interfaz guarda las variables en `testVars.ts` y el archivo en `testFile.ts`, los dos sin UI.

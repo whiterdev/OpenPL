@@ -1,10 +1,11 @@
 //! Ejecución de sentencias de la Ventana SQL. Corre siempre en el hilo de su sesión.
 
 use openpl_oracle::{DbConn, DbError};
-use oracle::sql_type::{OracleType, Timestamp, ToSql};
-use oracle::{ResultSet, Row, StatementType};
+use oracle::sql_type::{Clob, OracleType, RefCursor, Timestamp, ToSql};
+use oracle::{ColumnInfo, ResultSet, Row, Statement, StatementType};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::io::Read;
 use std::iter::Peekable;
 use std::time::Instant;
 
@@ -42,6 +43,44 @@ pub struct QueryPage {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ExplainPlan {
+    pub columns: Vec<Column>,
+    pub page: QueryPage,
+}
+
+/// Se ejecuta únicamente en la sesión descartable del plan.
+pub fn explain(conn: &DbConn, sql: &str, id: &str) -> Result<ExplainPlan, DbError> {
+    let kind = conn.raw().statement(sql).build()?.statement_type();
+    if !matches!(
+        kind,
+        StatementType::Select
+            | StatementType::Insert
+            | StatementType::Update
+            | StatementType::Delete
+            | StatementType::Merge
+    ) || id.len() != 30
+        || !id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(DbError::from_code(
+            None,
+            "La sentencia no admite plan de ejecución.",
+        ));
+    }
+    conn.raw().execute(
+        &format!("EXPLAIN PLAN SET STATEMENT_ID = '{id}' FOR {sql}"),
+        &[],
+    )?;
+    let rows = conn.raw().query(
+        "SELECT id, parent_id, depth, operation, options, object_owner, object_name, cost, cardinality
+         FROM plan_table WHERE statement_id = CAST(:1 AS VARCHAR2(30)) ORDER BY id",
+        &[&id],
+    )?;
+    let columns = result_columns(rows.column_info());
+    let page = read_page(&mut rows.peekable(), 300, |row| row_cells(&row))?;
+    Ok(ExplainPlan { columns, page })
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
 pub enum ExecResult {
     Query {
@@ -60,6 +99,106 @@ pub struct ExecOutcome {
     pub elapsed_ms: u64,
     pub output: Vec<String>,
     pub transaction: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub test_outputs: Vec<TestOutput>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum TestOutputKind {
+    Text,
+    Clob,
+    Cursor,
+}
+
+impl TestOutputKind {
+    fn oracle_type(self) -> OracleType {
+        match self {
+            Self::Text => OracleType::Varchar2(32767),
+            Self::Clob => OracleType::CLOB,
+            Self::Cursor => OracleType::RefCursor,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TestOutputBind {
+    name: String,
+    kind: TestOutputKind,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TestOutput {
+    name: String,
+    #[serde(flatten)]
+    value: TestOutputValue,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind")]
+enum TestOutputValue {
+    Scalar {
+        value: Option<String>,
+    },
+    Cursor {
+        columns: Vec<Column>,
+        page: QueryPage,
+    },
+    Error {
+        message: String,
+    },
+}
+
+fn result_columns(columns: &[ColumnInfo]) -> Vec<Column> {
+    columns
+        .iter()
+        .map(|c| Column {
+            name: c.name().to_string(),
+            type_name: c.oracle_type().to_string(),
+            numeric: is_numeric(c.oracle_type()),
+        })
+        .collect()
+}
+
+fn read_test_output(
+    stmt: &Statement,
+    bind: &TestOutputBind,
+    size: usize,
+) -> Result<TestOutputValue, DbError> {
+    let name = bind.name.as_str();
+    match bind.kind {
+        TestOutputKind::Text => Ok(TestOutputValue::Scalar {
+            value: stmt.bind_value(name)?,
+        }),
+        TestOutputKind::Clob => {
+            let clob: Option<Clob> = stmt.bind_value(name)?;
+            let value = if let Some(clob) = clob {
+                let mut bytes = Vec::new();
+                clob.take(128 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|err| DbError::from_code(None, &err.to_string()))?;
+                let truncated = bytes.len() > 128 * 1024;
+                bytes.truncate(128 * 1024);
+                let mut value = String::from_utf8_lossy(&bytes).into_owned();
+                if truncated {
+                    value.push('…');
+                }
+                Some(value)
+            } else {
+                None
+            };
+            Ok(TestOutputValue::Scalar { value })
+        }
+        TestOutputKind::Cursor => {
+            let cursor: Option<RefCursor> = stmt.bind_value(name)?;
+            let Some(mut cursor) = cursor else {
+                return Ok(TestOutputValue::Scalar { value: None });
+            };
+            let rows = cursor.query()?;
+            let columns = result_columns(rows.column_info());
+            let page = read_page(&mut rows.peekable(), size, |row| row_cells(&row))?;
+            Ok(TestOutputValue::Cursor { columns, page })
+        }
+    }
 }
 
 struct OpenCursor {
@@ -242,33 +381,47 @@ pub fn execute(
     binds: &[BindValue],
     page_size: usize,
 ) -> Result<ExecOutcome, DbError> {
+    execute_with_outputs(conn, sql, binds, page_size, &[])
+}
+
+pub fn execute_with_outputs(
+    conn: &DbConn,
+    sql: &str,
+    binds: &[BindValue],
+    page_size: usize,
+    outputs: &[TestOutputBind],
+) -> Result<ExecOutcome, DbError> {
     CURSOR.with(|c| c.borrow_mut().take());
     let params = binds
         .iter()
         .map(bind_param)
         .collect::<Result<Vec<_>, _>>()?;
-    let named: Vec<(&str, &dyn ToSql)> = binds
+    let mut named: Vec<(&str, &dyn ToSql)> = binds
         .iter()
         .zip(&params)
         .map(|(b, p)| (b.name.as_str(), p.as_ref()))
         .collect();
+    let output_types: Vec<_> = outputs.iter().map(|bind| bind.kind.oracle_type()).collect();
+    named.extend(
+        outputs
+            .iter()
+            .zip(&output_types)
+            .map(|(b, t)| (b.name.as_str(), t as &dyn ToSql)),
+    );
     let started = Instant::now();
-    let mut stmt = conn
-        .raw()
-        .statement(sql)
-        .fetch_array_size(page_size as u32)
-        .build()?;
+    let mut builder = conn.raw().statement(sql);
+    builder.fetch_array_size(page_size as u32);
+    if outputs
+        .iter()
+        .any(|bind| matches!(bind.kind, TestOutputKind::Clob))
+    {
+        builder.lob_locator();
+    }
+    let mut stmt = builder.build()?;
+    let mut test_outputs = Vec::new();
     let result = if stmt.is_query() {
         let rows = stmt.into_result_set_named::<Row>(&named)?;
-        let columns = rows
-            .column_info()
-            .iter()
-            .map(|c| Column {
-                name: c.name().to_string(),
-                type_name: c.oracle_type().to_string(),
-                numeric: is_numeric(c.oracle_type()),
-            })
-            .collect();
+        let columns = result_columns(rows.column_info());
         let mut rows = rows.peekable();
         let page = read_page(&mut rows, page_size, |row| row_cells(&row))?;
         let id = NEXT_CURSOR.with(|n| {
@@ -286,6 +439,17 @@ pub fn execute(
         }
     } else {
         stmt.execute_named(&named)?;
+        test_outputs = outputs
+            .iter()
+            .map(|bind| TestOutput {
+                name: bind.name.clone(),
+                value: read_test_output(&stmt, bind, page_size).unwrap_or_else(|err| {
+                    TestOutputValue::Error {
+                        message: err.message,
+                    }
+                }),
+            })
+            .collect();
         let kind = stmt.statement_type();
         let count = stmt.row_count().unwrap_or(0);
         ExecResult::Done {
@@ -298,6 +462,7 @@ pub fn execute(
         elapsed_ms,
         output: read_output(conn).unwrap_or_default(),
         transaction: in_transaction(conn).unwrap_or(false),
+        test_outputs,
     })
 }
 
@@ -333,6 +498,16 @@ pub fn rollback(conn: &DbConn) -> Result<bool, DbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tipos_de_salida_tienen_buffers_explicitos() {
+        assert_eq!(
+            TestOutputKind::Text.oracle_type(),
+            OracleType::Varchar2(32767)
+        );
+        assert_eq!(TestOutputKind::Clob.oracle_type(), OracleType::CLOB);
+        assert_eq!(TestOutputKind::Cursor.oracle_type(), OracleType::RefCursor);
+    }
 
     #[test]
     fn vista_inicial_de_50_y_continuacion_sin_omitir_filas() {

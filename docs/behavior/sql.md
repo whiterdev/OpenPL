@@ -8,6 +8,7 @@ Observación previa por uso normal: [observaciones-referencia.md](observaciones-
 - **Variables:** si la sentencia usa `:nombre` o `&nombre`, el panel Variables pide su valor y tipo (Texto, Número, Fecha). Los valores se recuerdan mientras la ventana está abierta.
 - **Resultados:** la carga inicial muestra hasta 50 filas. **Traer todas** (Ctrl+Shift+End), junto a las pestañas de resultados, usa el cursor abierto para traer las restantes. El desplazamiento recorre las filas cargadas. Las filas alternan dos tonos de grafito y los cambios de edición conservan sus indicadores. El pie indica filas y tiempo.
 - El editor ocupa inicialmente el 70 % del espacio que comparte con Resultados. El divisor se puede arrastrar o mover con las flechas cuando tiene foco. Las pestañas abiertas con **Probar** usan la misma distribución.
+- F5 muestra un plan estimado de la sentencia SQL bajo el cursor en la pestaña **Plan**. Oracle lo genera en una sesión independiente. La sentencia analizada queda sin ejecutar.
 - Si falla la carga de filas restantes, la grilla conserva las filas ya recibidas y muestra el error. F8 vuelve a ejecutar la consulta.
 - **Salida:** líneas de `DBMS_OUTPUT` de cada ejecución, más los mensajes (filas afectadas, comandos omitidos, errores con código).
 - **Historial:** sentencias ejecutadas en la ventana, la más reciente arriba. Clic la vuelve a poner en el editor.

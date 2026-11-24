@@ -1,11 +1,13 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (tanda B1 a B13: editor, compilación, explorador, completado, temas). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (candidata de OpenPL 1.0.0). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
-- Rama de trabajo: `feat/plan-4-ventana-prueba`, creada desde `feat/plan-3-sql` (que sale de
-  `feat/plan-2-programa` y esta de `feat/plan-1-base`). El remoto se configura como `origin`.
+- Plan 5 implementado para la 1.0.0: consola, paleta, plan estimado, CSV, inspector y borradores SQL desde el explorador. [Plan 5](superpowers/plans/2026-11-24-openpl-05-acciones-v1.md), [consola](behavior/comandos.md), [explorador](behavior/acciones-explorador.md) y [auditoría](../anti-slop/audit-acciones-v1-2026-11-24.md).
+- El plan requiere acceso a `PLAN_TABLE` y los privilegios requieren las vistas administrativas del diccionario. Se verificaron sus columnas con DBX en solo lectura. Pendiente la validación manual de escritorio contra Oracle.
+
+- Rama de cierre: `feat/cierre-v1`, creada desde `main`. [Calificación de la candidata](RELEASE-v1.md).
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 (ventana de programa) **implementado, pendiente de validar contra Oracle**.
@@ -13,8 +15,8 @@
 - Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
   validación contra Oracle: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos ORA-12704;
   corrección de los binds de texto, pendiente de verificación. Las escrituras las prueba el usuario.
-- Plan 4 (ventana de prueba) **en curso**: lectura de firmas y sobrecargas implementada. La
-  interfaz espera las decisiones abiertas y el mockup "3 · Ventana de prueba".
+- Plan 4 (ventana de prueba) **implementado; pendiente de calificación en escritorio y Oracle**.
+  [Plan de cierre](superpowers/plans/2026-11-24-openpl-04-cierre-v1.md)
 - Verificación local en Windows tras la tanda B1 a B13 (2026-11-24): `cargo fmt --check`, Clippy
   con `-D warnings` y `tsc --noEmit` pasan. `cargo test --workspace`: 93 pruebas en verde, sin
   variables `OPENPL_TEST_*` (las `live` terminan sin conectarse). `npm.cmd test`: 25 archivos y
@@ -28,7 +30,7 @@
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
 - **No verificado todavía:** uso contra una base Oracle real (login, explorador, DDL, recompilar),
   el resto de la validación contra base real (la corrida de lectura con `OPENPL_TEST_*` ya se hizo:
-  `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección) y el CI remoto.
+  `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección). El CI de `main` quedó verde en `8e630b8`.
 
 ## Siguiente paso
 
@@ -47,10 +49,26 @@
 3. Escrituras y compilaciones (grilla del plan 3, Recompilar, DDL): las prueba el usuario.
 4. Decisión pendiente del usuario: la ventana SQL de la app ejecuta bloques PL/SQL de `DBMS_OUTPUT`
    (`ENABLE` y `GET_LINE`) en cada consulta, aun en un `SELECT`. ¿Se acepta contra la base de desarrollo o se cambia?
-5. Mockup "3 · Ventana de prueba" y respuestas a las decisiones abiertas del plan 4.
+5. Recorrido de calificación de la candidata y validación manual de `OUT`, `IN OUT` y `REF CURSOR`.
 6. Pruebas del usuario de la tanda B1 a B13 (lista en "Tanda B1 a B13 › Pruebas del usuario").
 
 ## Hecho
+
+- **Plan de ejecución (F5):** plan estimado en su propia pestaña y sesión. Se confirmó por DBX la disponibilidad de las columnas del plan, en solo lectura. La ejecución de F5 contra Oracle se reserva para la prueba manual.
+
+- **Buscar comando (Ctrl+K):** paleta filtrable por nombre o atajo con las acciones de la ventana actual.
+
+### Consola de comandos
+
+- **Nuevo → Ventana de comando** abre una sesión SQL propia con prompt e historial. El editor de scripts y el ejecutor se comparten con SQL. [Comportamiento](behavior/comandos.md)
+
+### Cierre funcional de la ventana de prueba
+
+- **Probar** abre una pestaña propia y se puede invocar desde el explorador o una declaración pública. Desde **Nuevo** se abre una prueba vacía.
+- El generador omite entradas con valor predeterminado, declara tipos compuestos nombrados para completar a mano y captura retornos y salidas escalares, CLOB y REF CURSOR. Los cursores muestran una vista de hasta 50 filas.
+- `.tst` guarda el bloque y metadatos de binds. Los valores escritos en los campos y la conexión quedan fuera del archivo.
+- La apertura SQL y la comparación se prueban con los módulos ya cargados en el runner. Se conservaron los asserts de sesión, teclado y transacción.
+- [Plan de cierre](superpowers/plans/2026-11-24-openpl-04-cierre-v1.md), [auditoría](../anti-slop/audit-cierre-v1-2026-11-24.md) y [calificación de la v1](RELEASE-v1.md).
 
 ### Listado de perfiles con permisos limitados
 
@@ -418,14 +436,13 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
   validación contra Oracle real: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos
   ORA-12704. La corrección de los binds de texto está pendiente de verificación. Las escrituras las prueba el usuario.
 
-### Plan 4 — Ventana de prueba (en curso)
-- [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
-  (diseño §7.6, mockup "3 · Ventana de prueba"). T1 está implementada. La interfaz espera el mockup
-  y las decisiones abiertas.
-- Alcance: generar el bloque desde `ALL_ARGUMENTS` (sobrecargas, no escalares en `declare`), grilla de variables, ejecutar (F8), `DBMS_OUTPUT`, guardar `.tst`. Habilitar "Probar".
+### Plan 4 — Ventana de prueba (pendiente de calificación)
+- [Plan de cierre](superpowers/plans/2026-11-24-openpl-04-cierre-v1.md) y [comportamiento](behavior/prueba.md).
+- Validar visualmente el flujo completo y comprobar resultados en Oracle en una sesión habilitada para pruebas manuales.
 
 ### Plan 5 — Empaquetado
-- Instaladores (MSI/NSIS, AppImage/.deb), firma, versión, notas de publicación.
+- Versión 1.0.0 y paquetes x64 MSI, NSIS, Debian y AppImage generados. [Calificación de la candidata](RELEASE-v1.md).
+- Pendiente: probar instalación y flujo de escritorio por plataforma. La firma y la publicación requieren preparar la distribución.
 
 ### Después
 - Plan de ejecución (F5), Command Window, depurador, beautifier, comparar, exportar, macOS.

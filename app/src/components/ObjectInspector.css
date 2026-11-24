@@ -1,0 +1,22 @@
+.object-inspector {
+  width: min(780px, 92vw);
+  max-height: 80vh;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--s1);
+  color: var(--text);
+}
+.object-inspector::backdrop { background: var(--backdrop); }
+.object-inspector header, .object-inspector form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.object-inspector header { align-items: center; justify-content: space-between; }
+.object-inspector h2, .object-inspector h3 { margin: 0; font-size: inherit; }
+.object-inspector dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
+.object-inspector dd { margin: 0; overflow-wrap: anywhere; }
+.object-inspector label { display: grid; gap: 4px; min-width: 0; }
+.object-inspector :is(input, select) { min-width: 0; color: var(--text); background: var(--s0); border: 1px solid var(--line); }
+.object-inspector :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.object-inspector table { width: 100%; border-collapse: collapse; }
+.object-inspector th, .object-inspector td { text-align: left; padding: 4px; border-bottom: 1px solid var(--line); }
+.object-inspector pre { overflow: auto; max-height: 48vh; padding: 8px; background: var(--s0); }
+.object-inspector-diff { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }

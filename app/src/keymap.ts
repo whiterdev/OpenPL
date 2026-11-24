@@ -2,6 +2,7 @@
 
 export type CommandId =
   | "fetchAllRows"
+  | "exportData"
   | "selectGridRows"
   | "copyGrid"
   | "execute"
@@ -12,6 +13,7 @@ export type CommandId =
   | "explainPlan"
   | "palette"
   | "newSql"
+  | "newTest"
   | "test"
   | "newCommand"
   | "newProgram"
@@ -59,22 +61,22 @@ export interface Command {
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
   { id: "fetchAllRows", label: "Traer todas", keys: "Ctrl+Shift+End" },
+  { id: "exportData", label: "Exportar CSV", keys: "Ctrl+Shift+X" },
   { id: "selectGridRows", label: "Seleccionar filas cargadas", keys: "Ctrl+A" },
   { id: "copyGrid", label: "Copiar", keys: "Ctrl+C" },
-  // TODO(plan 4): ventana de prueba. TODO(fases posteriores): plan de ejecución, paleta, ventana de comando.
   { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
   { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
   { id: "commit", label: "Commit", keys: "F10" },
   { id: "rollback", label: "Rollback", keys: "Shift+F10" },
-  { id: "explainPlan", label: "Plan de ejecución", keys: "F5", pending: true },
-  { id: "palette", label: "Buscar comando", keys: "Ctrl+K", pending: true },
+  { id: "explainPlan", label: "Plan de ejecución", keys: "F5" },
+  { id: "palette", label: "Buscar comando", keys: "Ctrl+K" },
   { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
-  { id: "test", label: "Probar", keys: "Ctrl+T", pending: true },
+  { id: "newTest", label: "Nueva ventana de prueba", keys: "Ctrl+Alt+T" },
+  { id: "test", label: "Probar", keys: "Ctrl+T" },
   {
     id: "newCommand",
     label: "Nueva ventana de comando",
     keys: "Ctrl+Shift+N",
-    pending: true,
   },
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
   { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },

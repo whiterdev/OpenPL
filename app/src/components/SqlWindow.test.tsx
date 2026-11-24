@@ -28,6 +28,46 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   return { ref, view, onTransaction };
 }
 
+test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
+  setup("", { command: true });
+  const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  fireEvent.change(prompt, { target: { value: "PROMPT Hola" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(screen.getByText("Hola")).toBeVisible();
+  expect(execute).not.toHaveBeenCalled();
+  fireEvent.change(prompt, { target: { value: "SELECT 7 FROM DUAL;" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(execute).toHaveBeenCalledWith("w1", "SELECT 7 FROM DUAL", []);
+  expect(screen.getByText("SQL> SELECT 7 FROM DUAL;")).toBeVisible();
+  fireEvent.keyDown(prompt, { key: "ArrowUp" });
+  expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
+});
+
+test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
+  const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({
+    columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false }],
+    page: { rows: [["TABLE ACCESS"]], more: false },
+  });
+  const execute = vi.spyOn(api, "sqlExecute");
+  const { ref } = setup("SELECT 1 FROM DUAL;");
+  await act(async () => ref.current!.explainPlan!());
+  expect(explain).toHaveBeenCalledWith("w1", "SELECT 1 FROM DUAL");
+  expect(execute).not.toHaveBeenCalled();
+  expect(screen.getByRole("tabpanel", { name: "Plan" })).toHaveTextContent("TABLE ACCESS");
+});
+
+test("exporta CSV con encabezado y todas las páginas del cursor", async () => {
+  vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana, B"]], true));
+  const fetch = vi.spyOn(api, "sqlFetch").mockResolvedValue({ rows: [["2", "Beto"]], more: false });
+  const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("resultados.csv");
+  const { ref } = setup("SELECT 1 FROM DUAL;");
+  await act(async () => ref.current!.execute!());
+  await act(async () => ref.current!.exportData!());
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenCalledWith('ID,NOMBRE\r\n1,"Ana, B"\r\n2,Beto', "csv", "resultados.csv");
+});
+
 test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {
   setup("select 1 from dual");
   const divider = screen.getByRole("separator", { name: "Alto del editor" });
@@ -41,7 +81,7 @@ test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos",
 test("una prueba abre las variables tipadas debajo del editor y espera F8", async () => {
   const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
   const source = 'BEGIN\n  "HR"."PKG"."RUN"("FECHA" => :FECHA);\nEND;\n/';
-  const { ref } = setup(source, { initialBindKinds: { FECHA: "Date" } });
+  const { ref } = setup(source, { testSettings: { bindKinds: { FECHA: "Date" }, outputs: [] } });
   const panel = within(screen.getByRole("tabpanel", { name: "Variables" }));
   expect(panel.getByRole("combobox", { name: "Tipo de :FECHA" })).toHaveValue("Date");
   expect(execute).not.toHaveBeenCalled();
@@ -50,6 +90,55 @@ test("una prueba abre las variables tipadas debajo del editor y espera F8", asyn
   expect(execute).toHaveBeenCalledWith("w1", source.slice(0, -2), [
     { name: "FECHA", kind: "Date", value: "2026-11-24" },
   ]);
+});
+
+test("una salida registrada se envia como OUT y se muestra debajo del editor", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue({
+    result: { kind: "Done", message: "Bloque ejecutado" },
+    elapsed_ms: 1, output: [], transaction: false,
+    test_outputs: [{ name: "SALIDA", kind: "Scalar", value: "42" }],
+  });
+  const outputs = [{ name: "SALIDA", label: "Retorno", kind: "Text" as const }];
+  const { ref } = setup("BEGIN :SALIDA := 42; END;", { testSettings: { bindKinds: {}, outputs } });
+  await act(async () => ref.current!.execute!());
+  expect(execute).toHaveBeenCalledWith("w1", "BEGIN :SALIDA := 42; END;", [], undefined, outputs);
+  expect(within(screen.getByRole("tabpanel", { name: "Variables" })).getByText("42")).toBeVisible();
+});
+
+test("muestra un cursor de salida en una grilla de solo lectura", async () => {
+  vi.spyOn(api, "sqlExecute").mockResolvedValue({
+    result: { kind: "Done", message: "Bloque ejecutado" },
+    elapsed_ms: 1, output: [], transaction: false,
+    test_outputs: [{ name: "FILAS", kind: "Cursor",
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      page: { rows: [["7"]], more: true },
+    }],
+  });
+  const { ref } = setup("BEGIN :FILAS := NULL; END;", { testSettings: {
+    bindKinds: {}, outputs: [{ name: "FILAS", label: "Filas", kind: "Cursor" }],
+  } });
+  await act(async () => ref.current!.execute!());
+  const grid = within(screen.getByRole("region", { name: "Filas" })).getByRole("grid");
+  expect(grid).toHaveAttribute("aria-readonly", "true");
+  expect(within(grid).getByRole("gridcell", { name: "ID 7" })).toBeVisible();
+  expect(screen.getByText("1 fila mostrada")).toBeVisible();
+});
+
+test("puede omitir una entrada con valor por defecto y guardar la prueba", async () => {
+  const routine = { path: ["HR", "DEMO"], overloaded: false, signature: {
+    subprogram_id: 1, returns: null, parameters: [
+      { declaration: { name: "ID", data_type: "NUMBER", direction: "IN", defaulted: true } },
+    ],
+  } };
+  const { ref, view } = setup('BEGIN\n  "HR"."DEMO"(\n    "ID" => :ID\n  );\nEND;\n/', {
+    testSettings: { routine, bindKinds: { ID: "Number" }, outputs: [] },
+  });
+  const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("demo.tst");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Usar ID" }));
+  expect(view.state.doc.toString()).not.toContain(":ID");
+  expect(screen.getByRole("checkbox", { name: "Usar ID" })).not.toBeChecked();
+  await act(async () => ref.current!.save!());
+  expect(save).toHaveBeenCalledWith('-- openpl-test v1\n-- {"bindKinds":{},"outputs":[]}\nBEGIN\n  "HR"."DEMO"();\nEND;\n/', "tst", null);
 });
 
 test("F8 ejecuta la sentencia bajo el cursor y muestra la grilla", async () => {

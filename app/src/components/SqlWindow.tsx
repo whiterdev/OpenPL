@@ -1,4 +1,4 @@
-import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -10,24 +10,29 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import {
   describeError, type BindKind, type BindValue, type Conflict, type EditTarget, type Environment, type ExecOutcome,
-  type ProgramPart, type SqlColumn,
+  type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
+import { copyGridCells } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
 import { applySubstitutions, findVariables } from "../sqlBinds";
 import type { CompletionCatalog } from "../programCompletion";
 import { ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import type { ProgramActions } from "./ProgramWindow";
+import { routineDraft } from "../routineTest";
+import { serializeTestFile, type TestSettings } from "../testFile";
 import "./SqlWindow.css";
 
 interface Props {
   sessionId: string;
+  command?: boolean;
   initialSql?: string;
-  initialBindKinds?: Record<string, BindKind>;
+  testSettings?: TestSettings;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
   runOnOpen?: boolean;
+  exportOnOpen?: boolean;
   /** Además, abrir la grilla en edición (Editar datos). */
   editOnOpen?: boolean;
   environment?: Environment;
@@ -65,7 +70,7 @@ interface HistoryEntry {
   ok: boolean;
 }
 
-type Tab = "variables" | "results" | "output" | "history";
+type Tab = "variables" | "results" | "output" | "history" | "plan";
 const RESULT_TABS = [["results", "Resultados"], ["output", "Salida"], ["history", "Historial"]] as const;
 const EDITOR_SHARE = { initial: 70, min: 20, max: 85, step: 4 };
 const clampEditorShare = (share: number) => Math.max(EDITOR_SHARE.min, Math.min(EDITOR_SHARE.max, Math.round(share)));
@@ -81,29 +86,45 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function SqlWindow({
-  sessionId, initialSql = "", initialBindKinds, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
   const view = useRef<EditorView | null>(null);
+  const tabPrefix = useId();
   const [source, setSource] = useState(initialSql);
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
-  const hasTestVariables = !!initialBindKinds && Object.keys(initialBindKinds).length > 0;
-  const [tab, setTab] = useState<Tab>(hasTestVariables ? "variables" : "results");
-  const tabs: readonly (readonly [Tab, string])[] = hasTestVariables
-    ? [["variables", "Variables"], ...RESULT_TABS] : RESULT_TABS;
+  const hasTestVariables = !!testSettings;
+  const [tab, setTab] = useState<Tab>(command ? "output" : hasTestVariables ? "variables" : "results");
+  const [plan, setPlan] = useState<ExplainPlan | null>(null);
+  const [planSelection, setPlanSelection] = useState<CellPosition | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const tabs: readonly (readonly [Tab, string])[] = [
+    ...(hasTestVariables ? [["variables", "Variables"] as const] : []),
+    ...RESULT_TABS, ...(plan ? [["plan", "Plan"] as const] : []),
+  ];
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const commandHistory = useRef<string[]>([]);
+  const historyIndex = useRef(0);
+  const commandOptions = useRef({ echo: true, serverOutput: true });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
   const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>(
-    () => Object.fromEntries(Object.entries(initialBindKinds ?? {}).map(([name, kind]) => [name, { value: "", kind }])),
+    () => Object.fromEntries(Object.entries(testSettings?.bindKinds ?? {}).map(([name, kind]) => [name, { value: "", kind }])),
   );
+  const [omitted, setOmitted] = useState<number[]>([]);
+  const [testResults, setTestResults] = useState<TestOutput[]>([]);
+  const [testSelection, setTestSelection] = useState<Record<string, CellPosition>>({});
+  const routine = testSettings?.routine;
+  const draft = useMemo(() => routine && routineDraft(routine.path, routine.signature, routine.overloaded, omitted), [routine, omitted]);
+  const declaredOutputs = draft?.outputs ?? testSettings?.outputs;
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -113,7 +134,7 @@ export function SqlWindow({
   const gridScroll = useRef<HTMLDivElement>(null);
   const stopFetchRef = useRef(false);
   const saved = useRef(initialSql);
-  const fileName = useRef<string | null>(null);
+  const fileName = useRef<string | null>(testSettings?.fileName ?? null);
   const started = useRef(false);
   const lastQueryRef = useRef<{ sql: string; binds: BindValue[] } | null>(null);
   const [editSession, setEditSession] = useState<EditSession | null>(null);
@@ -125,6 +146,17 @@ export function SqlWindow({
   const statements = useMemo(() => splitScript(source), [source]);
   const current = statementAt(statements, cursor);
   const variables = useMemo(() => findVariables(current?.text ?? ""), [current?.text]);
+  const editableVariables = variables.filter((variable) =>
+    variable.kind !== "bind" || !declaredOutputs?.some((output) => output.name === variable.key));
+
+  function toggleOptional(index: number) {
+    const editor = view.current;
+    if (!routine || !draft || !editor || editor.state.doc.toString() !== draft.source) return;
+    const next = omitted.includes(index) ? omitted.filter((value) => value !== index) : [...omitted, index];
+    const script = routineDraft(routine.path, routine.signature, routine.overloaded, next).source;
+    setOmitted(next);
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: script } });
+  }
 
   const log = useCallback((kind: OutputLine["kind"], text: string) => {
     setOutput((lines) => [...lines, { id: ++lineId.current, kind, text }]);
@@ -145,10 +177,56 @@ export function SqlWindow({
     return { list: one ? [one] : [], script: false };
   }
 
-  async function run(list: ScriptStatement[]) {
+  async function explain() {
+    if (planning) return;
+    const { list } = targets();
+    if (list.length !== 1 || list[0].kind !== "sql") {
+      setAlert("Selecciona una sentencia SQL");
+      return;
+    }
+    setPlanning(true);
+    setAlert("");
+    try {
+      setPlan(await api.sqlExplain(sessionId, list[0].text));
+      setPlanSelection(null);
+      setTab("plan");
+    } catch (error) {
+      setAlert(describeError(error).message);
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  function runConsoleCommand(source: string) {
+    const [keyword, ...words] = source.replace(/;$/, "").trim().split(/\s+/);
+    const syntax = words.join(" ").toUpperCase();
+    switch (keyword.toUpperCase()) {
+      case "PROMPT":
+        log("output", source.slice(keyword.length).trimStart());
+        return;
+      case "REM":
+      case "REMARK":
+        return;
+      case "CLEAR":
+        if (syntax === "SCREEN") { setOutput([]); return; }
+        break;
+      case "SET":
+        if (/^(ECHO|SERVEROUTPUT) (ON|OFF)$/.test(syntax)) {
+          const option = syntax.startsWith("ECHO") ? "echo" : "serverOutput";
+          commandOptions.current[option] = syntax.endsWith("ON");
+          return;
+        }
+        break;
+    }
+    log("skip", `Comando no admitido: ${keyword.toUpperCase()}`);
+  }
+
+  async function run(list: ScriptStatement[], entered = false, exportQuery = false) {
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setNotice("");
+    setTestResults([]);
+    setTestSelection({});
     setMarkers([]);
     for (const statement of list) {
       for (const variable of findVariables(statement.text)) {
@@ -166,8 +244,12 @@ export function SqlWindow({
     let lastQuery = false;
     try {
       for (const statement of list) {
+        if (command && (entered || commandOptions.current.echo)) {
+          log("info", `SQL> ${statement.text}${statement.kind === "sql" ? ";" : ""}`);
+        }
         if (statement.kind === "sqlplus") {
-          log("skip", `Omitido (SQL*Plus): ${statement.text}`);
+          if (command) runConsoleCommand(statement.text);
+          else log("skip", `Omitido (SQL*Plus): ${statement.text}`);
           continue;
         }
         const vars = findVariables(statement.text);
@@ -175,14 +257,17 @@ export function SqlWindow({
           vars.filter((v) => v.kind === "subst").map((v) => [v.key, values[v.key]?.value ?? ""]),
         );
         const sql = applySubstitutions(statement.text, substitutions);
-        const binds = vars.filter((v) => v.kind === "bind").map((v) => ({
+        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
+        const binds = vars.filter((v) => v.kind === "bind" && !outputs.some((output) => output.name === v.key)).map((v) => ({
           name: v.name, value: values[v.key]?.value || null, kind: values[v.key]?.kind ?? ("Text" as BindKind),
         }));
         let outcome: ExecOutcome;
         try {
           setFetchError(null);
           setGrid((current) => current?.more ? { ...current, more: false } : current);
-          outcome = await api.sqlExecute(sessionId, sql, binds);
+          outcome = await (outputs.length
+            ? api.sqlExecute(sessionId, sql, binds, undefined, outputs)
+            : api.sqlExecute(sessionId, sql, binds));
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
         } catch (error) {
           const detail = describeError(error);
@@ -199,12 +284,20 @@ export function SqlWindow({
           return;
         }
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
-        outcome.output.forEach((line) => log("output", line));
+        if (!command || commandOptions.current.serverOutput) outcome.output.forEach((line) => log("output", line));
+        if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
-          setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false });
+          const result = { cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false };
+          setGrid(result);
+          if (exportQuery) await exportRows(result);
           setSummary(null);
+          if (command) {
+            log("output", columns.map((column) => column.name).join("  "));
+            page.rows.forEach((row) => log("output", row.map((value) => value ?? "NULL").join("  ")));
+            if (page.more) log("info", `${page.rows.length} filas · ver Resultados`);
+          }
           lastQuery = true;
         } else {
           log("info", outcome.result.message);
@@ -212,21 +305,22 @@ export function SqlWindow({
           lastQuery = false;
         }
       }
-      setTab(lastQuery ? "results" : "output");
+      setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
     } finally {
       setRunning(false);
     }
   }
 
-  async function fetchAll() {
-    if (tab !== "results" || !grid?.more || running || applying || fetchingRef.current) return;
+  async function fetchAll(result = grid, forExport = false) {
+    if ((!forExport && (tab !== "results" || running)) || !result?.more || applying || fetchingRef.current) return;
     fetchingRef.current = true;
     stopFetchRef.current = false;
     setFetching(true);
     setSelected(null);
     setNotice("");
-    const cursor = grid.cursor;
-    let received = grid.rows.length;
+    const cursor = result.cursor;
+    let received = result.rows.length;
+    const exported = forExport ? [...result.rows] : [];
     const stopped = () => {
       setGrid((current) => current?.cursor === cursor ? { ...current, more: false } : current);
       setNotice(`Traer todas detenido. ${received === 1 ? "Se conserva 1 fila" : `Se conservan ${received} filas`}.`);
@@ -236,12 +330,14 @@ export function SqlWindow({
       do {
         const page = await api.sqlFetch(sessionId, cursor, FETCH_ALL);
         received += page.rows.length;
+        if (forExport) exported.push(...page.rows);
         setGrid((current) => current?.cursor === cursor
           ? { ...current, rows: [...current.rows, ...page.rows], more: page.more }
           : current);
         more = page.more;
       } while (more && !stopFetchRef.current);
       if (more) stopped();
+      else if (forExport) return exported;
     } catch (error) {
       const detail = describeError(error);
       if (detail.code === CANCELLED) {
@@ -256,6 +352,20 @@ export function SqlWindow({
     } finally {
       fetchingRef.current = false;
       setFetching(false);
+    }
+  }
+
+  async function exportRows(result: Grid) {
+    const rows = result.more ? await fetchAll(result, true) : result.rows;
+    if (!rows) return;
+    const offset = result.hiddenRowid ? 1 : 0;
+    const headers = result.columns.slice(offset).map((column) => column.name);
+    try {
+      const name = await api.saveProgramFile(copyGridCells([headers, ...rows.map((row) => row.slice(offset))], true),
+        "csv", "resultados.csv");
+      if (name) setNotice("CSV guardado");
+    } catch (error) {
+      setAlert(describeError(error).message);
     }
   }
 
@@ -437,7 +547,13 @@ export function SqlWindow({
   async function save() {
     const text = view.current?.state.doc.toString() ?? source;
     try {
-      const name = await api.saveProgramFile(text, "sql", fileName.current);
+      const activeBinds = new Set(findVariables(text).filter((v) => v.kind === "bind").map((v) => v.key));
+      const outputs = declaredOutputs?.filter((output) => activeBinds.has(output.name)) ?? [];
+      const bindKinds = Object.fromEntries(Object.entries(values)
+        .filter(([name]) => activeBinds.has(name) && !outputs.some((out) => out.name === name))
+        .map(([name, entry]) => [name, entry.kind]));
+      const file = testSettings ? serializeTestFile({ source: text, bindKinds, outputs }) : text;
+      const name = await api.saveProgramFile(file, testSettings ? "tst" : "sql", fileName.current);
       if (name) {
         fileName.current = name;
         saved.current = text;
@@ -453,8 +569,10 @@ export function SqlWindow({
   };
 
   const actions: ProgramActions = {
+    explainPlan: () => void explain(),
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    exportData: grid && !editSession && !running && !fetching && !applying ? () => void exportRows(grid) : undefined,
     fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
     cancel: running || fetching ? () => {
@@ -488,7 +606,7 @@ export function SqlWindow({
     if (editor && runOnOpen && !started.current) {
       started.current = true;
       queueMicrotask(async () => {
-        await run(splitScript(editor.state.doc.toString()));
+        await run(splitScript(editor.state.doc.toString()), false, exportOnOpen);
         if (editOnOpen) await toggleEdit();
       });
     }
@@ -523,11 +641,13 @@ export function SqlWindow({
       ? `${rowCount === 1 ? "1 fila" : `${rowCount} filas`} · ${grid.elapsed} ms${grid.more ? " · hay más" : ""}`
       : summary;
 
-  const variableFields = variables.map((v) => {
+  const variableFields = editableVariables.map((v) => {
     const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
     const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
-    const update = (change: Partial<typeof entry>) =>
+    const update = (change: Partial<typeof entry>) => {
       setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
+      if (testSettings && change.kind !== undefined) onDirty(true);
+    };
     return (
       <div key={`${v.kind}-${v.key}`} className="sql-variable">
         <label>
@@ -547,7 +667,7 @@ export function SqlWindow({
   });
 
   return (
-    <section className="sql-window" aria-label="Ventana SQL">
+    <section className="sql-window" aria-label={command ? "Ventana de comando" : "Ventana SQL"}>
       <div className="program-toolbar">
         <button className="btn primary" onClick={actions.execute} disabled={running || fetching || applying}>
           <Play size={14} aria-hidden /> Ejecutar <span className="kbd">{key("execute")}</span>
@@ -560,6 +680,7 @@ export function SqlWindow({
           <FloppyDisk size={16} aria-hidden />
         </button>
         {running && <span role="status" className="program-muted">Ejecutando…</span>}
+        {planning && <span role="status" className="program-muted">Generando plan…</span>}
         {!running && notice && <span role="status" className="program-muted">{notice}</span>}
         {alert && <span role="alert" className="sql-alert">{alert}</span>}
       </div>
@@ -571,6 +692,7 @@ export function SqlWindow({
             onSelection={setCursor}
             onChange={(value) => {
               setSource(value);
+              setTestResults([]);
               setMarkers([]);
               onDirty(value !== saved.current);
             }} />
@@ -618,13 +740,14 @@ export function SqlWindow({
             if (!step) return;
             const next = order[(order.indexOf(tab) + step + order.length) % order.length];
             setTab(next);
-            event.currentTarget.querySelector<HTMLElement>(`#sql-tab-${next}`)?.focus();
+            const nextIndex = order.indexOf(next);
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex]?.focus();
           }}>
             {tabs.map(([id, label]) => (
-              <button key={id} role="tab" id={`sql-tab-${id}`} aria-selected={tab === id} aria-controls={`sql-panel-${id}`}
+              <button key={id} role="tab" id={`${tabPrefix}-tab-${id}`} aria-selected={tab === id} aria-controls={`${tabPrefix}-panel-${id}`}
                 tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}>
-                {label}
+                {command && id === "output" ? "Consola" : label}
                 {id === "output" && output.length > 0 && <span className="sql-count">{output.length}</span>}
                 {id === "history" && history.length > 0 && <span className="sql-count">{history.length}</span>}
               </button>
@@ -636,6 +759,11 @@ export function SqlWindow({
               actions.fetchAllRows?.();
             }}>
               {commands.fetchAllRows.label} <span className="kbd">{key("fetchAllRows")}</span>
+            </button>
+          )}
+          {tab === "results" && grid && (
+            <button className="btn" onClick={actions.exportData} disabled={!actions.exportData}>
+              Exportar CSV <span className="kbd">{key("exportData")}</span>
             </button>
           )}
           {tab === "results" && grid && (
@@ -671,11 +799,38 @@ export function SqlWindow({
           )}
         </div>
         {hasTestVariables && (
-          <div role="tabpanel" id="sql-panel-variables" aria-label="Variables" hidden={tab !== "variables"} className="sql-panel">
+          <div role="tabpanel" id={`${tabPrefix}-panel-variables`} aria-label="Variables" hidden={tab !== "variables"} className="sql-panel">
+            {draft?.optional.map(({ index, label }) => (
+              <label key={index} className="sql-test-optional">
+                <input type="checkbox" checked={!omitted.includes(index)}
+                  disabled={running || source !== draft.source}
+                  aria-label={`Usar ${label}`} onChange={() => toggleOptional(index)} />
+                {label}
+              </label>
+            ))}
             <div className="sql-test-variables">{variableFields}</div>
+            {!variableFields.length && !declaredOutputs?.length && <p className="sql-empty">Sin variables</p>}
+            {declaredOutputs?.map((bind, index) => {
+              const output = testResults.find((value) => value.name === bind.name);
+              return (
+                <section key={bind.name} className="sql-test-output" aria-label={bind.label}>
+                  <strong>{bind.label}</strong>
+                  {output?.kind === "Cursor" ? <>
+                    <div className="sql-test-cursor">
+                      <ResultGrid queryKey={index} columns={output.columns} rows={output.page.rows}
+                        status={[]} isModified={() => false} editable={null} selected={testSelection[bind.name] ?? null}
+                        onSelect={(cell) => setTestSelection((all) => ({ ...all, [bind.name]: cell }))}
+                        onEdit={() => {}} fetching={false} fetchError={null} />
+                    </div>
+                    {output.page.more && <span className="program-muted">{plural(output.page.rows.length, "fila mostrada", "filas mostradas")}</span>}
+                  </> : output?.kind === "Error" ? <span role="alert">{output.message}</span>
+                    : <output>{output ? output.value ?? "NULL" : "—"}</output>}
+                </section>
+              );
+            })}
           </div>
         )}
-        <div role="tabpanel" id="sql-panel-results" aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
+        <div role="tabpanel" id={`${tabPrefix}-panel-results`} aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
           {running && !grid ? null
             : !grid ? <p className="sql-empty">Sin resultados. Ejecuta con F8.</p>
               : (
@@ -714,11 +869,11 @@ export function SqlWindow({
                 </>
               )}
         </div>
-        <div role="tabpanel" id="sql-panel-output" aria-label="Salida" hidden={tab !== "output"} className="sql-panel sql-output">
+        <div role="tabpanel" id={`${tabPrefix}-panel-output`} aria-label="Salida" hidden={tab !== "output"} className="sql-panel sql-output">
           {output.length === 0 ? <p className="sql-empty">Sin salida. DBMS_OUTPUT y los mensajes aparecen aquí.</p>
             : output.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
         </div>
-        <div role="tabpanel" id="sql-panel-history" aria-label="Historial" hidden={tab !== "history"} className="sql-panel sql-history">
+        <div role="tabpanel" id={`${tabPrefix}-panel-history`} aria-label="Historial" hidden={tab !== "history"} className="sql-panel sql-history">
           {history.length === 0 ? <p className="sql-empty">Sin sentencias ejecutadas.</p>
             : history.map((entry) => (
               <button key={entry.id} type="button" title="Poner en el editor" className={entry.ok ? "" : "sql-history-error"}
@@ -735,7 +890,40 @@ export function SqlWindow({
             ))}
         </div>
         {footer && <div className="sql-footer">{footer}</div>}
+        {plan && (
+          <div role="tabpanel" id={`${tabPrefix}-panel-plan`} aria-label="Plan" hidden={tab !== "plan"} className="sql-panel">
+            <ResultGrid queryKey={0} columns={plan.columns} rows={plan.page.rows} status={[]}
+              isModified={() => false} editable={null} selected={planSelection} onSelect={setPlanSelection}
+              onEdit={() => {}} fetching={false} fetchError={null} />
+            {plan.page.more && <div className="sql-footer">{plan.page.rows.length} pasos mostrados</div>}
+          </div>
+        )}
       </div>
+      {command && (
+        <form className="sql-command-prompt" onSubmit={(event) => {
+          event.preventDefault();
+          const entered = prompt.trim();
+          if (running || !entered) return;
+          commandHistory.current.push(entered);
+          historyIndex.current = commandHistory.current.length;
+          setPrompt("");
+          void run(splitScript(entered), true);
+        }}>
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">SQL&gt;</label>
+          <input id={`${tabPrefix}-prompt`} className="fld mono" aria-label="Comando SQL"
+            value={prompt} readOnly={running} autoFocus
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+              if (!delta || running) return;
+              event.preventDefault();
+              const history = commandHistory.current;
+              historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
+              setPrompt(history[historyIndex.current] ?? "");
+            }} />
+          <button type="submit" className="btn" disabled={running || !prompt.trim()}>Enviar</button>
+        </form>
+      )}
     </section>
   );
 }

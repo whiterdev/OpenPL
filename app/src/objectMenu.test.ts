@@ -30,6 +30,12 @@ function expectPending(x: ContextItem | undefined) {
 }
 
 describe("objectMenuItems", () => {
+  test("conecta las acciones del inspector", () => {
+    const inspect = vi.fn();
+    const h = handlers({ inspect });
+    for (const label of ["Describir", "Propiedades", "Comparar con…"]) item("Table", label, h)?.run?.();
+    expect(inspect.mock.calls).toEqual([["describe"], ["properties"], ["compare"]]);
+  });
   test.each<ObjectType>(["Table", "View", "MaterializedView", "User", "Package", "RecycleBin"])(
     "%s no repite rótulos",
     (t) => {
@@ -48,7 +54,7 @@ describe("objectMenuItems", () => {
     expect(h.queryData).toHaveBeenCalled();
     expect(h.editData).toHaveBeenCalled();
     expect(edit?.keys).toBe("Ctrl+E");
-    expectPending(all.find((x) => x.label === "Exportar datos"));
+    expect(all.find((x) => x.label === "Exportar datos")).toBeDefined();
     expect(labels("Table")).toContain("Copiar DDL");
     expect(labels("Table")).not.toContain("Recompilar");
   });
@@ -67,14 +73,16 @@ describe("objectMenuItems", () => {
     expect(edit).toBeDefined();
     expect(edit?.run).toBeUndefined();
     expect(edit?.pending).toBeFalsy();
-    expect(labels(t)).not.toContain("Exportar datos");
+    expect(labels(t)).toContain("Exportar datos");
     expect(labels(t)).toContain("Recompilar");
   });
 
-  test("usuario: editar usuario y privilegios pendientes, Copiar DDL activo", () => {
-    const h = handlers();
-    expectPending(item("User", "Editar usuario", h));
-    expectPending(item("User", "Privilegios", h));
+  test("usuario: editar usuario y consultar privilegios", () => {
+    const draft = vi.fn();
+    const h = handlers({ draft });
+    item("User", "Editar usuario", h)?.run?.();
+    item("User", "Privilegios", h)?.run?.();
+    expect(draft.mock.calls).toEqual([["account"], ["privileges"]]);
     item("User", "Copiar DDL", h)?.run?.();
     expect(h.copyDdl).toHaveBeenCalled();
     expect(labels("User")).not.toContain("Consultar datos");
@@ -98,7 +106,6 @@ describe("objectMenuItems", () => {
       "Propiedades",
       "Copiar nombre",
       "Copiar nombre con esquema",
-      "Eliminar",
       "Refrescar",
     ]);
   });

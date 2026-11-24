@@ -6,10 +6,32 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { beforeAll, expect, test, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import App from "./App";
 import { api } from "./api";
+
+beforeAll(async () => {
+  // La latencia de los módulos del runner no forma parte del flujo de sesión.
+  await Promise.all([
+    import("./components/ProgramWindow"),
+    import("./components/SqlWindow"),
+  ]);
+});
+
+test("Ctrl K busca y ejecuta una acción disponible", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue(null);
+  vi.mocked(api.openProgramFile).mockClear();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  const search = screen.getByRole("textbox", { name: "Buscar comando" });
+  fireEvent.change(search, { target: { value: "ctrl o" } });
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(api.openProgramFile).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("dialog", { name: "Buscar comando" })).not.toBeInTheDocument();
+});
 
 const windowEvents = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
@@ -31,6 +53,7 @@ vi.mock("./api", () => ({
     connect: vi.fn(),
     listObjects: vi.fn(),
     programSource: vi.fn(),
+    routineOverloads: vi.fn(),
     sqlOpen: vi.fn(),
     sqlClose: vi.fn(),
     sqlExecute: vi.fn(),
@@ -176,7 +199,9 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
   expect(editor.querySelector(".cm-foldPlaceholder")).not.toBeInTheDocument();
   fireEvent.keyDown(window, { key: "l", ctrlKey: true, shiftKey: true });
   await login("QA");
-  fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });
+  });
 
   expect(await screen.findByText("Cambio en Oracle")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
@@ -252,8 +277,9 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
   fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
   const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
   expect(
-    menu.getByRole("menuitem", { name: /Ventana de prueba.*Próximamente/ }),
+    menu.getByRole("menuitem", { name: /Ventana de prueba/ }),
   ).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana de comando/ })).toBeDisabled();
   expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).toBeDisabled();
   expect(
     menu.getByRole("menuitem", { name: /Ventana SQL/ }),
@@ -262,7 +288,7 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
   fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
   const session = within(screen.getByRole("menu", { name: "Sesión" }));
   expect(
-    session.getByRole("menuitem", { name: /Plan de ejecución.*Próximamente/ }),
+    session.getByRole("menuitem", { name: /Plan de ejecución/ }),
   ).toBeDisabled();
   expect(
     session.getByRole("menuitem", { name: /^Desconectar$/ }),
@@ -305,6 +331,51 @@ async function connectAs(service = "DEV") {
   await waitFor(() => expect(user).not.toBeInTheDocument());
 }
 
+test("abre una prueba desde Nuevo y reabre un .tst sin ejecutarlo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  const block = "BEGIN :SALIDA := 42; END;";
+  vi.mocked(api.openProgramFile).mockResolvedValueOnce({
+    name: "demo.tst",
+    source: `-- openpl-test v1\n-- {"bindKinds":{},"outputs":[{"name":"SALIDA","label":"Retorno","kind":"Text"}]}\n${block}`,
+  });
+  vi.mocked(api.sqlExecute).mockClear();
+
+  render(<App />);
+  await connectAs();
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: /Ventana de prueba/ }));
+  });
+  expect(await screen.findByRole("button", { name: "Prueba 1" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cerrar Prueba 1" }));
+  await act(async () => { fireEvent.keyDown(window, { key: "o", ctrlKey: true }); });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  expect(editor).toHaveTextContent(block);
+  expect(screen.getByRole("button", { name: "demo.tst" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Retorno" })).toBeInTheDocument();
+  expect(api.sqlExecute).not.toHaveBeenCalled();
+});
+
+test("Probar desde el explorador carga la firma en su sesion y abre una prueba", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([{
+    owner: "HR", name: "DEMO", object_type: "Procedure", status: "Valid", last_ddl_time: "",
+  }]);
+  vi.mocked(api.routineOverloads).mockResolvedValue([{ subprogram_id: 1, parameters: [], returns: null }]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.sqlExecute).mockClear();
+  render(<App />);
+  await connectAs();
+  fireEvent.click(await screen.findByRole("treeitem", { name: "Procedimientos" }));
+  fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "DEMO" }));
+  await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "Probar" })); });
+  expect(await screen.findByRole("button", { name: "Prueba 1" })).toBeInTheDocument();
+  expect(api.routineOverloads).toHaveBeenLastCalledWith("s1", "HR", null, "DEMO");
+  expect(api.sqlExecute).not.toHaveBeenCalled();
+});
+
 test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.listObjects).mockResolvedValue([]);
@@ -319,7 +390,9 @@ test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella"
   render(<App />);
   await connectAs();
   expect(screen.getByText("Sin transacción")).toBeInTheDocument();
-  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
   const editor = await screen.findByRole("textbox", { name: "SQL" });
   expect(api.sqlOpen).toHaveBeenCalledWith("s1");
   const view = EditorView.findFromDOM(
@@ -352,7 +425,9 @@ test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", asyn
   vi.mocked(api.sqlClose).mockResolvedValue();
   render(<App />);
   await connectAs();
-  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
   const editor = await screen.findByRole("textbox", { name: "SQL" });
   const view = EditorView.findFromDOM(
     editor.closest<HTMLElement>(".cm-editor")!,
