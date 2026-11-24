@@ -310,6 +310,19 @@ describe("edición en grilla", () => {
     expect(screen.getByText("Beto")).toBeInTheDocument();
   });
 
+  test("borrar la selección completa prepara cambios sin aplicarlos", async () => {
+    await startEditing();
+    const apply = vi.spyOn(api, "sqlApply");
+    fireEvent.click(screen.getByRole("button", { name: "Agregar fila" }));
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar filas cargadas" }));
+    expect(screen.getAllByRole("gridcell", { selected: true })).toHaveLength(6);
+    fireEvent.click(screen.getByRole("button", { name: "Borrar selección" }));
+    expect(screen.getByRole("rowheader", { name: "1, borrada" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "2, borrada" })).toBeInTheDocument();
+    expect(screen.queryByRole("rowheader", { name: "3, nueva" })).not.toBeInTheDocument();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
   test("un conflicto no aplica nada y permite reintentar con los valores actuales", async () => {
     const { ref } = await startEditing();
     editCell(0, "NOMBRE", "Anabel");

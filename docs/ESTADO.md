@@ -52,6 +52,12 @@
 
 ## Hecho
 
+### Diálogo de conexión y selección de resultados
+
+- El diálogo de conexión usa la misma capa que los demás diálogos de la aplicación, por encima del encabezado fijo de resultados.
+- En SQL se pueden seleccionar las filas cargadas o una fila completa, copiar en TSV o CSV y sumar las columnas numéricas. En edición, el botón de borrado actúa sobre el cursor o la selección, y se puede agregar una fila vacía. Las operaciones quedan pendientes hasta **Aplicar cambios**.
+- [Auditoría antislop](../anti-slop/audit-seleccion-grilla-2026-11-24.md). Queda pendiente la revisión visual en escritorio.
+
 ### Barra SQL
 
 - La barra muestra un solo botón **Ejecutar** y conserva **Detener**. **Ejecutar script** sigue disponible desde el menú y con Shift+F8.
