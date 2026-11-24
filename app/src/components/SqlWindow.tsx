@@ -1,4 +1,4 @@
-import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -10,7 +10,7 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import {
   describeError, type BindKind, type BindValue, type Conflict, type EditTarget, type Environment, type ExecOutcome,
-  type ProgramPart, type SqlColumn,
+  type ProgramPart, type SqlColumn, type TestOutput,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
@@ -20,12 +20,14 @@ import { applySubstitutions, findVariables } from "../sqlBinds";
 import type { CompletionCatalog } from "../programCompletion";
 import { ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import type { ProgramActions } from "./ProgramWindow";
+import { routineDraft } from "../routineTest";
+import { serializeTestFile, type TestSettings } from "../testFile";
 import "./SqlWindow.css";
 
 interface Props {
   sessionId: string;
   initialSql?: string;
-  initialBindKinds?: Record<string, BindKind>;
+  testSettings?: TestSettings;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
   runOnOpen?: boolean;
   /** Además, abrir la grilla en edición (Editar datos). */
@@ -81,17 +83,18 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function SqlWindow({
-  sessionId, initialSql = "", initialBindKinds, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, initialSql = "", testSettings, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
   const view = useRef<EditorView | null>(null);
+  const tabPrefix = useId();
   const [source, setSource] = useState(initialSql);
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
-  const hasTestVariables = !!initialBindKinds && Object.keys(initialBindKinds).length > 0;
+  const hasTestVariables = !!testSettings;
   const [tab, setTab] = useState<Tab>(hasTestVariables ? "variables" : "results");
   const tabs: readonly (readonly [Tab, string])[] = hasTestVariables
     ? [["variables", "Variables"], ...RESULT_TABS] : RESULT_TABS;
@@ -102,8 +105,14 @@ export function SqlWindow({
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
   const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>(
-    () => Object.fromEntries(Object.entries(initialBindKinds ?? {}).map(([name, kind]) => [name, { value: "", kind }])),
+    () => Object.fromEntries(Object.entries(testSettings?.bindKinds ?? {}).map(([name, kind]) => [name, { value: "", kind }])),
   );
+  const [omitted, setOmitted] = useState<number[]>([]);
+  const [testResults, setTestResults] = useState<TestOutput[]>([]);
+  const [testSelection, setTestSelection] = useState<Record<string, CellPosition>>({});
+  const routine = testSettings?.routine;
+  const draft = useMemo(() => routine && routineDraft(routine.path, routine.signature, routine.overloaded, omitted), [routine, omitted]);
+  const declaredOutputs = draft?.outputs ?? testSettings?.outputs;
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -113,7 +122,7 @@ export function SqlWindow({
   const gridScroll = useRef<HTMLDivElement>(null);
   const stopFetchRef = useRef(false);
   const saved = useRef(initialSql);
-  const fileName = useRef<string | null>(null);
+  const fileName = useRef<string | null>(testSettings?.fileName ?? null);
   const started = useRef(false);
   const lastQueryRef = useRef<{ sql: string; binds: BindValue[] } | null>(null);
   const [editSession, setEditSession] = useState<EditSession | null>(null);
@@ -125,6 +134,17 @@ export function SqlWindow({
   const statements = useMemo(() => splitScript(source), [source]);
   const current = statementAt(statements, cursor);
   const variables = useMemo(() => findVariables(current?.text ?? ""), [current?.text]);
+  const editableVariables = variables.filter((variable) =>
+    variable.kind !== "bind" || !declaredOutputs?.some((output) => output.name === variable.key));
+
+  function toggleOptional(index: number) {
+    const editor = view.current;
+    if (!routine || !draft || !editor || editor.state.doc.toString() !== draft.source) return;
+    const next = omitted.includes(index) ? omitted.filter((value) => value !== index) : [...omitted, index];
+    const script = routineDraft(routine.path, routine.signature, routine.overloaded, next).source;
+    setOmitted(next);
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: script } });
+  }
 
   const log = useCallback((kind: OutputLine["kind"], text: string) => {
     setOutput((lines) => [...lines, { id: ++lineId.current, kind, text }]);
@@ -149,6 +169,8 @@ export function SqlWindow({
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setNotice("");
+    setTestResults([]);
+    setTestSelection({});
     setMarkers([]);
     for (const statement of list) {
       for (const variable of findVariables(statement.text)) {
@@ -175,14 +197,17 @@ export function SqlWindow({
           vars.filter((v) => v.kind === "subst").map((v) => [v.key, values[v.key]?.value ?? ""]),
         );
         const sql = applySubstitutions(statement.text, substitutions);
-        const binds = vars.filter((v) => v.kind === "bind").map((v) => ({
+        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
+        const binds = vars.filter((v) => v.kind === "bind" && !outputs.some((output) => output.name === v.key)).map((v) => ({
           name: v.name, value: values[v.key]?.value || null, kind: values[v.key]?.kind ?? ("Text" as BindKind),
         }));
         let outcome: ExecOutcome;
         try {
           setFetchError(null);
           setGrid((current) => current?.more ? { ...current, more: false } : current);
-          outcome = await api.sqlExecute(sessionId, sql, binds);
+          outcome = await (outputs.length
+            ? api.sqlExecute(sessionId, sql, binds, undefined, outputs)
+            : api.sqlExecute(sessionId, sql, binds));
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
         } catch (error) {
           const detail = describeError(error);
@@ -200,6 +225,7 @@ export function SqlWindow({
         }
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
         outcome.output.forEach((line) => log("output", line));
+        if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
@@ -212,7 +238,7 @@ export function SqlWindow({
           lastQuery = false;
         }
       }
-      setTab(lastQuery ? "results" : "output");
+      setTab(lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
     } finally {
       setRunning(false);
     }
@@ -437,7 +463,13 @@ export function SqlWindow({
   async function save() {
     const text = view.current?.state.doc.toString() ?? source;
     try {
-      const name = await api.saveProgramFile(text, "sql", fileName.current);
+      const activeBinds = new Set(findVariables(text).filter((v) => v.kind === "bind").map((v) => v.key));
+      const outputs = declaredOutputs?.filter((output) => activeBinds.has(output.name)) ?? [];
+      const bindKinds = Object.fromEntries(Object.entries(values)
+        .filter(([name]) => activeBinds.has(name) && !outputs.some((out) => out.name === name))
+        .map(([name, entry]) => [name, entry.kind]));
+      const file = testSettings ? serializeTestFile({ source: text, bindKinds, outputs }) : text;
+      const name = await api.saveProgramFile(file, testSettings ? "tst" : "sql", fileName.current);
       if (name) {
         fileName.current = name;
         saved.current = text;
@@ -523,11 +555,13 @@ export function SqlWindow({
       ? `${rowCount === 1 ? "1 fila" : `${rowCount} filas`} · ${grid.elapsed} ms${grid.more ? " · hay más" : ""}`
       : summary;
 
-  const variableFields = variables.map((v) => {
+  const variableFields = editableVariables.map((v) => {
     const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
     const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
-    const update = (change: Partial<typeof entry>) =>
+    const update = (change: Partial<typeof entry>) => {
       setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
+      if (testSettings && change.kind !== undefined) onDirty(true);
+    };
     return (
       <div key={`${v.kind}-${v.key}`} className="sql-variable">
         <label>
@@ -571,6 +605,7 @@ export function SqlWindow({
             onSelection={setCursor}
             onChange={(value) => {
               setSource(value);
+              setTestResults([]);
               setMarkers([]);
               onDirty(value !== saved.current);
             }} />
@@ -618,10 +653,11 @@ export function SqlWindow({
             if (!step) return;
             const next = order[(order.indexOf(tab) + step + order.length) % order.length];
             setTab(next);
-            event.currentTarget.querySelector<HTMLElement>(`#sql-tab-${next}`)?.focus();
+            const nextIndex = order.indexOf(next);
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex]?.focus();
           }}>
             {tabs.map(([id, label]) => (
-              <button key={id} role="tab" id={`sql-tab-${id}`} aria-selected={tab === id} aria-controls={`sql-panel-${id}`}
+              <button key={id} role="tab" id={`${tabPrefix}-tab-${id}`} aria-selected={tab === id} aria-controls={`${tabPrefix}-panel-${id}`}
                 tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}>
                 {label}
@@ -671,11 +707,38 @@ export function SqlWindow({
           )}
         </div>
         {hasTestVariables && (
-          <div role="tabpanel" id="sql-panel-variables" aria-label="Variables" hidden={tab !== "variables"} className="sql-panel">
+          <div role="tabpanel" id={`${tabPrefix}-panel-variables`} aria-label="Variables" hidden={tab !== "variables"} className="sql-panel">
+            {draft?.optional.map(({ index, label }) => (
+              <label key={index} className="sql-test-optional">
+                <input type="checkbox" checked={!omitted.includes(index)}
+                  disabled={running || source !== draft.source}
+                  aria-label={`Usar ${label}`} onChange={() => toggleOptional(index)} />
+                {label}
+              </label>
+            ))}
             <div className="sql-test-variables">{variableFields}</div>
+            {!variableFields.length && !declaredOutputs?.length && <p className="sql-empty">Sin variables</p>}
+            {declaredOutputs?.map((bind, index) => {
+              const output = testResults.find((value) => value.name === bind.name);
+              return (
+                <section key={bind.name} className="sql-test-output" aria-label={bind.label}>
+                  <strong>{bind.label}</strong>
+                  {output?.kind === "Cursor" ? <>
+                    <div className="sql-test-cursor">
+                      <ResultGrid queryKey={index} columns={output.columns} rows={output.page.rows}
+                        status={[]} isModified={() => false} editable={null} selected={testSelection[bind.name] ?? null}
+                        onSelect={(cell) => setTestSelection((all) => ({ ...all, [bind.name]: cell }))}
+                        onEdit={() => {}} fetching={false} fetchError={null} />
+                    </div>
+                    {output.page.more && <span className="program-muted">{plural(output.page.rows.length, "fila mostrada", "filas mostradas")}</span>}
+                  </> : output?.kind === "Error" ? <span role="alert">{output.message}</span>
+                    : <output>{output ? output.value ?? "NULL" : "—"}</output>}
+                </section>
+              );
+            })}
           </div>
         )}
-        <div role="tabpanel" id="sql-panel-results" aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
+        <div role="tabpanel" id={`${tabPrefix}-panel-results`} aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
           {running && !grid ? null
             : !grid ? <p className="sql-empty">Sin resultados. Ejecuta con F8.</p>
               : (
@@ -714,11 +777,11 @@ export function SqlWindow({
                 </>
               )}
         </div>
-        <div role="tabpanel" id="sql-panel-output" aria-label="Salida" hidden={tab !== "output"} className="sql-panel sql-output">
+        <div role="tabpanel" id={`${tabPrefix}-panel-output`} aria-label="Salida" hidden={tab !== "output"} className="sql-panel sql-output">
           {output.length === 0 ? <p className="sql-empty">Sin salida. DBMS_OUTPUT y los mensajes aparecen aquí.</p>
             : output.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
         </div>
-        <div role="tabpanel" id="sql-panel-history" aria-label="Historial" hidden={tab !== "history"} className="sql-panel sql-history">
+        <div role="tabpanel" id={`${tabPrefix}-panel-history`} aria-label="Historial" hidden={tab !== "history"} className="sql-panel sql-history">
           {history.length === 0 ? <p className="sql-empty">Sin sentencias ejecutadas.</p>
             : history.map((entry) => (
               <button key={entry.id} type="button" title="Poner en el editor" className={entry.ok ? "" : "sql-history-error"}

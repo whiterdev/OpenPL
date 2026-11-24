@@ -29,6 +29,7 @@ import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { routineDraft, type RoutineOverload } from "./routineTest";
+import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
@@ -105,7 +106,7 @@ interface ProgramTab {
     initial: string;
     run: boolean;
     edit?: boolean;
-    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"];
+    test?: TestSettings;
     transaction: boolean;
   };
 }
@@ -242,6 +243,7 @@ export default function App() {
     ...currentProgramActions,
     ...sqlActions,
     newSql: active ? () => void openSql(active) : undefined,
+    newTest: active ? () => void openSql(active, "", false, false, { bindKinds: {}, outputs: [] }) : undefined,
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
@@ -392,6 +394,12 @@ export default function App() {
       const file = await api.openProgramFile();
       if (!file) return;
       const name = file.name.toLowerCase();
+      if (name.endsWith(".tst")) {
+        if (!active) throw new Error("Conéctate para abrir la prueba.");
+        const { source, bindKinds, outputs } = parseTestFile(file.source);
+        await openSql(active, source, false, false, { bindKinds, outputs, fileName: file.name });
+        return;
+      }
       const kind = name.endsWith(".pks")
         ? "PACKAGE"
         : name.endsWith(".pkb")
@@ -422,18 +430,18 @@ export default function App() {
     initial = "",
     run = false,
     edit = false,
-    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"],
+    test?: TestSettings,
   ) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
       sqlCount.current += 1;
       addProgram({
         id: crypto.randomUUID(),
-        label: `SQL ${sqlCount.current}`,
+        label: test?.fileName ?? `${test ? "Prueba" : "SQL"} ${sqlCount.current}`,
         connection,
         readOnly: false,
         dirty: false,
-        sql: { sessionId, initial, run, edit, bindKinds, transaction: false },
+        sql: { sessionId, initial, run, edit, test, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -459,7 +467,9 @@ export default function App() {
     function prepare(signature: RoutineOverload, overloaded = false) {
       try {
         const draft = routineDraft(path, signature, overloaded);
-        void openSql(connection, draft.source, false, false, draft.bindKinds);
+        void openSql(connection, draft.source, false, false, {
+          bindKinds: draft.bindKinds, outputs: draft.outputs, routine: { path, signature, overloaded },
+        });
       } catch (error) {
         showNotice(describeError(error).message);
       }
@@ -475,6 +485,31 @@ export default function App() {
           run: () => prepare(signature, true),
         })) });
       }
+    } catch (error) {
+      showNotice(describeError(error).message);
+    }
+  }
+
+  async function testObject(connection: ActiveConnection, object: ObjectInfo, x: number, y: number) {
+    if (object.object_type !== "Package") {
+      await testRoutine(connection, object, object.name, x, y);
+      return;
+    }
+    try {
+      const [parts, { programStructure }] = await Promise.all([
+        fetchProgram(connection.sessionId, object),
+        import("./programStructure"),
+      ]);
+      const spec = parts.find((part) => part.kind === "PACKAGE");
+      const names = new Set(programStructure(spec?.source ?? "")
+        .filter((entry) => entry.kind === "procedure" || entry.kind === "function").map((entry) => entry.name));
+      if (!names.size) {
+        showNotice("Paquete sin rutinas públicas");
+        return;
+      }
+      setRoutineOptions({ x, y, name: object.name, items: [...names].map((name) => ({
+        label: name, run: () => void testRoutine(connection, object, name, x, y),
+      })) });
     } catch (error) {
       showNotice(describeError(error).message);
     }
@@ -751,7 +786,7 @@ export default function App() {
               ...(
                 [
                   ["newSql", "Ventana SQL"],
-                  ["test", "Ventana de prueba"],
+                  ["newTest", "Ventana de prueba"],
                   ["newCommand", "Ventana de comando"],
                 ] as const
               ).map(([id, label]): ContextItem => ({
@@ -846,6 +881,7 @@ export default function App() {
             onNotice={showNotice}
             onQueryData={(object) => queryData(object)}
             onEditData={(object) => queryData(object, true)}
+            onTest={(object, x, y) => void testObject(active, object, x, y)}
           />
         )}
         <main className="workspace">
@@ -908,7 +944,7 @@ export default function App() {
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
-                        initialBindKinds={tab.sql.bindKinds}
+                        testSettings={tab.sql.test}
                         runOnOpen={tab.sql.run}
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}

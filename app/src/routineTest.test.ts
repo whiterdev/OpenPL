@@ -20,8 +20,29 @@ test("tipa entradas, salidas y retorno para una funcion sobrecargada", () => {
   expect(sql.source).toContain("v_p1 NUMBER := :ID;");
   expect(sql.source).toContain("v_p2 VARCHAR2(32767);");
   expect(sql.source).toContain('resultado := "HR"."PKG"."READ"(\n    "ID"   => v_p1,\n    "NAME" => v_p2\n  );');
-  expect(sql.source).toContain("DBMS_OUTPUT.PUT_LINE('resultado: ' || resultado);");
+  expect(sql.source).toContain(":OPENPL_SALIDA_3 := resultado;");
+  expect(sql.outputs).toEqual([
+    { name: "OPENPL_SALIDA_2", label: "NAME", kind: "Text" },
+    { name: "OPENPL_SALIDA_3", label: "Retorno", kind: "Text" },
+  ]);
   expect(splitScript(sql.source)).toHaveLength(1);
+});
+
+test("omite solo argumentos opcionales y describe salidas de cursor y tipos compuestos", () => {
+  const draft = routineDraft(["HR", "PKG", "RUN"], {
+    subprogram_id: 1, returns: null,
+    parameters: [
+      { declaration: { name: "ID", data_type: "NUMBER", direction: "IN", defaulted: true } },
+      { declaration: { name: "REC", data_type: "PL/SQL RECORD", direction: "IN",
+        type_owner: "HR", type_name: "PKG", type_subname: "ROW_T" } },
+      { declaration: { name: "FILAS", data_type: "REF CURSOR", direction: "OUT" } },
+    ],
+  }, false, [0, 1]);
+  expect(draft.optional).toEqual([{ index: 0, label: "ID" }]);
+  expect(draft.source).not.toContain(":ID");
+  expect(draft.source).toContain('v_p2 "HR"."PKG"."ROW_T";');
+  expect(draft.source).toContain(":OPENPL_SALIDA_3 := v_p3;");
+  expect(draft.outputs).toEqual([{ name: "OPENPL_SALIDA_3", label: "FILAS", kind: "Cursor" }]);
 });
 
 test("prepara un procedimiento de entrada con binds nombrados y tipos iniciales", () => {

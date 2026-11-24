@@ -12,6 +12,7 @@ export type CommandId =
   | "explainPlan"
   | "palette"
   | "newSql"
+  | "newTest"
   | "test"
   | "newCommand"
   | "newProgram"
@@ -69,7 +70,8 @@ const list: Command[] = [
   { id: "explainPlan", label: "Plan de ejecución", keys: "F5", pending: true },
   { id: "palette", label: "Buscar comando", keys: "Ctrl+K", pending: true },
   { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
-  { id: "test", label: "Probar", keys: "Ctrl+T", pending: true },
+  { id: "newTest", label: "Nueva ventana de prueba", keys: "Ctrl+Alt+T" },
+  { id: "test", label: "Probar", keys: "Ctrl+T" },
   {
     id: "newCommand",
     label: "Nueva ventana de comando",

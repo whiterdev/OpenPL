@@ -16,6 +16,7 @@ export interface ObjectMenuHandlers {
   refresh: () => void;
   queryData?: () => void;
   editData?: () => void;
+  test?: () => void;
 }
 
 const CODE_TYPES = new Set<ObjectType>(["Package", "Procedure", "Function", "Trigger", "Type", "JavaSource", "JavaClass"]);
@@ -54,7 +55,8 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Editar", run: h.edit },
   );
   else if (code || data) items.push({ label: "Ver", pending: true }, { label: "Editar", pending: true });
-  if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys, pending: true });
+  if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: h.test ? undefined : commands.test.keys,
+    run: h.test, pending: h.test ? undefined : true });
   if (data) items.push(...dataGroup(t, h));
   if (user) items.push(
     "sep",

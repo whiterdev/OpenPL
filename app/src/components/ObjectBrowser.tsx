@@ -110,9 +110,10 @@ interface Props {
   onNotice?: (message: string) => void;
   onQueryData?: (o: ObjectInfo) => void;
   onEditData?: (o: ObjectInfo) => void;
+  onTest?: (o: ObjectInfo, x: number, y: number) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onTest }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -142,6 +143,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       refresh,
       queryData: onQueryData && (() => onQueryData(o)),
       editData: onEditData && (() => onEditData(o)),
+      test: onTest && (() => onTest(o, e.clientX, e.clientY)),
     });
     setMenu({ x: e.clientX, y: e.clientY, label: full, items });
   }

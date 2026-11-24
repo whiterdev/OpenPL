@@ -1,7 +1,7 @@
 // Envoltorios tipados de los comandos Tauri.
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorReference } from "./editorReference";
-import type { RoutineOverload } from "./routineTest";
+import type { RoutineOverload, TestOutputBind } from "./routineTest";
 import type {
   ClientInfo,
   CompletionObject,
@@ -115,12 +115,14 @@ export const api = {
     sql: string,
     binds: BindValue[],
     pageSize?: number,
+    testOutputs?: TestOutputBind[],
   ) =>
     invoke<ExecOutcome>("sql_execute", {
       sessionId,
       sql,
       binds,
       pageSize: pageSize ?? null,
+      testOutputs: testOutputs ?? null,
     }),
   sqlFetch: (sessionId: string, cursor: number, size?: number) =>
     invoke<QueryPage>("sql_fetch", { sessionId, cursor, size: size ?? null }),
