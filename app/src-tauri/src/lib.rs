@@ -54,6 +54,8 @@ pub fn run() {
             commands::sql_cancel,
             commands::sql_commit,
             commands::sql_rollback,
+            commands::sql_edit_target,
+            commands::sql_apply,
             commands::program_source,
             commands::open_program_file,
             commands::save_program_file,

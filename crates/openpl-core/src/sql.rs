@@ -119,7 +119,7 @@ fn binary_label(t: &OracleType) -> Option<&'static str> {
 }
 
 /// Número escrito por el usuario; Oracle lo convierte sin depender de NLS_NUMERIC_CHARACTERS.
-struct NumberText(String);
+pub(crate) struct NumberText(pub(crate) String);
 
 impl ToSql for NumberText {
     fn oratype(&self, _conn: &oracle::Connection) -> oracle::Result<OracleType> {
@@ -166,6 +166,23 @@ fn bind_param(b: &BindValue) -> Result<Box<dyn ToSql>, DbError> {
     })
 }
 
+/// Valores de una fila como texto, con el mismo formato en la grilla y al comparar al aplicar.
+pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
+    let mut cells = Vec::with_capacity(row.sql_values().len());
+    for value in row.sql_values() {
+        let t = value.oracle_type()?;
+        if value.is_null()? {
+            cells.push(None);
+        } else if let Some(label) = binary_label(t) {
+            cells.push(Some(label.to_string()));
+        } else {
+            let text = value.get::<String>().unwrap_or_else(|_| format!("({t})"));
+            cells.push(Some(text));
+        }
+    }
+    Ok(cells)
+}
+
 fn read_page(rows: &mut ResultSet<'static, Row>, size: usize) -> Result<QueryPage, DbError> {
     let mut out = Vec::new();
     while out.len() < size {
@@ -175,20 +192,7 @@ fn read_page(rows: &mut ResultSet<'static, Row>, size: usize) -> Result<QueryPag
                 more: false,
             });
         };
-        let row = row?;
-        let mut cells = Vec::with_capacity(row.sql_values().len());
-        for value in row.sql_values() {
-            let t = value.oracle_type()?;
-            if value.is_null()? {
-                cells.push(None);
-            } else if let Some(label) = binary_label(t) {
-                cells.push(Some(label.to_string()));
-            } else {
-                let text = value.get::<String>().unwrap_or_else(|_| format!("({t})"));
-                cells.push(Some(text));
-            }
-        }
-        out.push(cells);
+        out.push(row_cells(&row?)?);
     }
     Ok(QueryPage {
         rows: out,

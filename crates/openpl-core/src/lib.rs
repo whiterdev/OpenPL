@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod catalog;
 pub mod error;
+pub mod grid;
 pub mod profiles;
 pub mod program;
 pub mod secrets;

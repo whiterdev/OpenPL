@@ -81,3 +81,17 @@ fn ventana_sql_pagina_salida_y_errores() {
     assert_eq!(e.code.as_deref(), Some("ORA-00942"));
     assert_eq!(e.offset, Some(14));
 }
+
+#[test]
+fn edicion_en_grilla_solo_resuelve_tablas() {
+    let Some(c) = conn() else { return };
+    // Solo lectura: DUAL es una tabla de SYS visible por sinónimo público; no se aplica nada.
+    let target = openpl_core::grid::edit_target(&c, None, "DUAL").unwrap();
+    if let Some(t) = target {
+        assert_eq!(t.name, "DUAL");
+        assert!(t.columns.iter().any(|col| col.name == "DUMMY"));
+    }
+    assert!(openpl_core::grid::edit_target(&c, None, "NO_EXISTE_OPENPL")
+        .unwrap()
+        .is_none());
+}

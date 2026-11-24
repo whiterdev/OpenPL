@@ -374,6 +374,32 @@ pub async fn sql_rollback(st: St<'_>, session_id: SessionId) -> Result<bool, Cor
 }
 
 #[tauri::command]
+pub async fn sql_edit_target(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: Option<String>,
+    name: String,
+) -> Result<Option<openpl_core::grid::EditTarget>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::grid::edit_target(c, owner.as_deref(), &name))
+        .await
+}
+
+#[tauri::command]
+pub async fn sql_apply(
+    st: St<'_>,
+    session_id: SessionId,
+    target: openpl_core::grid::EditTarget,
+    changes: Vec<openpl_core::grid::RowChange>,
+) -> Result<openpl_core::grid::ApplyResult, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::grid::apply(c, &target, &changes))
+        .await
+}
+
+#[tauri::command]
 pub async fn program_source(
     st: St<'_>,
     session_id: SessionId,
