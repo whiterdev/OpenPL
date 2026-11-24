@@ -4,7 +4,7 @@ import { Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phospho
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
-import { copyGridCells, sumGridNumbers } from "../gridSelection";
+import { copyGridCells, gridTotal, type GridTotal } from "../gridSelection";
 import { ContextMenu } from "./ContextMenu";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
@@ -28,6 +28,10 @@ interface Props {
 }
 
 const ROW = 24;
+const TOTAL_LABELS: Record<GridTotal, string> = {
+  count: "Conteo", sum: "Suma", max: "Máximo", min: "Mínimo", average: "Promedio",
+};
+const TOTAL_OPTIONS = Object.keys(TOTAL_LABELS) as GridTotal[];
 // Con pocas filas se dibujan todas; desde aquí se virtualiza.
 const VIRTUALIZE_ABOVE = 300;
 const STATUS_LABEL: Record<RowStatus, string> = {
@@ -49,8 +53,8 @@ export function ResultGrid(props: Props) {
   const cellPrefix = useId();
   const scroll = props.scrollRef ?? localScroll;
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [totalsFor, setTotalsFor] = useState<{ queryKey: number; selected: CellPosition | null } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; column: number; totals?: boolean } | null>(null);
+  const [totalsFor, setTotalsFor] = useState<{ queryKey: number; columns: Record<number, GridTotal> } | null>(null);
   const [copyError, setCopyError] = useState(false);
   const closeMenu = useCallback(() => setMenu(null), []);
   const autoWidths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
@@ -93,6 +97,18 @@ export function ResultGrid(props: Props) {
   };
   const cursor = selected ?? { row: 0, col: 0 };
   const selectedRows = () => selected?.scope === "all" ? rows : rows.slice(cursor.row, cursor.row + 1);
+  const totals = totalsFor?.queryKey === queryKey ? totalsFor.columns : undefined;
+  const totalValues = useMemo(() => Object.entries(totals ?? {}).map(([column, operation]) => [
+    column, gridTotal(rows.filter((_, row) => status[row] !== "delete").map((row) => row[Number(column)] ?? null), operation),
+  ] as const), [totals, rows, status]);
+  const totalsByColumn = Object.fromEntries(totalValues);
+  function setTotal(column: number, operation?: GridTotal) {
+    const next = { ...totals };
+    if (operation) next[column] = operation;
+    else delete next[column];
+    setTotalsFor({ queryKey, columns: next });
+    scroll.current?.focus();
+  }
   const selectAll = () => onSelect({ ...cursor, scope: "all" });
   async function copy(csv: boolean) {
     const cells = selected?.scope ? selectedRows() : [[rows[cursor.row]?.[cursor.col] ?? null]];
@@ -143,9 +159,10 @@ export function ResultGrid(props: Props) {
         if (editing || fetching) return;
         event.preventDefault();
         scroll.current?.focus();
-        setMenu({ x: event.clientX, y: event.clientY });
+        const cell = (event.target as Element).closest<HTMLElement>("[data-sql-column]");
+        setMenu({ x: event.clientX, y: event.clientY, column: cell ? Number(cell.dataset.sqlColumn) : cursor.col });
       }}>
-      <div role="grid" aria-label="Resultados" aria-rowcount={rows.length + 1} aria-readonly={!editable}
+      <div role="grid" aria-label="Resultados" aria-rowcount={rows.length + 1 + Number(totalValues.length > 0)} aria-readonly={!editable}
         aria-activedescendant={activeId} aria-multiselectable="true"
         className={`sql-grid${editable ? " editing" : ""}${selected?.scope ? " selecting-rows" : ""}`}
         style={{ width: 64 + widths.reduce((a, b) => a + b, 0) }}>
@@ -157,7 +174,7 @@ export function ResultGrid(props: Props) {
             </button>
           </div>
           {columns.map((c, i) => (
-            <div key={`${c.name}-${i}`} role="columnheader" aria-label={c.name} className={`sql-cell${c.numeric ? " num" : ""}`}
+            <div key={`${c.name}-${i}`} role="columnheader" aria-label={c.name} data-sql-column={i} className={`sql-cell${c.numeric ? " num" : ""}`}
               title={editable && !editable[i] ? `${c.type_name} · solo lectura` : c.type_name}>
               {c.name}
               <div role="separator" aria-orientation="vertical" aria-label={`Ancho de ${c.name}`} tabIndex={0}
@@ -211,7 +228,7 @@ export function ResultGrid(props: Props) {
                     (selected?.row === row && (selected.scope === "row" || selected.col === col));
                   const isEditing = editing?.position.row === row && editing.position.col === col;
                   return (
-                    <div key={col} id={`${cellPrefix}-cell-${row}-${col}`} role="gridcell" aria-selected={isSelected}
+                    <div key={col} id={`${cellPrefix}-cell-${row}-${col}`} role="gridcell" aria-selected={isSelected} data-sql-column={col}
                       aria-label={`${column.name} ${value ?? "NULL"}`}
                       className={`sql-cell${column.numeric ? " num" : ""}${isSelected ? " selected" : ""}${isModified(row, col) ? " modified" : ""}`}
                       onMouseDown={(event) => { if (event.button === 0) onSelect({ row, col }); }}
@@ -238,6 +255,17 @@ export function ResultGrid(props: Props) {
             );
           })}
         </div>
+        {!!totalValues.length && <div role="row" aria-label="Totales de columna" aria-rowindex={rows.length + 2}
+          className="sql-row sql-totals" style={{ gridTemplateColumns: template }}>
+          <div role="rowheader" className="sql-cell sql-rownum">Total</div>
+          {columns.map((column, index) => {
+            const operation = totals?.[index];
+            const label = operation ? `${column.name} · ${TOTAL_LABELS[operation]}` : column.name;
+            const value = operation ? totalsByColumn[index] ?? "—" : "";
+            return <div key={index} role="gridcell" aria-label={label} title={operation ? `${label}: ${value}` : undefined}
+              className="sql-cell num" data-sql-column={index}>{value}</div>;
+          })}
+        </div>}
       </div>
     </div>
   );
@@ -250,23 +278,21 @@ export function ResultGrid(props: Props) {
         </header>
       )}
       {copyError && <div className="sql-grid-header"><span role="alert">No se pudo copiar</span></div>}
-      {totalsFor?.queryKey === queryKey && totalsFor.selected === selected && (
-        <div className="sql-grid-header" role="status">
-          {columns.map((column, index) => column.numeric ? (
-            <span key={index}>{column.name}: {sumGridNumbers(selectedRows().map((row) => row[index])) ?? "—"}</span>
-          ) : null)}
-          <button className="btn" onClick={() => { setTotalsFor(null); scroll.current?.focus(); }}>Cerrar totales</button>
-        </div>
-      )}
       {table}
-      {menu && <ContextMenu {...menu} label="Grilla de resultados" onClose={closeMenu} items={[
+      {menu && <ContextMenu key={menu.totals ? "totals" : "grid"} {...menu}
+        label={menu.totals ? `Totales de ${columns[menu.column]?.name}` : "Grilla de resultados"} onClose={closeMenu} items={menu.totals ? [
+        { label: "Ninguno", radio: true, checked: !totals?.[menu.column], run: () => setTotal(menu.column) },
+        ...TOTAL_OPTIONS.map((operation) => ({
+          label: TOTAL_LABELS[operation], radio: true, checked: totals?.[menu.column] === operation,
+          run: operation === "count" || columns[menu.column]?.numeric ? () => setTotal(menu.column, operation) : undefined,
+        })),
+        "sep",
+        { label: "Limpiar todos", run: totalValues.length ? () => { setTotalsFor(null); scroll.current?.focus(); } : undefined },
+      ] : [
         { ...commands.selectGridRows, run: () => { selectAll(); scroll.current?.focus(); } },
         { ...commands.copyGrid, run: () => { void copy(false); scroll.current?.focus(); } },
         { label: "Copiar entre comas", run: () => { void copy(true); scroll.current?.focus(); } },
-        { label: "Sumar columnas numéricas", run: columns.some((column) => column.numeric) ? () => {
-          setTotalsFor({ queryKey, selected });
-          scroll.current?.focus();
-        } : undefined },
+        { label: "Totales de columna", run: columns[menu.column] ? () => setMenu({ ...menu, totals: true }) : undefined },
       ]} />}
     </section>
   );

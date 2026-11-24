@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- Ctrl+C conserva la copia nativa del texto de paquetes. La grilla permite elegir un total por columna y lo muestra alineado en su pie. Los cálculos usan las filas cargadas.
+
 - El prompt recupera el foco al entrar a la consola. `EDIT` sobre una tabla abre una pestaña de datos con edición habilitada.
 
 - `EDIT` completa solo en el esquema indicado o en el usuario conectado. Las pruebas de rutinas generan binds de salida tipados y usan comillas únicamente para los identificadores que las necesitan.

@@ -6,6 +6,7 @@ export interface ContextItem {
   label: string;
   keys?: string;
   checked?: boolean;
+  radio?: boolean;
   /** Sin `run` el ítem aparece deshabilitado. */
   run?: () => void;
   /** Función que todavía no existe: deshabilitada con la marca "Próximamente". */
@@ -74,7 +75,7 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
         ) : (
           <button
             key={it.label}
-            role={it.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            role={it.radio ? "menuitemradio" : it.checked === undefined ? "menuitem" : "menuitemcheckbox"}
             aria-checked={it.checked}
             className="menu-item"
             disabled={!it.run}
