@@ -34,15 +34,15 @@ export const PRESETS: readonly Theme[] = [
     text: "#dad5cc", muted: "#b1aca2", faint: "#6e6b66",
     accent: "#c99a3b", accentText: "#1e1a12", accentSoft: "#3d3524",
     err: "#ec8478", errSoft: "#3e2526", ok: "#75c08e", okSoft: "#233128",
-    kw: "#8db2cb", ty: "#d6b27a", st: "#a7c08e", nu: "#da8f6e", cm: "#9993a8", fn: "#c7a2d9",
+    kw: "#8db2cb", ty: "#d6b27a", st: "#a7c08e", nu: "#da8f6e", cm: "#ca8a80", fn: "#c7a2d9",
   }),
   preset("papel", "Papel", "light", {
-    s0: "#e9e5dc", s1: "#e2ddd2", s2: "#d8d2c6", s3: "#cec7ba",
-    line: "#c7c0b2", line2: "#bbb3a5", "field-line": "#797267", "s-menu": "#e6e1d7",
-    text: "#292722", muted: "#575248", faint: "#918a7d",
-    accent: "#745620", accentText: "#f5f0e7", accentSoft: "#ded0b1",
+    s0: "#e7e9ed", s1: "#e0e4eb", s2: "#dadee6", s3: "#cfd5de",
+    line: "#cbd1db", line2: "#b5bfce", "field-line": "#697688", "s-menu": "#eaedf2",
+    text: "#202833", muted: "#4c5869", faint: "#818b99",
+    accent: "#385880", accentText: "#f4f6fa", accentSoft: "#d5e0f1",
     err: "#963d36", errSoft: "#ecd6d0", ok: "#35613f", okSoft: "#d6dfcd",
-    kw: "#315572", ty: "#705022", st: "#465d35", nu: "#824a36", cm: "#655a72", fn: "#634674",
+    kw: "#315572", ty: "#265f4c", st: "#3d5485", nu: "#824a36", cm: "#8b4b43", fn: "#634674",
   }),
   preset("medianoche", "Medianoche", "dark", {
     s0: "#161a22", s1: "#1c212b", s2: "#262c38", s3: "#2f3644",
@@ -50,7 +50,7 @@ export const PRESETS: readonly Theme[] = [
     text: "#d8dde6", muted: "#a6afbf", faint: "#626b7a",
     accent: "#6fa8dc", accentText: "#0d1620", accentSoft: "#22344a",
     err: "#ef8a80", errSoft: "#3d2428", ok: "#7cc596", okSoft: "#202f27",
-    kw: "#82aaff", ty: "#e0b878", st: "#a5d48a", nu: "#f0a07a", cm: "#9690ab", fn: "#c792ea",
+    kw: "#82aaff", ty: "#e0b878", st: "#a5d48a", nu: "#f0a07a", cm: "#ca8a80", fn: "#c792ea",
   }),
   preset("bosque", "Bosque", "dark", {
     s0: "#1b211d", s1: "#212823", s2: "#2b332d", s3: "#343d36",
@@ -58,7 +58,7 @@ export const PRESETS: readonly Theme[] = [
     text: "#d9dccf", muted: "#aab2a3", faint: "#667064",
     accent: "#8fbf6a", accentText: "#142010", accentSoft: "#2e3d26",
     err: "#e88a7a", errSoft: "#3d2523", ok: "#7cc79a", okSoft: "#223128",
-    kw: "#87b9c9", ty: "#d4b97a", st: "#b5cf86", nu: "#e09a70", cm: "#9893a6", fn: "#c8a6d6",
+    kw: "#87b9c9", ty: "#d4b97a", st: "#b5cf86", nu: "#e09a70", cm: "#ca8a80", fn: "#c8a6d6",
   }),
   preset("alto-contraste", "Alto contraste", "dark", {
     s0: "#000000", s1: "#0a0a0a", s2: "#1a1a1a", s3: "#2a2a2a",
@@ -66,7 +66,7 @@ export const PRESETS: readonly Theme[] = [
     text: "#ffffff", muted: "#d6d6d6", faint: "#9a9a9a",
     accent: "#ffd24a", accentText: "#000000", accentSoft: "#3d3200",
     err: "#ff8a80", errSoft: "#3d1512", ok: "#7ee0a0", okSoft: "#0f3320",
-    kw: "#7fc8ff", ty: "#ffd27f", st: "#b8f08a", nu: "#ffab7a", cm: "#bdb2ca", fn: "#e3b0ff",
+    kw: "#7fc8ff", ty: "#ffd27f", st: "#b8f08a", nu: "#ffab7a", cm: "#d7a49a", fn: "#e3b0ff",
   }),
 ];
 

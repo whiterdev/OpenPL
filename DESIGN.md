@@ -32,9 +32,9 @@ Valores del tema Grafito. Los demás temas redefinen los mismos tokens, salvo lo
 | `--accent` | `#c99a3b` | Ocre del logo. 5.59:1 sobre `--s1`. |
 | `--err` | `#ec8478` | Errores y excepciones. 4.62:1 sobre `--s2` (fila en hover). |
 | `--env-dev/qa/prod` | verde, ámbar, rojo | Entorno de la conexión. Siempre acompañado de texto. |
-| Sintaxis | `--kw`, `--ty`, `--st`, `--nu`, `--cm` | Los comentarios usan malva apagado y cursiva. Su contraste es menor que el del código base y alcanza al menos 4,5:1 sobre el editor. |
+| Sintaxis | `--kw`, `--ty`, `--st`, `--nu`, `--cm` | Los comentarios usan terracota apagada y cursiva. Su contraste es menor que el del código base y alcanza al menos 4,5:1 sobre el editor. |
 
-Papel usa un gris cálido mate (`#e9e5dc`) para el editor, superficies vecinas más oscuras y colores de sintaxis apagados. El código base queda en carbón (`#292722`).
+Papel usa un gris perla (`#e7e9ed`) para el editor, superficies vecinas gris azuladas y acento azul. El código base queda en carbón frío (`#202833`).
 
 Todo par nuevo de texto y fondo se mide con `contrast-check.py` de antislop-human antes de usarlo. Nada de colores sueltos fuera de `theme.css`.
 

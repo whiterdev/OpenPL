@@ -459,3 +459,30 @@ test("Solo lectura permite alternar la edicion sin recrear el editor ni perder c
   expect(editor).toHaveAttribute("aria-readonly", "true");
   expect(view.state.doc.toString()).toBe("-- nota\n" + parts[0].source);
 });
+
+test("ofrece Probar para una rutina publica del paquete", () => {
+  const onTestRoutine = vi.fn();
+  render(<ProgramWindow parts={parts} readOnly onDirty={vi.fn()} onTestRoutine={onTestRoutine} />);
+  fireEvent.contextMenu(screen.getByRole("button", { name: /hello/i }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /^Probar/ }));
+  expect(onTestRoutine).toHaveBeenCalledWith("HELLO", 0, 0);
+});
+
+test("el clic derecho en la fuente ofrece Probar sin buscar un objeto homonimo", () => {
+  const onTestRoutine = vi.fn();
+  const lookup = vi.spyOn(api, "editorObject");
+  const coords = vi.spyOn(EditorView.prototype, "posAndSideAtCoords")
+    .mockReturnValue({ pos: parts[0].source.indexOf("hello") + 1, assoc: 1 });
+  try {
+    render(<ProgramWindow parts={parts} readOnly onReadOnlyChange={vi.fn()} onDirty={vi.fn()} onTestRoutine={onTestRoutine}
+      catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+    fireEvent.contextMenu(screen.getByRole("textbox", { name: "Spec" }), { clientX: 20, clientY: 30 });
+    expect(screen.getByRole("menuitemcheckbox", { name: "Solo lectura", checked: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Probar/ }));
+    expect(onTestRoutine).toHaveBeenCalledWith("HELLO", 20, 30);
+    expect(lookup).not.toHaveBeenCalled();
+  } finally {
+    coords.mockRestore();
+    lookup.mockRestore();
+  }
+});

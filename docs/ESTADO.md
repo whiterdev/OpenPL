@@ -57,6 +57,12 @@
 - El menú contextual ofrece **Solo lectura** con el estado de la pestaña. Se alterna en el editor abierto y se conservan los cambios, la selección y el historial. La opción también está disponible cuando el clic no apunta a un nombre de objeto.
 - [Auditoría antislop](../anti-slop/audit-solo-lectura-2026-11-24.md). Las pruebas de componentes verifican el estado y la conservación del texto. Queda pendiente el recorrido visual en escritorio.
 
+### Probar rutinas públicas y ajuste de Papel
+
+- En la fuente o en **Estructura**, el menú de una función o procedimiento público ofrece **Probar**. Se leen las firmas por el IPC de solo lectura, se elige la sobrecarga si hay varias y se prepara un bloque editable en una pestaña SQL. Los argumentos escalares admitidos usan variables tipadas. El botón prepara el bloque sin ejecutarlo. La ventana dedicada del Plan 4 sigue pendiente.
+- Papel usa grises fríos y un acento azul. Los comentarios pasan a terracota apagada en los temas incluidos.
+- [Auditoría antislop](../anti-slop/audit-papel-rutinas-2026-11-24.md). Quedan pendientes la inspección visual nativa y la prueba manual de llamadas en una base habilitada para ello.
+
 ### Selector de temas
 
 - En `feat/seleccion-temas`, la fila activa usa fondo de superficie y un tilde. Se quitó la franja lateral y se documentó la regla de selección en `DESIGN.md`.

@@ -67,6 +67,8 @@ se muestra en una grilla de solo lectura. No se edita ni se aplica nada desde ah
 
 ## Puntos de entrada
 
+OpenPL ya ofrece **Probar** en el menú de una declaración pública del código o de **Estructura**. La acción carga la firma, presenta las sobrecargas cuando corresponde y abre el bloque editable en SQL. La ventana dedicada que se describe arriba sigue pendiente.
+
 - "Probar" en el menú contextual del explorador, sobre procedimientos y funciones sueltos o
   de paquete.
 - "Probar" en el panel de estructura de la ventana de programa.

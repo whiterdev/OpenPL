@@ -54,7 +54,7 @@ interface Props {
   onView: (view: EditorView | null) => void;
   onChange: (value: string) => void;
   activate: () => void;
-  onObjectContext?: (reference: EditorReference, x: number, y: number) => void;
+  onObjectContext?: (reference: EditorReference, x: number, y: number, position: number) => void;
   /** Catálogo de la sesión del programa; se lee en cada consulta. */
   completion?: CompletionCatalog | null;
   onSelection?: (head: number) => void;
@@ -122,10 +122,12 @@ export function ProgramEditor(props: Props) {
             const open = latest.current.onObjectContext;
             if (!open || !(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
             const point = editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY });
-            const reference = point && editorReference(editor.state, Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0)));
+            if (!point) return false;
+            const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
+            const reference = editorReference(editor.state, position);
             if (!reference) return false;
             latest.current.activate();
-            open(reference, event.clientX, event.clientY);
+            open(reference, event.clientX, event.clientY, position);
             return true;
           },
         }),

@@ -224,6 +224,22 @@ pub async fn object_ddl(
 }
 
 #[tauri::command]
+pub async fn routine_overloads(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: String,
+    package: Option<String>,
+    name: String,
+) -> Result<Vec<openpl_core::routine::Overload>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |conn| {
+            openpl_core::routine::list_overloads(conn, &owner, package.as_deref(), &name)
+        })
+        .await
+}
+
+#[tauri::command]
 pub async fn editor_object(
     st: St<'_>,
     session_id: SessionId,

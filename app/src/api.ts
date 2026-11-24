@@ -1,6 +1,7 @@
 // Envoltorios tipados de los comandos Tauri.
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorReference } from "./editorReference";
+import type { RoutineOverload } from "./routineTest";
 import type {
   ClientInfo,
   CompletionObject,
@@ -23,6 +24,8 @@ import type {
 } from "./types";
 
 export const api = {
+  routineOverloads: (sessionId: string, owner: string, packageName: string | null, name: string) =>
+    invoke<RoutineOverload[]>("routine_overloads", { sessionId, owner, package: packageName, name }),
   clientInfo: () => invoke<ClientInfo>("client_info"),
   setClientDir: (dir: string | null) => invoke<void>("set_client_dir", { dir }),
   listProfiles: () => invoke<ConnectionProfile[]>("list_profiles"),

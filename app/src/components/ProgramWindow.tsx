@@ -42,6 +42,7 @@ interface Props {
   parts: ProgramPart[];
   readOnly: boolean;
   onReadOnlyChange?: (readOnly: boolean) => void;
+  onTestRoutine?: (name: string, x: number, y: number) => void;
   onDirty: (dirty: boolean) => void;
   ref?: Ref<ProgramActions>;
   fileName?: string;
@@ -89,7 +90,7 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile,
+  parts, readOnly, onReadOnlyChange, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map((entry) => ({
     text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
@@ -106,6 +107,8 @@ export function ProgramWindow({
   const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
   const closeEditorMenu = useCallback(() => setEditorMenu(null), []);
   const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
+  const [routineMenu, setRoutineMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const closeRoutineMenu = useCallback(() => setRoutineMenu(null), []);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
   const [outlineWidth, setOutlineWidthState] = useState(storedOutlineWidth);
   const setOutlineWidth = useCallback((value: number) => {
@@ -120,7 +123,8 @@ export function ProgramWindow({
     closeObjectMenu();
     closeDeclarationMenu();
     closeEditorMenu();
-  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeEditorMenu]);
+    closeRoutineMenu();
+  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeEditorMenu, closeRoutineMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
@@ -130,6 +134,23 @@ export function ProgramWindow({
   const secondOutline = useMemo(() => values[1] ? programStructure(values[1]) : [], [values[1]]);
   const outline = selected === 0 ? firstOutline : secondOutline;
   const publicKeys = useMemo(() => new Set(firstOutline.map((entry) => entry.key)), [firstOutline]);
+  function canTest(entry: ProgramDeclaration, index: number) {
+    const kind = parts[index].kind;
+    return !!onTestRoutine && (entry.kind === "procedure" || entry.kind === "function") &&
+      (kind === "PACKAGE" || (kind === "PACKAGE BODY" && index > 0 && publicKeys.has(entry.key)) ||
+        kind === "PROCEDURE" || kind === "FUNCTION");
+  }
+  function openRoutineMenu(entry: ProgramDeclaration, x: number, y: number) {
+    closeObjectMenu();
+    closeDeclarationMenu();
+    closeEditorMenu();
+    setRoutineMenu({ name: entry.name, x, y });
+  }
+  function routineAt(index: number, position: number) {
+    return (index === 0 ? firstOutline : secondOutline).find((entry) =>
+      canTest(entry, index) && position >= entry.from &&
+      position < entry.from + entry.name.length + (values[index][entry.from] === '"' ? 2 : 0));
+  }
   const part = parts[selected];
   const sessionId = catalog?.sessionId;
   const contextOwner = catalog?.owner ?? null;
@@ -361,6 +382,13 @@ export function ProgramWindow({
     compareProgram: readCurrentProgram ? () => void compare() : undefined,
     execute: canCompile ? () => void compileActive() : undefined,
     cancel: canCompile ? stopCompilation : undefined,
+    test: onTestRoutine ? runInEditor((view) => {
+      const position = view.state.selection.main.head;
+      const entry = routineAt(selected, position);
+      if (!entry) return;
+      const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
+      onTestRoutine(entry.name, coords.left, coords.bottom);
+    }) : undefined,
     objectActions: catalog ? runInEditor((view) => {
       const position = view.state.selection.main.head;
       const reference = editorReference(view.state, position) ?? (position > 0 ? editorReference(view.state, position - 1) : null);
@@ -439,6 +467,10 @@ export function ProgramWindow({
             return (
               <button key={entry.from} type="button" title={`${KIND_BADGES[entry.kind].label} · ${entry.label}`}
                 aria-label={[KIND_BADGES[entry.kind].label, entry.label, visibility].filter(Boolean).join(" ")}
+                onContextMenu={canTest(entry, selected) ? (event) => {
+                  event.preventDefault();
+                  openRoutineMenu(entry, event.clientX, event.clientY);
+                } : undefined}
                 onClick={() => navigateAt(selected, entry.from)}>
                 <span className={`decl-badge decl-${entry.kind}`} aria-hidden>{KIND_BADGES[entry.kind].letter}</span>
                 <span className="program-outline-name">{entry.label}</span>
@@ -482,6 +514,7 @@ export function ProgramWindow({
           content.focus();
           closeObjectMenu();
           closeDeclarationMenu();
+          closeRoutineMenu();
           setEditorMenu({ x: event.clientX, y: event.clientY });
         }}>
           {parts.map((entry, index) => (
@@ -494,8 +527,14 @@ export function ProgramWindow({
                 completion={completion}
                 markers={markersFor(index)}
                 activate={() => setSelected(index)}
-                onObjectContext={catalog ? (reference, x, y) => {
+                onObjectContext={catalog ? (reference, x, y, position) => {
                   closeEditorMenu();
+                  const entry = routineAt(index, position);
+                  if (entry) {
+                    openRoutineMenu(entry, x, y);
+                    return;
+                  }
+                  closeRoutineMenu();
                   closeDeclarationMenu();
                   setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
                 } : undefined}
@@ -530,6 +569,10 @@ export function ProgramWindow({
       )}
       {active && editorMenu && readOnlyItem && (
         <ContextMenu {...editorMenu} label="Editor" items={[readOnlyItem]} onClose={closeEditorMenu} />
+      )}
+      {active && routineMenu && onTestRoutine && (
+        <ContextMenu x={routineMenu.x} y={routineMenu.y} label={routineMenu.name} onClose={closeRoutineMenu}
+          items={[...(readOnlyItem ? [readOnlyItem] : []), { label: "Probar", keys: commands.test.keys, run: () => onTestRoutine(routineMenu.name, routineMenu.x, routineMenu.y) }]} />
       )}
       {active && declarationMenu && !comparison && (
         <ContextMenu x={declarationMenu.x} y={declarationMenu.y}
