@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -28,6 +28,7 @@ import "./SqlWindow.css";
 interface Props {
   sessionId: string;
   command?: boolean;
+  active?: boolean;
   onEditObject?: (object: CompletionObject) => void;
   initialSql?: string;
   testSettings?: TestSettings;
@@ -89,7 +90,7 @@ const editCommand = /^edit(?:\s|$)/i;
 const editTarget = /^edit\s+(?:([\w$#]+)\.)?([\w$#]+);?$/i;
 
 export function SqlWindow({
-  sessionId, command = false, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -112,6 +113,11 @@ export function SqlWindow({
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
+  const terminal = useRef<HTMLDivElement>(null);
+  const commandInput = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    if (command && active) commandInput.current?.focus({ preventScroll: true });
+  }, [command, active]);
   const [prompt, setPrompt] = useState("");
   const [commandLines, setCommandLines] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
@@ -121,6 +127,10 @@ export function SqlWindow({
   const candidates = suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
   const exact = candidates.findIndex((object) => object.name === matchesEdit?.[2].toUpperCase());
   const picked = choice ?? Math.max(0, exact);
+  useEffect(() => {
+    const area = terminal.current;
+    if (area) area.scrollTop = area.scrollHeight;
+  }, [output, commandLines, running, suggestions, dismissed]);
   useEffect(() => {
     const target = prompt.trim().match(editTarget);
     if (!command || commandLines.length || !target) return;
@@ -322,7 +332,7 @@ export function SqlWindow({
             log("output", line(columns.map((column) => column.name)));
             log("output", line(widths.map((width) => "-".repeat(width))));
             rows.forEach((row) => log("output", line(row)));
-            if (page.more) log("info", `${page.rows.length} filas · ver Resultados`);
+            if (page.more) log("info", `${page.rows.length} filas mostradas · ${formatKeys(commands.exportData.keys!)} para exportar todas`);
           }
           lastQuery = true;
         } else {
@@ -692,8 +702,114 @@ export function SqlWindow({
     );
   });
 
+  if (command) return (
+    <section className="sql-window" aria-label="Ventana de comando">
+      <div className="sql-terminal" ref={terminal}>
+        <div role="log" aria-label="Transcripción">
+          {output.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
+        </div>
+        {commandLines.map((line, index) => <div key={index} className="sql-line sql-line-info">
+          {index === 0 ? "SQL>" : index + 1} {line}
+        </div>)}
+        {alert && <div role="alert" className="sql-line sql-line-error">{alert}</div>}
+        {notice && <div role="status" className="sql-line">{notice}</div>}
+        {running && <div role="status" className="sql-line">Ejecutando… {key("cancel")} para detener</div>}
+        <form className="sql-command-prompt" onSubmit={async (event) => {
+          event.preventDefault();
+          const entered = prompt.trim();
+          if (running || !entered) return;
+          setPrompt("");
+          setChoice(undefined);
+          setDismissed(false);
+          if (!commandLines.length && editCommand.test(entered)) {
+            commandHistory.current.push(entered);
+            historyIndex.current = commandHistory.current.length;
+            setTab("output");
+            log("info", `SQL> ${entered}`);
+            if (!matchesEdit || !onEditObject) {
+              log("error", "Usa EDIT [esquema.]objeto.");
+              return;
+            }
+            try {
+              const name = matchesEdit[2].toUpperCase();
+              const items = candidates.length ? candidates : await api.completeObjects(
+                sessionId, matchesEdit[1]?.toUpperCase() ?? null, name, null, "edit",
+              );
+              const object = candidates.length ? items[picked] : items.find((item) => item.name === name) ?? items[0];
+              if (object) onEditObject(object);
+              else log("error", "Objeto no encontrado.");
+            } catch (error) {
+              log("error", describeError(error).message);
+            }
+            return;
+          }
+          const source = [...commandLines, entered].join("\n");
+          const statements = splitScript(source);
+          const complete = /(?:^|\n)\s*\/$/.test(entered) || statements[0]?.kind === "sqlplus" ||
+            (statements[0]?.kind === "sql" && entered.endsWith(";"));
+          if (!complete) {
+            setCommandLines((lines) => [...lines, entered]);
+            return;
+          }
+          if (statements.length) commandHistory.current.push(source);
+          historyIndex.current = commandHistory.current.length;
+          setCommandLines([]);
+          void run(statements, true);
+        }}>
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
+          <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
+            role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
+            aria-expanded={matchesEdit ? !!candidates.length : undefined}
+            aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
+            aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
+            value={prompt} readOnly={running}
+            onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+                return;
+              }
+              if (commandLines.length && event.key === "Escape") {
+                event.preventDefault();
+                setCommandLines([]);
+                setPrompt("");
+                return;
+              }
+              if (candidates.length && event.key === "Escape") {
+                event.preventDefault();
+                setDismissed(true);
+                return;
+              }
+              const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+              if (!delta || running) return;
+              event.preventDefault();
+              if (candidates.length) {
+                const next = (picked + delta + candidates.length) % candidates.length;
+                setChoice(next);
+                document.getElementById(`${tabPrefix}-object-${next}`)?.scrollIntoView?.({ block: "nearest" });
+                return;
+              }
+              const history = commandHistory.current;
+              historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
+              setPrompt(history[historyIndex.current] ?? "");
+            }} />
+          {!!candidates.length && <div className="sql-command-objects" role="listbox" id={`${tabPrefix}-objects`} aria-label="Objetos Oracle">
+            {candidates.map((object, index) => <div key={JSON.stringify(object)} role="option"
+              id={`${tabPrefix}-object-${index}`} aria-selected={picked === index}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { onEditObject?.(object); setPrompt(""); setChoice(undefined); }}>
+              <span>{matchesEdit?.[1] ? `${object.owner}.${object.name}` : object.name}</span><span>{object.object_type}</span>
+            </div>)}
+          </div>}
+        </form>
+
+      </div>
+    </section>
+  );
+
   return (
-    <section className="sql-window" aria-label={command ? "Ventana de comando" : "Ventana SQL"}>
+    <section className="sql-window" aria-label="Ventana SQL">
       <div className="program-toolbar">
         <button className="btn primary" onClick={actions.execute} disabled={running || fetching || applying}>
           <Play size={14} aria-hidden /> Ejecutar <span className="kbd">{key("execute")}</span>
@@ -925,98 +1041,6 @@ export function SqlWindow({
           </div>
         )}
       </div>
-      {command && (
-        <form className="sql-command-prompt" onSubmit={async (event) => {
-          event.preventDefault();
-          const entered = prompt.trim();
-          if (running || !entered) return;
-          setPrompt("");
-          setChoice(undefined);
-          setDismissed(false);
-          if (!commandLines.length && editCommand.test(entered)) {
-            commandHistory.current.push(entered);
-            historyIndex.current = commandHistory.current.length;
-            setTab("output");
-            log("info", `SQL> ${entered}`);
-            if (!matchesEdit || !onEditObject) {
-              log("error", "Usa EDIT [esquema.]objeto.");
-              return;
-            }
-            try {
-              const name = matchesEdit[2].toUpperCase();
-              const items = candidates.length ? candidates : await api.completeObjects(
-                sessionId, matchesEdit[1]?.toUpperCase() ?? null, name, null, "edit",
-              );
-              const object = candidates.length ? items[picked] : items.find((item) => item.name === name) ?? items[0];
-              if (object) onEditObject(object);
-              else log("error", "Objeto no encontrado.");
-            } catch (error) {
-              log("error", describeError(error).message);
-            }
-            return;
-          }
-          const source = [...commandLines, entered].join("\n");
-          const statements = splitScript(source);
-          const complete = /(?:^|\n)\s*\/$/.test(entered) || statements[0]?.kind === "sqlplus" ||
-            (statements[0]?.kind === "sql" && entered.endsWith(";"));
-          if (!complete) {
-            setCommandLines((lines) => [...lines, entered]);
-            return;
-          }
-          if (statements.length) commandHistory.current.push(source);
-          historyIndex.current = commandHistory.current.length;
-          setCommandLines([]);
-          void run(statements, true);
-        }}>
-          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
-          <textarea id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
-            role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
-            aria-expanded={matchesEdit ? !!candidates.length : undefined}
-            aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
-            aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
-            value={prompt} readOnly={running} autoFocus
-            onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-                return;
-              }
-              if (commandLines.length && event.key === "Escape") {
-                event.preventDefault();
-                setCommandLines([]);
-                setPrompt("");
-                return;
-              }
-              if (candidates.length && event.key === "Escape") {
-                event.preventDefault();
-                setDismissed(true);
-                return;
-              }
-              const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
-              if (!delta || running) return;
-              event.preventDefault();
-              if (candidates.length) {
-                const next = (picked + delta + candidates.length) % candidates.length;
-                setChoice(next);
-                document.getElementById(`${tabPrefix}-object-${next}`)?.scrollIntoView?.({ block: "nearest" });
-                return;
-              }
-              const history = commandHistory.current;
-              historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
-              setPrompt(history[historyIndex.current] ?? "");
-            }} />
-          {!!candidates.length && <div className="sql-command-objects" role="listbox" id={`${tabPrefix}-objects`} aria-label="Objetos Oracle">
-            {candidates.map((object, index) => <div key={JSON.stringify(object)} role="option"
-              id={`${tabPrefix}-object-${index}`} aria-selected={picked === index}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => { onEditObject?.(object); setPrompt(""); setChoice(undefined); }}>
-              <span>{object.owner}.{object.name}</span><span>{object.object_type}</span>
-            </div>)}
-          </div>}
-          <button type="submit" className="btn" disabled={running || !prompt.trim()}>Enviar</button>
-        </form>
-      )}
     </section>
   );
 }

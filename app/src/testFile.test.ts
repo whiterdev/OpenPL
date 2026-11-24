@@ -16,3 +16,8 @@ test("rechaza archivos sin version y salidas invalidas", () => {
   expect(() => parseTestFile("-- openpl-test v2\n{}\n")).toThrow();
   expect(() => parseTestFile('-- openpl-test v1\n-- {"outputs":[{"name":";","label":"X","kind":"Text"}],"bindKinds":{}}\n')).toThrow();
 });
+
+test.each(["Number", "Date", "Timestamp"] as const)("conserva la salida %s en .tst", (kind) => {
+  const draft = { source: "BEGIN NULL; END;", bindKinds: {}, outputs: [{ name: "RESULTADO", label: "Retorno", kind }] };
+  expect(parseTestFile(serializeTestFile(draft))).toEqual(draft);
+});

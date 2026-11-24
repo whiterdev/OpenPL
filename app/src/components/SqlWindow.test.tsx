@@ -24,7 +24,8 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   const ref = createRef<ProgramActions>();
   const onTransaction = vi.fn();
   render(<SqlWindow ref={ref} sessionId="w1" initialSql={source} onTransaction={onTransaction} onDirty={vi.fn()} {...props} />);
-  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "SQL" }).closest<HTMLElement>(".cm-editor")!)!;
+  const editor = screen.queryByRole("textbox", { name: "SQL" });
+  const view = (editor && EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!))!;
   return { ref, view, onTransaction };
 }
 
@@ -36,8 +37,12 @@ test("EDIT sugiere objetos y abre la selección sin ejecutar SQL", async () => {
   const open = vi.fn();
   setup("", { command: true, onEditObject: open });
   const prompt = screen.getByLabelText("Comando SQL");
+  fireEvent.change(prompt, { target: { value: "edit vent" } });
+  expect(await screen.findByText("VENTAS_V", { exact: true })).toBeVisible();
+  expect(api.completeObjects).toHaveBeenLastCalledWith("w1", null, "VENT", null, "edit");
   fireEvent.change(prompt, { target: { value: "edit hr.vent" } });
-  expect(await screen.findByRole("option", { name: /VENTAS_V/ })).toBeVisible();
+  expect(await screen.findByText("HR.VENTAS_V", { exact: true })).toBeVisible();
+  expect(api.completeObjects).toHaveBeenLastCalledWith("w1", "HR", "VENT", null, "edit");
   fireEvent.keyDown(prompt, { key: "ArrowDown" });
   fireEvent.submit(prompt.closest("form")!);
   expect(open).toHaveBeenCalledWith(view);
@@ -55,6 +60,8 @@ test("la consola acumula un bloque PL/SQL hasta recibir la barra", async () => {
     await act(async () => { fireEvent.submit(prompt.closest("form")!); });
   }
   await enter("BEGIN");
+  expect(screen.getByText("SQL> BEGIN")).toBeVisible();
+  expect(screen.getByText("2", { selector: "label" })).toBeVisible();
   await enter("dbms_output.put_line('Hola');");
   await enter("END;");
   expect(execute).not.toHaveBeenCalled();
@@ -67,15 +74,21 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
   setup("", { command: true });
   const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  expect(screen.queryByRole("textbox", { name: "SQL" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   fireEvent.change(prompt, { target: { value: "PROMPT Hola" } });
   await act(async () => { fireEvent.submit(prompt.closest("form")!); });
   expect(screen.getByText("Hola")).toBeVisible();
   expect(execute).not.toHaveBeenCalled();
   fireEvent.change(prompt, { target: { value: "SELECT 7 FROM DUAL;" } });
-  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  await act(async () => { fireEvent.keyDown(prompt, { key: "Enter" }); });
   expect(execute).toHaveBeenCalledWith("w1", "SELECT 7 FROM DUAL", []);
   expect(screen.getByText("SQL> SELECT 7 FROM DUAL;")).toBeVisible();
   expect(screen.getByText(/^7\s+Ana$/)).toBeVisible();
+  const transcript = screen.getByRole("log");
+  const row = within(transcript).getByText(/^7\s+Ana$/);
+  expect(row.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(transcript.parentElement).toContainElement(prompt);
   fireEvent.keyDown(prompt, { key: "ArrowUp" });
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
 });
@@ -166,7 +179,7 @@ test("puede omitir una entrada con valor por defecto y guardar la prueba", async
       { declaration: { name: "ID", data_type: "NUMBER", direction: "IN", defaulted: true } },
     ],
   } };
-  const { ref, view } = setup('BEGIN\n  "HR"."DEMO"(\n    "ID" => :ID\n  );\nEND;\n/', {
+  const { ref, view } = setup("BEGIN\n  HR.DEMO(\n    ID => :ID\n  );\nEND;\n/", {
     testSettings: { routine, bindKinds: { ID: "Number" }, outputs: [] },
   });
   const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("demo.tst");
@@ -174,7 +187,7 @@ test("puede omitir una entrada con valor por defecto y guardar la prueba", async
   expect(view.state.doc.toString()).not.toContain(":ID");
   expect(screen.getByRole("checkbox", { name: "Usar ID" })).not.toBeChecked();
   await act(async () => ref.current!.save!());
-  expect(save).toHaveBeenCalledWith('-- openpl-test v1\n-- {"bindKinds":{},"outputs":[]}\nBEGIN\n  "HR"."DEMO"();\nEND;\n/', "tst", null);
+  expect(save).toHaveBeenCalledWith('-- openpl-test v1\n-- {"bindKinds":{},"outputs":[]}\nBEGIN\n  HR.DEMO;\nEND;\n/', "tst", null);
 });
 
 test("F8 ejecuta la sentencia bajo el cursor y muestra la grilla", async () => {

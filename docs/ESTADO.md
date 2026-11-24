@@ -4,6 +4,12 @@
 
 ## Resumen
 
+- El prompt recupera el foco al entrar a la consola. `EDIT` sobre una tabla abre una pestaña de datos con edición habilitada.
+
+- `EDIT` completa solo en el esquema indicado o en el usuario conectado. Las pruebas de rutinas generan binds de salida tipados y usan comillas únicamente para los identificadores que las necesitan.
+
+- La ventana de comandos presenta una terminal con entrada al final de la transcripción y continuación numerada. [Comandos](behavior/comandos.md).
+
 - La auditoría con `emil-design-eng` unificó el feedback de pulsación y corrigió navegación, foco y ancho del menú principal. [Auditoría](../anti-slop/audit-emil-design-eng-2026-11-24.md).
 
 - La consola admite entrada multilínea y resultados alineados. Los menús ajustan su ancho al contenido y el cliente Oracle 12c desde 12.1 figura como compatible.
