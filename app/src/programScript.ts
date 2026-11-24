@@ -18,6 +18,20 @@ export function prepareProgramScript(
   kind: string,
   target: CompilationTarget,
 ): string {
+  const { statement, qualified } = qualify(source, kind, target);
+  return `SET DEFINE OFF\nSET SQLBLANKLINES ON\n${statement}\n/\nSHOW ERRORS ${kind} ${qualified}\n`;
+}
+
+/** Sentencia DDL para OCI: sin "/" ni comandos de SQL*Plus, conserva el ";" final del bloque. */
+export function compileStatement(
+  source: string,
+  kind: string,
+  target: CompilationTarget,
+): string {
+  return qualify(source, kind, target).statement;
+}
+
+function qualify(source: string, kind: string, target: CompilationTarget) {
   const text = source
     .replace(/\r\n?/g, "\n")
     .trimEnd()
@@ -41,5 +55,5 @@ export function prepareProgramScript(
   }
 
   const qualified = `${quoted(owner)}.${quoted(name)}`;
-  return `SET DEFINE OFF\nSET SQLBLANKLINES ON\n${prefix.trimStart()}${qualified}${remainder}\n/\nSHOW ERRORS ${kind} ${qualified}\n`;
+  return { statement: `${prefix.trimStart()}${qualified}${remainder}`, qualified };
 }

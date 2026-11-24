@@ -294,3 +294,128 @@ test("el editor de solo lectura pliega y despliega sin modificar la fuente", () 
   expect(view.state.doc.toString()).toBe(source);
   expect(dirty).not.toHaveBeenCalled();
 });
+
+const compiled = {
+  kind: "PACKAGE",
+  source: "CREATE OR REPLACE PACKAGE PKG_A AS\n  PROCEDURE hello;\nEND;",
+  diagnostics: [],
+  last_ddl_time: "2026-01-01T12:00:00",
+};
+const hrTarget = { owner: "HR", name: "PKG_A" };
+const compiledStatement = 'CREATE OR REPLACE PACKAGE "HR"."PKG_A" AS\n  PROCEDURE hello;\nEND;';
+
+function compiler(run = vi.fn().mockResolvedValue(undefined)) {
+  return { run, cancel: vi.fn(), production: false };
+}
+
+test("Compilar (F8) compila la pestaña activa sin recrear el editor", async () => {
+  const ref = createRef<ProgramActions>();
+  const compile = compiler();
+  const reader = vi.fn()
+    .mockResolvedValueOnce([compiled])
+    .mockResolvedValueOnce([{ ...compiled, last_ddl_time: "2026-01-01T12:05:00" }]);
+  render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+    readCurrentProgram={reader} compilationTarget={hrTarget} compile={compile} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const button = screen.getByRole("button", { name: /^Compilar/ });
+  expect(button.querySelector(".kbd")).toHaveTextContent("F8");
+
+  await act(async () => ref.current?.execute?.());
+  expect(compile.run).toHaveBeenCalledWith(compiledStatement);
+  expect(await screen.findByText("Compilado")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Spec" })).toBe(editor);
+  expect(reader).toHaveBeenCalledTimes(2);
+});
+
+test("un error de compilación llena Problemas y marca el editor", async () => {
+  const ref = createRef<ProgramActions>();
+  const compile = compiler(vi.fn().mockRejectedValue({
+    Db: { code: "ORA-24344", kind: "Other", message: "compilado con errores" },
+  }));
+  const reader = vi.fn()
+    .mockResolvedValueOnce([compiled])
+    .mockResolvedValueOnce([{
+      ...compiled,
+      last_ddl_time: "2026-01-01T12:05:00",
+      diagnostics: [{ line: 2, column: 3, text: "PLS-00103: símbolo inesperado", warning: false }],
+    }]);
+  render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+    readCurrentProgram={reader} compilationTarget={hrTarget} compile={compile} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+
+  await act(async () => ref.current?.execute?.());
+  expect(await screen.findByText("Compilado con 1 error")).toBeInTheDocument();
+  const problems = within(screen.getByLabelText("Problemas"));
+  expect(problems.getByText("2:3")).toBeInTheDocument();
+  expect(problems.getByText(/PLS-00103/)).toBeInTheDocument();
+  await waitFor(() => expect(editor.querySelector(".cm-lintRange-error")).toBeInTheDocument());
+  expect(screen.getByRole("textbox", { name: "Spec" })).toBe(editor);
+});
+
+test("en producción pide confirmación antes de compilar", async () => {
+  const ref = createRef<ProgramActions>();
+  const compile = { ...compiler(), production: true };
+  const reader = vi.fn().mockResolvedValue([compiled]);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  try {
+    render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+      readCurrentProgram={reader} compilationTarget={hrTarget} compile={compile} />);
+    await act(async () => ref.current?.execute?.());
+    expect(confirm).toHaveBeenCalledWith("¿Compilar PKG_A en producción?");
+    expect(compile.run).not.toHaveBeenCalled();
+  } finally {
+    confirm.mockRestore();
+  }
+});
+
+test("si Oracle cambió el objeto pide confirmación y después usa la marca nueva", async () => {
+  const ref = createRef<ProgramActions>();
+  const compile = compiler();
+  const remote = { ...compiled, last_ddl_time: "2026-01-01T12:01:00" };
+  const after = { ...compiled, last_ddl_time: "2026-01-01T12:02:00" };
+  const reader = vi.fn()
+    .mockResolvedValueOnce([remote])
+    .mockResolvedValueOnce([remote])
+    .mockResolvedValueOnce([after])
+    .mockResolvedValueOnce([after])
+    .mockResolvedValueOnce([after]);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  try {
+    render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+      readCurrentProgram={reader} compilationTarget={hrTarget} compile={compile} />);
+    await act(async () => ref.current?.execute?.());
+    expect(confirm).toHaveBeenCalledWith("PKG_A cambió en Oracle. ¿Compilar igual?");
+    expect(compile.run).not.toHaveBeenCalled();
+
+    await act(async () => ref.current?.execute?.());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(compile.run).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Compilado")).toBeInTheDocument();
+
+    await act(async () => ref.current?.execute?.());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(compile.run).toHaveBeenCalledTimes(2);
+  } finally {
+    confirm.mockRestore();
+  }
+});
+
+test("Detener solo se habilita mientras compila y cancela la compilación", async () => {
+  const ref = createRef<ProgramActions>();
+  let fail: (reason: unknown) => void = () => {};
+  const compile = compiler(vi.fn(() => new Promise((_, reject) => { fail = reject; })));
+  render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+    readCurrentProgram={vi.fn().mockResolvedValue([compiled])} compilationTarget={hrTarget} compile={compile} />);
+  const stop = screen.getByRole("button", { name: /^Detener/ });
+  expect(stop).toBeDisabled();
+  expect(stop.querySelector(".kbd")).not.toBeEmptyDOMElement();
+
+  fireEvent.click(screen.getByRole("button", { name: /^Compilar/ }));
+  await waitFor(() => expect(stop).toBeEnabled());
+  expect(screen.getByRole("button", { name: /^Compilar/ })).toBeDisabled();
+  fireEvent.click(stop);
+  expect(compile.cancel).toHaveBeenCalledTimes(1);
+  await act(async () => fail({ Db: { code: "ORA-01013", kind: "Other", message: "cancelado" } }));
+  expect(await screen.findByText("Compilación detenida")).toBeInTheDocument();
+  expect(stop).toBeDisabled();
+});

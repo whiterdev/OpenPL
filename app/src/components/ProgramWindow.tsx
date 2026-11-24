@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
-import { GitDiff, SplitVertical } from "@phosphor-icons/react";
+import { GitDiff, Hammer, SplitVertical, Stop } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -10,15 +10,32 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import { describeError, type ObjectInfo, type ProgramPart } from "../types";
 import { editorReference } from "../editorReference";
-import { positionAt, ProgramEditor } from "./ProgramEditor";
+import { positionAt, ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
 import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
-import type { CompilationTarget } from "../programScript";
+import { compileStatement, type CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
 import type { CompletionCatalog } from "../programCompletion";
 import { ContextMenu } from "./ContextMenu";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>>;
+
+export interface ProgramCompiler {
+  run: (sql: string) => Promise<unknown>;
+  cancel: () => void;
+  production: boolean;
+}
+
+/** Última versión conocida en Oracle; `text` es el borrador al que corresponden diagnósticos y marcas. */
+interface Baseline {
+  text: string;
+  source: string;
+  last_ddl_time: string | null;
+  diagnostics: ProgramPart["diagnostics"];
+  markers?: EditorMarker[];
+}
+
+const NO_MARKERS: EditorMarker[] = [];
 
 interface Props {
   parts: ProgramPart[];
@@ -30,6 +47,7 @@ interface Props {
   active?: boolean;
   readCurrentProgram?: () => Promise<ProgramPart[]>;
   compilationTarget?: CompilationTarget;
+  compile?: ProgramCompiler;
 }
 
 const caption = (kind: string) => {
@@ -69,8 +87,13 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget,
+  parts, readOnly, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile,
 }: Props) {
+  const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map((entry) => ({
+    text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
+  })));
+  const [compiling, setCompiling] = useState(false);
+  const compilation = useRef<{ stopped: boolean } | null>(null);
   const [selected, setSelected] = useState(0);
   const [split, setSplit] = useState(false);
   const [values, setValues] = useState(() => parts.map((part) => part.source));
@@ -228,6 +251,75 @@ export function ProgramWindow({
     }
   }
 
+  async function compileActive() {
+    if (!compile || !compilationTarget || compilation.current) return;
+    const index = selected;
+    const { kind } = parts[index];
+    const text = views.current[index]?.state.doc.toString() ?? values[index];
+    let statement: string;
+    try {
+      statement = compileStatement(text, kind, compilationTarget);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (compile.production && !window.confirm(`¿Compilar ${compilationTarget.name} en producción?`)) return;
+
+    const request = { stopped: false };
+    compilation.current = request;
+    setCompiling(true);
+    setMessage("Compilando");
+    const latestPart = async () => (await readCurrentProgram!()).find((entry) => entry.kind === kind) ?? null;
+    try {
+      if (readCurrentProgram) {
+        const remote = await latestPart();
+        if ((remote?.last_ddl_time ?? null) !== baselines[index].last_ddl_time
+          && !window.confirm(`${compilationTarget.name} cambió en Oracle. ¿Compilar igual?`)) {
+          setMessage("");
+          return;
+        }
+      }
+      if (request.stopped) {
+        setMessage("Compilación detenida");
+        return;
+      }
+      try {
+        await compile.run(statement);
+      } catch (error) {
+        // ORA-24344: Oracle guardó el objeto con errores; los detalles llegan con la fuente releída.
+        if (describeError(error).code !== "ORA-24344") throw error;
+      }
+      const current = readCurrentProgram ? await latestPart() : null;
+      const diagnostics = current?.diagnostics ?? [];
+      const view = views.current[index];
+      const markers = view ? diagnostics.filter((item) => item.line > 0).map((item) => {
+        const from = positionAt(view, item.line, item.column);
+        return { from, to: from + 1, message: item.text };
+      }) : [];
+      setBaselines((all) => all.map((entry, i) => i === index ? {
+        text,
+        source: current?.source ?? entry.source,
+        last_ddl_time: current?.last_ddl_time ?? null,
+        diagnostics,
+        markers,
+      } : entry));
+      const errors = diagnostics.filter((item) => !item.warning).length;
+      setMessage(errors ? `Compilado con ${errors} ${errors === 1 ? "error" : "errores"}` : "Compilado");
+    } catch (error) {
+      const detail = describeError(error);
+      setMessage(request.stopped ? "Compilación detenida" : detail.code ? `${detail.code} ${detail.message}` : detail.message);
+    } finally {
+      compilation.current = null;
+      setCompiling(false);
+    }
+  }
+
+  function stopCompilation() {
+    if (!compile || !compilation.current) return;
+    compilation.current.stopped = true;
+    compile.cancel();
+  }
+
   function changeCase(transform: (value: string) => string) {
     return runInEditor((view) => view.dispatch(view.state.changeByRange((range) => {
       const insert = transform(view.state.sliceDoc(range.from, range.to));
@@ -241,6 +333,7 @@ export function ProgramWindow({
     })));
   }
 
+  const canCompile = !!compile && !!compilationTarget && !readOnly;
   const actions: ProgramActions = {
     save: () => void save(),
     spec: canSplit ? () => focusPart(0) : undefined,
@@ -253,6 +346,8 @@ export function ProgramWindow({
     foldBlock: runInEditor(foldCode),
     unfoldBlock: runInEditor(unfoldCode),
     compareProgram: readCurrentProgram ? () => void compare() : undefined,
+    execute: canCompile ? () => void compileActive() : undefined,
+    cancel: canCompile ? stopCompilation : undefined,
     objectActions: catalog ? runInEditor((view) => {
       const position = view.state.selection.main.head;
       const reference = editorReference(view.state, position) ?? (position > 0 ? editorReference(view.state, position - 1) : null);
@@ -278,7 +373,12 @@ export function ProgramWindow({
     }),
   };
   useImperativeHandle(ref, () => actions);
-  const diagnostics = values[selected] === part.source ? part.diagnostics : [];
+  const diagnostics = values[selected] === baselines[selected].text ? baselines[selected].diagnostics : [];
+  const markersFor = (index: number) => {
+    const { markers, text } = baselines[index];
+    if (!markers) return undefined;
+    return values[index] === text ? markers : NO_MARKERS;
+  };
   const keyLabel = (id: CommandId) => formatKeys(commands[id].keys!);
 
   return (
@@ -299,6 +399,16 @@ export function ProgramWindow({
           <button className="ib" aria-label="Lado a lado" title={keyLabel("sideBySide")} aria-pressed={split} onClick={actions.sideBySide}>
             <SplitVertical size={16} aria-hidden />
           </button>
+        )}
+        {canCompile && (
+          <>
+            <button className="btn" onClick={actions.execute} disabled={compiling}>
+              <Hammer size={14} aria-hidden /> Compilar <span className="kbd">{keyLabel("execute")}</span>
+            </button>
+            <button className="btn" onClick={actions.cancel} disabled={!compiling}>
+              <Stop size={14} aria-hidden /> Detener <span className="kbd">{keyLabel("cancel")}</span>
+            </button>
+          </>
         )}
         {readCurrentProgram && (
           <button className="btn" onClick={actions.compareProgram} disabled={comparison?.result.state === "loading"}>
@@ -360,6 +470,7 @@ export function ProgramWindow({
                 label={caption(entry.kind)}
                 readOnly={readOnly}
                 completion={completion}
+                markers={markersFor(index)}
                 activate={() => setSelected(index)}
                 onObjectContext={catalog ? (reference, x, y) => {
                   closeDeclarationMenu();
@@ -380,7 +491,8 @@ export function ProgramWindow({
         </div>
       </div>
       {comparison && (
-        <ProgramComparison label={caption(parts[comparison.index].kind)} original={parts[comparison.index]}
+        <ProgramComparison label={caption(parts[comparison.index].kind)}
+          original={{ ...parts[comparison.index], ...baselines[comparison.index] }}
           local={values[comparison.index]} result={comparison.result} onClose={() => focusPart(comparison.index)} />
       )}
       {!comparison && description && (

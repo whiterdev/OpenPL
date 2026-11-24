@@ -180,11 +180,6 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
 
   expect(await screen.findByText("Cambio en Oracle")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
-  const f8 = new KeyboardEvent("keydown", { key: "F8", cancelable: true });
-  act(() => {
-    window.dispatchEvent(f8);
-  });
-  expect(f8.defaultPrevented).toBe(true);
   expect(
     screen.queryByRole("region", { name: /^Comparación/ }),
   ).not.toBeInTheDocument();
@@ -193,7 +188,7 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
   expect(
     session.queryByRole("menuitem", { name: /Preparar compilación/ }),
   ).not.toBeInTheDocument();
-  expect(session.getByRole("menuitem", { name: /^Ejecutar(?! script)/ })).toBeDisabled();
+  expect(session.getByRole("menuitem", { name: /^Ejecutar(?! script)/ })).toBeEnabled();
   fireEvent.keyDown(document, { key: "Escape" });
   fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });
   expect(await screen.findByText("Sin diferencias de texto")).toBeInTheDocument();
@@ -482,4 +477,81 @@ test("Editar datos del explorador abre la grilla en edición", async () => {
     await screen.findByRole("button", { name: /Editando/ }),
   ).toHaveAttribute("aria-pressed", "true");
   expect(api.sqlEditTarget).toHaveBeenCalledWith("w4", "HR", "CLIENTES");
+});
+
+test("F8 compila el programa en una sesión hermana y Detener la cancela", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  for (const mock of [api.sqlOpen, api.sqlExecute, api.sqlClose, api.sqlCancel, api.programSource]) {
+    vi.mocked(mock).mockReset();
+  }
+  vi.mocked(api.listObjects).mockResolvedValue([
+    {
+      owner: "HR",
+      name: "PKG_A",
+      object_type: "Package",
+      status: "Valid",
+      last_ddl_time: "2026-01-01T12:00:00",
+    },
+  ]);
+  const spec = {
+    kind: "PACKAGE",
+    source: "CREATE OR REPLACE PACKAGE PKG_A AS\n  g_total NUMBER;\nEND;",
+    last_ddl_time: "2026-01-01T12:00:00",
+    diagnostics: [],
+  };
+  vi.mocked(api.programSource)
+    .mockResolvedValueOnce([spec])
+    .mockResolvedValueOnce([spec])
+    .mockResolvedValueOnce([{ ...spec, last_ddl_time: "2026-01-01T12:05:00" }]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("c1");
+  vi.mocked(api.sqlClose).mockResolvedValue();
+  vi.mocked(api.sqlCancel).mockResolvedValue(true);
+  let finish: () => void = () => {};
+  vi.mocked(api.sqlExecute).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = () =>
+          resolve({
+            result: { kind: "Done", message: "Paquete creado" },
+            elapsed_ms: 1,
+            output: [],
+            transaction: false,
+          });
+      }),
+  );
+  render(<App />);
+  await connectAs();
+  fireEvent.click(await screen.findByRole("treeitem", { name: "Paquetes" }));
+  fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "PKG_A" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Editar Spec y Body" }));
+  await screen.findByRole("textbox", { name: "Spec" });
+
+  const f8 = new KeyboardEvent("keydown", { key: "F8", cancelable: true });
+  act(() => {
+    window.dispatchEvent(f8);
+  });
+  expect(f8.defaultPrevented).toBe(true);
+  await waitFor(() => expect(api.sqlExecute).toHaveBeenCalledTimes(1));
+  expect(api.sqlOpen).toHaveBeenCalledWith("s1");
+  const [sid, sql, binds] = vi.mocked(api.sqlExecute).mock.calls[0];
+  expect(sid).toBe("c1");
+  expect(sql).toBe('CREATE OR REPLACE PACKAGE "HR"."PKG_A" AS\n  g_total NUMBER;\nEND;');
+  expect(sql).not.toMatch(/^\s*\/\s*$/m);
+  expect(binds).toEqual([]);
+
+  const stop = screen.getByRole("button", { name: /^Detener/ });
+  await waitFor(() => expect(stop).toBeEnabled());
+  fireEvent.keyDown(window, { key: "Escape", shiftKey: true });
+  expect(api.sqlCancel).toHaveBeenCalledWith("c1");
+  fireEvent.click(stop);
+  expect(api.sqlCancel).toHaveBeenCalledTimes(2);
+
+  await act(async () => finish());
+  expect(await screen.findByText("Compilado")).toBeInTheDocument();
+  expect(api.sqlClose).toHaveBeenCalledWith("c1");
+  const order = (mock: unknown) =>
+    vi.mocked(mock as typeof api.sqlOpen).mock.invocationCallOrder[0];
+  expect(order(api.sqlOpen)).toBeLessThan(order(api.sqlExecute));
+  expect(order(api.sqlExecute)).toBeLessThan(order(api.sqlClose));
+  expect(api.sqlExecute).not.toHaveBeenCalledWith("s1", expect.anything(), expect.anything());
 });

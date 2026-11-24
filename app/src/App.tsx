@@ -144,6 +144,7 @@ export default function App() {
   const [programs, setPrograms] = useState<ProgramTab[]>([]);
   const [programId, setProgramId] = useState<string | null>(null);
   const programActions = useRef<ProgramActions>(null);
+  const compileSession = useRef<string | null>(null);
   const [closing, setClosing] = useState<ProgramTab | null>(null);
   const sqlCount = useRef(0);
   const dirtyPrograms = useRef(false);
@@ -183,6 +184,8 @@ export default function App() {
         "objectActions",
         "complete",
         "compareProgram",
+        "execute",
+        "cancel",
         "goToLine",
         "find",
         "replace",
@@ -202,6 +205,8 @@ export default function App() {
         if (id === "objectActions") return !!editorConnection;
         if (id === "compareProgram")
           return !!program.object && !!editorConnection;
+        if (id === "execute" || id === "cancel")
+          return !!program.object && !!editorConnection && !program.readOnly;
         if (id === "spec" || id === "body" || id === "sideBySide")
           return program.parts.length === 2;
         return (
@@ -571,6 +576,26 @@ export default function App() {
     }
   }
 
+  /** Sesión hermana: el DDL confirma implícitamente y no debe cerrar la transacción del usuario. */
+  async function compileProgram(sessionId: string, sql: string) {
+    const id = await api.sqlOpen(sessionId);
+    compileSession.current = id;
+    try {
+      return await api.sqlExecute(id, sql, []);
+    } finally {
+      compileSession.current = null;
+      try {
+        await api.sqlClose(id);
+      } catch {
+        // La sesión hermana ya pudo cerrarse; el resultado de la compilación es lo que importa.
+      }
+    }
+  }
+
+  function cancelCompile() {
+    if (compileSession.current) void api.sqlCancel(compileSession.current);
+  }
+
   const run = (id: CommandId) =>
     actions[id] ? { command: id, run: actions[id] } : { command: id };
   const menus: MenuDef[] = [
@@ -876,6 +901,23 @@ export default function App() {
                             : undefined
                         }
                         compilationTarget={tab.object}
+                        compile={
+                          tab.id === programId &&
+                          editorConnection &&
+                          programObject &&
+                          !tab.readOnly
+                            ? {
+                                production:
+                                  editorConnection.environment === "prod",
+                                run: (sql) =>
+                                  compileProgram(
+                                    editorConnection.sessionId,
+                                    sql,
+                                  ),
+                                cancel: cancelCompile,
+                              }
+                            : undefined
+                        }
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={(dirty) => updateProgram(tab.id, { dirty })}
                       />
