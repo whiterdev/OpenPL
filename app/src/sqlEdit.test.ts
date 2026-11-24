@@ -25,6 +25,13 @@ describe("editableQuery", () => {
     );
   });
 
+  test("edita la consulta que arma el explorador con alias t", () => {
+    expect(editableQuery('SELECT t.* FROM "HR"."CLIENTES" t')).toEqual({
+      table: { owner: "HR", name: "CLIENTES" },
+      sql: `SELECT t.ROWID AS "${ROWID_COLUMN}", t.* FROM "HR"."CLIENTES" t`,
+    });
+  });
+
   test.each([
     "select * from a, b",
     "select * from a join b on a.id = b.id",

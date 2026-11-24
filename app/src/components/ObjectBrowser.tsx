@@ -44,6 +44,7 @@ import {
 } from "@phosphor-icons/react";
 import { api } from "../api";
 import { commands, formatKeys } from "../keymap";
+import { objectMenuItems } from "../objectMenu";
 import { describeError, type ActiveConnection, type ObjectInfo, type ObjectType, type Scope } from "../types";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
 import "./ObjectBrowser.css";
@@ -92,15 +93,6 @@ const TYPES: { t: ObjectType; label: string; Icon: ComponentType<IconProps>; tin
   { t: "RecycleBin", label: "Papelera", Icon: Trash, tint: STORE },
 ];
 
-const CODE_TYPES = new Set<ObjectType>(["Package", "Procedure", "Function", "Trigger", "Type", "JavaSource", "JavaClass"]);
-const DATA_TYPES = new Set<ObjectType>(["Table", "View", "MaterializedView"]);
-const TESTABLE = new Set<ObjectType>(["Package", "Procedure", "Function"]);
-const RECOMPILABLE = new Set<ObjectType>([...CODE_TYPES, "View", "MaterializedView"]);
-const DDL_TYPES = new Set<ObjectType>(
-  TYPES.map((x) => x.t).filter((t) => !["JavaClass", "DbmsJob", "RecycleBin"].includes(t)),
-);
-const RENAMEABLE = new Set<ObjectType>(["Table", "View", "Sequence", "Synonym"]);
-
 const ROW = 24;
 /** jsdom y listas cortas: sin virtualizar. Con más filas, solo se dibujan las visibles. */
 const VIRTUALIZE_ABOVE = 200;
@@ -138,42 +130,19 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
 
   function objectMenu(e: React.MouseEvent, o: ObjectInfo) {
     e.preventDefault();
-    const t = o.object_type;
     const full = o.owner ? `${o.owner}.${o.name}` : o.name;
-    const code = CODE_TYPES.has(t);
-    const items: (ContextItem | "sep")[] = [{ label: "Abrir", keys: "Enter", run: () => onOpenObject(o) }];
-    if (t === "Package" || t === "Type") items.push(
-      { label: "Ver Spec y Body", run: () => onOpenObject(o, "view") },
-      { label: "Editar Spec y Body", run: () => onOpenObject(o, "edit") },
-    );
-    else if (t === "Procedure" || t === "Function" || t === "Trigger") items.push(
-      { label: "Ver", run: () => onOpenObject(o, "view") },
-      { label: "Editar", run: () => onOpenObject(o, "edit") },
-    );
-    else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver", pending: true }, { label: "Editar", pending: true });
-    if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys, pending: true });
-    if (DATA_TYPES.has(t)) {
-      items.push("sep", onQueryData
-        ? { label: "Consultar datos", run: () => onQueryData(o) }
-        : { label: "Consultar datos", pending: true });
-      // v1 edita filas de tablas; vistas y vistas materializadas se consultan.
-      if (t === "Table") items.push(onEditData
-        ? { label: "Editar datos", keys: commands.editData.keys, run: () => onEditData(o) }
-        : { label: "Editar datos", keys: commands.editData.keys, pending: true });
-      if (t === "Table") items.push({ label: "Exportar datos", pending: true });
-    }
-    items.push("sep", { label: "Describir", pending: true }, { label: "Propiedades", pending: true });
-    if (RECOMPILABLE.has(t)) items.push({ label: "Recompilar", run: () => void recompile(o) });
-    if (DDL_TYPES.has(t)) items.push({ label: "Copiar DDL", run: () => void copyDdl(o) });
-    if (code || DATA_TYPES.has(t)) items.push({ label: "Comparar con…", pending: true });
-    items.push(
-      "sep",
-      { label: "Copiar nombre", keys: "Ctrl+C", run: () => copy(o.name) },
-      { label: "Copiar nombre con esquema", run: () => copy(full) },
-      "sep",
-    );
-    if (RENAMEABLE.has(t)) items.push({ label: "Renombrar", pending: true });
-    items.push({ label: "Eliminar", pending: true }, "sep", { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh });
+    const items = objectMenuItems(o.object_type, {
+      open: () => onOpenObject(o),
+      view: () => onOpenObject(o, "view"),
+      edit: () => onOpenObject(o, "edit"),
+      recompile: () => void recompile(o),
+      copyDdl: () => void copyDdl(o),
+      copyName: () => copy(o.name),
+      copyFullName: () => copy(full),
+      refresh,
+      queryData: onQueryData && (() => onQueryData(o)),
+      editData: onEditData && (() => onEditData(o)),
+    });
     setMenu({ x: e.clientX, y: e.clientY, label: full, items });
   }
 

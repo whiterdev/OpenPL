@@ -431,7 +431,7 @@ export default function App() {
     if (!active) return;
     void openSql(
       active,
-      `SELECT * FROM ${quoteName(object.owner)}.${quoteName(object.name)}`,
+      `SELECT t.* FROM ${quoteName(object.owner)}.${quoteName(object.name)} t`,
       true,
       edit,
     );

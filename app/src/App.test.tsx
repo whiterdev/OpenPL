@@ -416,7 +416,7 @@ test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
   ).toBeInTheDocument();
   expect(api.sqlExecute).toHaveBeenCalledWith(
     "w3",
-    'SELECT * FROM "HR"."CLIENTES"',
+    'SELECT t.* FROM "HR"."CLIENTES" t',
     [],
   );
 });
@@ -477,6 +477,11 @@ test("Editar datos del explorador abre la grilla en edición", async () => {
     await screen.findByRole("button", { name: /Editando/ }),
   ).toHaveAttribute("aria-pressed", "true");
   expect(api.sqlEditTarget).toHaveBeenCalledWith("w4", "HR", "CLIENTES");
+  expect(api.sqlExecute).toHaveBeenCalledWith(
+    "w4",
+    'SELECT t.ROWID AS "OPENPL$ROWID", t.* FROM "HR"."CLIENTES" t',
+    [],
+  );
 });
 
 test("F8 compila el programa en una sesión hermana y Detener la cancela", async () => {

@@ -268,6 +268,34 @@ describe("ObjectBrowser", () => {
     expect(within(menu).queryByRole("menuitem", { name: /Recompilar/ })).toBeNull();
   });
 
+  test("menú de una vista: consulta datos y Editar datos deshabilitado", async () => {
+    const onQueryData = vi.fn();
+    const v = obj("V_CLIENTES", { object_type: "View" });
+    m.listObjects.mockResolvedValue([v]);
+    renderBrowser({ onQueryData, onEditData: vi.fn() });
+    await userEvent.click(screen.getByRole("treeitem", { name: "Vistas" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /V_CLIENTES/ }));
+    const menu = screen.getByRole("menu");
+    const edit = within(menu).getByRole("menuitem", { name: /Editar datos/ });
+    expect(edit).toBeDisabled();
+    expect(edit).not.toHaveTextContent("Próximamente");
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /Consultar datos/ }));
+    expect(onQueryData).toHaveBeenCalledWith(v);
+  });
+
+  test("menú de un usuario: opciones propias y Copiar DDL", async () => {
+    m.listObjects.mockResolvedValue([obj("HR", { owner: "", object_type: "User" })]);
+    m.objectDdl.mockResolvedValue("CREATE USER HR");
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Usuarios" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /HR/ }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Editar usuario.*Próximamente/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: /Privilegios.*Próximamente/ })).toBeDisabled();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /Copiar DDL/ }));
+    expect(m.objectDdl).toHaveBeenCalledWith("s1", "User", "", "HR");
+  });
+
   test("menú de un paquete: Spec y Body, y Recompilar habilitado", async () => {
     renderBrowser();
     await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
