@@ -1,5 +1,7 @@
 .sql-window { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .sql-alert { color: var(--err); }
+.sql-command-prompt { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--s1); border-top: 1px solid var(--line); }
+.sql-command-prompt input { flex: 1; min-width: 0; }
 .sql-stop.active { background: var(--errSoft); border-color: var(--err); color: var(--err); }
 .sql-stop.active:hover:not(:disabled) { background: var(--err); color: var(--s0); }
 .sql-stop.active .kbd { background: transparent; color: inherit; padding: 0; }

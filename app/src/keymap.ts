@@ -76,7 +76,6 @@ const list: Command[] = [
     id: "newCommand",
     label: "Nueva ventana de comando",
     keys: "Ctrl+Shift+N",
-    pending: true,
   },
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
   { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },

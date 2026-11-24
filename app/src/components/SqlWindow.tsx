@@ -26,6 +26,7 @@ import "./SqlWindow.css";
 
 interface Props {
   sessionId: string;
+  command?: boolean;
   initialSql?: string;
   testSettings?: TestSettings;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
@@ -83,7 +84,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function SqlWindow({
-  sessionId, initialSql = "", testSettings, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, initialSql = "", testSettings, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -95,12 +96,16 @@ export function SqlWindow({
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
   const hasTestVariables = !!testSettings;
-  const [tab, setTab] = useState<Tab>(hasTestVariables ? "variables" : "results");
+  const [tab, setTab] = useState<Tab>(command ? "output" : hasTestVariables ? "variables" : "results");
   const tabs: readonly (readonly [Tab, string])[] = hasTestVariables
     ? [["variables", "Variables"], ...RESULT_TABS] : RESULT_TABS;
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const commandHistory = useRef<string[]>([]);
+  const historyIndex = useRef(0);
+  const commandOptions = useRef({ echo: true, serverOutput: true });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
@@ -165,7 +170,31 @@ export function SqlWindow({
     return { list: one ? [one] : [], script: false };
   }
 
-  async function run(list: ScriptStatement[]) {
+  function runConsoleCommand(source: string) {
+    const [keyword, ...words] = source.replace(/;$/, "").trim().split(/\s+/);
+    const syntax = words.join(" ").toUpperCase();
+    switch (keyword.toUpperCase()) {
+      case "PROMPT":
+        log("output", source.slice(keyword.length).trimStart());
+        return;
+      case "REM":
+      case "REMARK":
+        return;
+      case "CLEAR":
+        if (syntax === "SCREEN") { setOutput([]); return; }
+        break;
+      case "SET":
+        if (/^(ECHO|SERVEROUTPUT) (ON|OFF)$/.test(syntax)) {
+          const option = syntax.startsWith("ECHO") ? "echo" : "serverOutput";
+          commandOptions.current[option] = syntax.endsWith("ON");
+          return;
+        }
+        break;
+    }
+    log("skip", `Comando no admitido: ${keyword.toUpperCase()}`);
+  }
+
+  async function run(list: ScriptStatement[], entered = false) {
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setNotice("");
@@ -188,8 +217,12 @@ export function SqlWindow({
     let lastQuery = false;
     try {
       for (const statement of list) {
+        if (command && (entered || commandOptions.current.echo)) {
+          log("info", `SQL> ${statement.text}${statement.kind === "sql" ? ";" : ""}`);
+        }
         if (statement.kind === "sqlplus") {
-          log("skip", `Omitido (SQL*Plus): ${statement.text}`);
+          if (command) runConsoleCommand(statement.text);
+          else log("skip", `Omitido (SQL*Plus): ${statement.text}`);
           continue;
         }
         const vars = findVariables(statement.text);
@@ -224,13 +257,18 @@ export function SqlWindow({
           return;
         }
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
-        outcome.output.forEach((line) => log("output", line));
+        if (!command || commandOptions.current.serverOutput) outcome.output.forEach((line) => log("output", line));
         if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
           setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false });
           setSummary(null);
+          if (command) {
+            log("output", columns.map((column) => column.name).join("  "));
+            page.rows.forEach((row) => log("output", row.map((value) => value ?? "NULL").join("  ")));
+            if (page.more) log("info", `${page.rows.length} filas · ver Resultados`);
+          }
           lastQuery = true;
         } else {
           log("info", outcome.result.message);
@@ -238,7 +276,7 @@ export function SqlWindow({
           lastQuery = false;
         }
       }
-      setTab(lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
+      setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
     } finally {
       setRunning(false);
     }
@@ -581,7 +619,7 @@ export function SqlWindow({
   });
 
   return (
-    <section className="sql-window" aria-label="Ventana SQL">
+    <section className="sql-window" aria-label={command ? "Ventana de comando" : "Ventana SQL"}>
       <div className="program-toolbar">
         <button className="btn primary" onClick={actions.execute} disabled={running || fetching || applying}>
           <Play size={14} aria-hidden /> Ejecutar <span className="kbd">{key("execute")}</span>
@@ -660,7 +698,7 @@ export function SqlWindow({
               <button key={id} role="tab" id={`${tabPrefix}-tab-${id}`} aria-selected={tab === id} aria-controls={`${tabPrefix}-panel-${id}`}
                 tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}>
-                {label}
+                {command && id === "output" ? "Consola" : label}
                 {id === "output" && output.length > 0 && <span className="sql-count">{output.length}</span>}
                 {id === "history" && history.length > 0 && <span className="sql-count">{history.length}</span>}
               </button>
@@ -799,6 +837,31 @@ export function SqlWindow({
         </div>
         {footer && <div className="sql-footer">{footer}</div>}
       </div>
+      {command && (
+        <form className="sql-command-prompt" onSubmit={(event) => {
+          event.preventDefault();
+          const entered = prompt.trim();
+          if (running || !entered) return;
+          commandHistory.current.push(entered);
+          historyIndex.current = commandHistory.current.length;
+          setPrompt("");
+          void run(splitScript(entered), true);
+        }}>
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">SQL&gt;</label>
+          <input id={`${tabPrefix}-prompt`} className="fld mono" aria-label="Comando SQL"
+            value={prompt} readOnly={running} autoFocus
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+              if (!delta || running) return;
+              event.preventDefault();
+              const history = commandHistory.current;
+              historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
+              setPrompt(history[historyIndex.current] ?? "");
+            }} />
+          <button type="submit" className="btn" disabled={running || !prompt.trim()}>Enviar</button>
+        </form>
+      )}
     </section>
   );
 }

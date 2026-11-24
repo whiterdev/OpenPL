@@ -265,7 +265,7 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
   expect(
     menu.getByRole("menuitem", { name: /Ventana de prueba/ }),
   ).toBeDisabled();
-  expect(menu.getByRole("menuitem", { name: /Ventana de comando.*Próximamente/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana de comando/ })).toBeDisabled();
   expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).toBeDisabled();
   expect(
     menu.getByRole("menuitem", { name: /Ventana SQL/ }),

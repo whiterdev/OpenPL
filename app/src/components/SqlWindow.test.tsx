@@ -28,6 +28,22 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   return { ref, view, onTransaction };
 }
 
+test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
+  setup("", { command: true });
+  const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  fireEvent.change(prompt, { target: { value: "PROMPT Hola" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(screen.getByText("Hola")).toBeVisible();
+  expect(execute).not.toHaveBeenCalled();
+  fireEvent.change(prompt, { target: { value: "SELECT 7 FROM DUAL;" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(execute).toHaveBeenCalledWith("w1", "SELECT 7 FROM DUAL", []);
+  expect(screen.getByText("SQL> SELECT 7 FROM DUAL;")).toBeVisible();
+  fireEvent.keyDown(prompt, { key: "ArrowUp" });
+  expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
+});
+
 test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {
   setup("select 1 from dual");
   const divider = screen.getByRole("separator", { name: "Alto del editor" });

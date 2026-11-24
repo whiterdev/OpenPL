@@ -107,6 +107,7 @@ interface ProgramTab {
     run: boolean;
     edit?: boolean;
     test?: TestSettings;
+    command?: boolean;
     transaction: boolean;
   };
 }
@@ -244,6 +245,7 @@ export default function App() {
     ...sqlActions,
     newSql: active ? () => void openSql(active) : undefined,
     newTest: active ? () => void openSql(active, "", false, false, { bindKinds: {}, outputs: [] }) : undefined,
+    newCommand: active ? () => void openSql(active, "", false, false, undefined, true) : undefined,
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
@@ -431,17 +433,18 @@ export default function App() {
     run = false,
     edit = false,
     test?: TestSettings,
+    command = false,
   ) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
       sqlCount.current += 1;
       addProgram({
         id: crypto.randomUUID(),
-        label: test?.fileName ?? `${test ? "Prueba" : "SQL"} ${sqlCount.current}`,
+        label: test?.fileName ?? `${command ? "Comando" : test ? "Prueba" : "SQL"} ${sqlCount.current}`,
         connection,
         readOnly: false,
         dirty: false,
-        sql: { sessionId, initial, run, edit, test, transaction: false },
+        sql: { sessionId, initial, run, edit, test, command, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -944,6 +947,7 @@ export default function App() {
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
+                        command={tab.sql.command}
                         testSettings={tab.sql.test}
                         runOnOpen={tab.sql.run}
                         editOnOpen={tab.sql.edit}

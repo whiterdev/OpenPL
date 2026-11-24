@@ -51,6 +51,10 @@
 
 ## Hecho
 
+### Consola de comandos
+
+- **Nuevo → Ventana de comando** abre una sesión SQL propia con prompt e historial. El editor de scripts y el ejecutor se comparten con SQL. [Comportamiento](behavior/comandos.md)
+
 ### Cierre funcional de la ventana de prueba
 
 - **Probar** abre una pestaña propia y se puede invocar desde el explorador o una declaración pública. Desde **Nuevo** se abre una prueba vacía.
