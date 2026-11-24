@@ -125,6 +125,7 @@ design/logo/            logo maestro, variantes y guía
 - **Producción:** nunca, bajo ningún motivo.
 - **Datos de conexión:** host, puerto, servicio, usuario y contraseña no se escriben en ningún archivo del repo (código, tests, docs, commits o mensajes de commit). Las pruebas los leen de `OPENPL_TEST_USER`, `OPENPL_TEST_PASSWORD` y `OPENPL_TEST_DB`, que el usuario configura en su máquina.
 - Un test que se activa con esas variables tiene que usar solo `SELECT`. Si no cumple, se corrige o se marca antes de correrlo contra DEV.
+- No se corren pruebas que hagan logins fallidos contra DEV: pueden bloquear la cuenta de prueba.
 - Todo brief que toque la base repite esta regla.
 
 ## Cómo hacer los cambios típicos

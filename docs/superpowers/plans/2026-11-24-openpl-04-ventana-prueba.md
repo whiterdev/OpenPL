@@ -9,7 +9,7 @@
 ## Restricciones globales
 
 - Oracle 12.1+, Instant Client 19/21. Nada exclusivo de 12.2+.
-- Pruebas contra Oracle: solo lectura. Las pruebas `live` llaman rutinas del sistema que no escriben (`DBMS_UTILITY.GET_TIME`, `DBMS_OUTPUT.PUT_LINE`). Nunca contra producción.
+- Pruebas `live` solo `SELECT`, según la sección DEV de [AGENTS.md](../../../AGENTS.md). Lo que necesita un bloque PL/SQL o escribir lo prueba el usuario. Nunca contra producción.
 - Sin datos reales en código, pruebas ni documentación: esquema `HR`, paquete `PKG_VENTAS`, `db.example.com:1521/DEVPDB`, alias `ORCL`.
 - Atajos solo en `app/src/keymap.ts`. Textos cortos en español.
 - Clean-room: no copiar código, textos, íconos ni marca de PL/SQL Developer. El formato `.tst` es propio.
@@ -32,7 +32,7 @@
 - [ ] **T1. Firma de rutinas.** `crates/openpl-core/src/routine.rs`.
   - `group_overloads(rows) -> Vec<Overload>`, pura: agrupa filas de `ALL_ARGUMENTS` por `OVERLOAD`, ordena por `POSITION`, separa el retorno (`POSITION = 0`) y marca `DATA_LEVEL > 0` como parte de un tipo compuesto, no como parámetro.
   - `list_overloads(conn, owner, package, name)`, Oracle, solo lectura: lee `ALL_ARGUMENTS` y confirma con `ALL_PROCEDURES` para cubrir las rutinas sin parámetros. Si la rutina no está en `ALL_PROCEDURES` (privada del cuerpo o inexistente), devuelve un error claro.
-  - Pruebas: `group_overloads` con filas armadas a mano (función con retorno, procedimiento sin parámetros, dos sobrecargas, parámetro registro con campos); `live` de solo lectura sobre `DBMS_UTILITY.GET_TIME` y `DBMS_OUTPUT.PUT_LINE`.
+  - Pruebas: `group_overloads` con filas armadas a mano (función con retorno, procedimiento sin parámetros, dos sobrecargas, parámetro registro con campos); `live` de `list_overloads` solo con `SELECT` sobre `ALL_ARGUMENTS` y `ALL_PROCEDURES`, leyendo la firma de una rutina del sistema sin ejecutarla.
   - Commit: `feat(core): firma y sobrecargas de rutinas`.
 
 - [ ] **T2. Generador del bloque.** `crates/openpl-core/src/testblock.rs`, función pura `generate(overload, uses) -> TestBlock` (texto del bloque más la lista de variables).
@@ -48,13 +48,14 @@
   - Binds IN, OUT e IN OUT, con tamaño máximo explícito para cada OUT de texto, CLOB y RAW.
   - Habilita `DBMS_OUTPUT` antes de ejecutar y lo lee después, como la Ventana SQL.
   - `TestOutcome`: valores de salida como texto, líneas de `DBMS_OUTPUT`, tiempo, si dejó transacción abierta y error con posición.
-  - Pruebas: armado de binds y conversión de valores sin Oracle; `live` de solo lectura con un bloque que llama `DBMS_UTILITY.GET_TIME` a un bind OUT y escribe con `DBMS_OUTPUT.PUT_LINE`.
+  - Pruebas: armado de binds y conversión de valores sin Oracle.
+  - PRUEBA DEL USUARIO (no la corren agentes): un bloque que llama `DBMS_UTILITY.GET_TIME` a un bind OUT y escribe con `DBMS_OUTPUT.PUT_LINE`.
   - Commit: `feat(core): ejecuta la prueba con binds de salida`.
 
 - [ ] **T4. REF CURSOR de salida (spike).** Comprobar con rust-oracle 0.6 si un bind OUT de tipo REF CURSOR se puede leer como un conjunto de filas.
   - Si se puede: `TestOutcome` incluye las primeras N filas por cursor, como texto, de solo lectura.
   - Si no se puede: leer las primeras N filas por otro camino, o dejar el cursor fuera de v1 y documentarlo como limitación en ESTADO.
-  - Prueba `live` de solo lectura: bloque que abre un cursor sobre `DUAL`.
+  - PRUEBA DEL USUARIO (no la corren agentes): bloque que abre un cursor sobre `DUAL`. El spike se resuelve con el resultado que informe el usuario.
   - Commit: `feat(core): lee REF CURSOR de salida en la prueba` (o `docs:` si queda como limitación).
 
 - [ ] **T5. Comandos IPC.** `app/src-tauri/src/commands.rs`: `test_overloads`, `test_generate` y `test_run`. Usan la sesión que abre `sql_open`; cancelar, Commit, Rollback y cerrar siguen con `sql_cancel`, `sql_commit`, `sql_rollback` y `sql_close`.
@@ -93,8 +94,8 @@
 
 ## Bloqueos y decisiones abiertas
 
-- Credenciales `OPENPL_TEST_USER`, `OPENPL_TEST_PASSWORD` y `OPENPL_TEST_DB` apuntando a DEV. Sin ellas, las pruebas `live` quedan en SKIP.
-- Orden explícita para validar contra DEV la edición en grilla del plan 3.
+- Credenciales: variables `OPENPL_TEST_*` configuradas localmente; la contraseña la aporta el usuario; sin datos reales en el repo. Sin ellas, las pruebas `live` quedan en SKIP.
+- Escrituras y compilaciones en DEV: las prueba el usuario.
 - Mockup "3 · Ventana de prueba": el enlace es privado; T9 a T12 esperan acceso.
 - Columnas de la grilla: usar, variable, tipo y valor (decisión 7), o también dirección (§7.6).
 - Qué significa "usar". Propuesta: omitir solo parámetros con `DEFAULTED = Y`.
@@ -109,11 +110,12 @@
 
 - `ALL_ARGUMENTS` no lista de forma uniforme los procedimientos sin parámetros. Se confirma con `ALL_PROCEDURES` (T1).
 - Los binds IN OUT y REF CURSOR con rust-oracle 0.6 son un spike (T3, T4). Si REF CURSOR no se puede, queda como limitación documentada.
-- Una prueba real puede escribir datos. La sesión es propia, Commit y Rollback son explícitos y las pruebas automáticas solo llaman rutinas que no escriben.
+- Una prueba real puede escribir datos. La sesión es propia, Commit y Rollback son explícitos. Las pruebas automáticas contra DEV solo hacen `SELECT`; las que ejecutan bloques son del usuario.
 
 ## Pruebas
 
-- Rust: `group_overloads` y `generate` puras con casos armados a mano; armado de binds de `run_test`; comandos `test_*` con `FakeConnector`; pruebas `live` de solo lectura (`DBMS_UTILITY.GET_TIME`, `DBMS_OUTPUT.PUT_LINE`, cursor sobre `DUAL`), en SKIP sin `OPENPL_TEST_*`.
+- Rust: `group_overloads` y `generate` puras con casos armados a mano; armado de binds de `run_test`; comandos `test_*` con `FakeConnector`; prueba `live` de `list_overloads` solo con `SELECT` (T1), en SKIP sin `OPENPL_TEST_*`.
+- PRUEBA DEL USUARIO (no la corren agentes): ejecución de `run_test` con binds OUT y `DBMS_OUTPUT` (T3) y REF CURSOR sobre `DUAL` (T4).
 - Interfaz: `testVars.test.ts`, `testFile.test.ts`. Bloqueadas: `TestWindow.test.tsx` y `App.test.tsx`.
 
 ## Verificación

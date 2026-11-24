@@ -12,7 +12,7 @@
 - Plan 2 (ventana de programa) **implementado, pendiente de validar contra Oracle**.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
 - Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
-  validación contra Oracle, bloqueada por falta de credenciales y de orden explícita para escribir.
+  validación contra Oracle: la lectura espera la corrida con credenciales; las escrituras las prueba el usuario.
 - Plan 4 (ventana de prueba) **planificado**: plan y nota de comportamiento escritos. El código espera
   las respuestas del dueño a las decisiones abiertas y al mockup "3 · Ventana de prueba".
 - Verificación local en Windows (2026-11-24): `cargo fmt --check` y Clippy con `-D warnings` sin
@@ -27,9 +27,19 @@
 
 ## Siguiente paso
 
-1. Credenciales `OPENPL_TEST_USER`, `OPENPL_TEST_PASSWORD` y `OPENPL_TEST_DB` apuntando a DEV, y orden
-   explícita para escribir, para validar los planes 2 y 3.
-2. Respuestas a las decisiones abiertas del plan 4 y el mockup "3 · Ventana de prueba".
+1. Pruebas de lectura contra DEV, solo `SELECT`: en `crates/openpl-oracle/tests/live.rs`,
+   `conecta_y_lee_version` y `servicio_inexistente_da_unknown_service`; en
+   `crates/openpl-core/tests/live_catalog.rs`, `lista_tablas_propias_sin_error`,
+   `todos_los_tipos_consultan_sin_error`, `completa_objetos_y_columnas_sin_error` y
+   `edicion_en_grilla_solo_resuelve_tablas`. Resultado: pendiente de la corrida que se haga con la
+   contraseña aportada por el usuario.
+2. Excluidas de las corridas de agentes: `clave_erronea_da_invalid_credentials` (login fallido en cada
+   corrida, puede bloquear la cuenta de prueba) y `ventana_sql_pagina_salida_y_errores` (ejecuta
+   bloques PL/SQL de `DBMS_OUTPUT`). Las decide el usuario.
+3. Escrituras y compilaciones (grilla del plan 3, Recompilar, DDL): las prueba el usuario.
+4. Decisión pendiente del usuario: la ventana SQL de la app ejecuta bloques PL/SQL de `DBMS_OUTPUT`
+   (`ENABLE` y `GET_LINE`) en cada consulta, aun en un `SELECT`. ¿Se acepta contra DEV o se cambia?
+5. Mockup "3 · Ventana de prueba" y respuestas a las decisiones abiertas del plan 4.
 
 ## Hecho
 
@@ -225,12 +235,14 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 ## Pendiente inmediato
 
-1. **Validar contra DEV** (requiere las credenciales y la orden del "Siguiente paso"):
-   - Plan 1: login con host/puerto/servicio y con alias, perfiles y contraseña guardada, explorador
-     con los 35 tipos, Copiar DDL, Recompilar, reconexión.
-   - Plan 2: lectura de fuentes, menú de objeto, comparación, preparación de compilación y
-     autocompletado, más el selector nativo de archivos.
-   - Plan 3: pruebas `live` de la ventana SQL y la edición en grilla escribiendo en una base.
+1. **Validar contra DEV** (ver "Siguiente paso"), en dos partes:
+   - Lectura (agentes, solo `SELECT`): fechas, timestamp, decimales, CLOB, paginación y posición del
+     error.
+   - Del usuario: edición en grilla, `RETURNING ROWID`, `DBMS_OUTPUT` y revisión manual de la ventana.
+     También las pruebas manuales de los planes 1 y 2 (login con host/puerto/servicio y con alias,
+     perfiles y contraseña guardada, explorador con los 35 tipos, Copiar DDL, Recompilar,
+     reconexión, lectura de fuentes, menú de objeto, comparación, preparación de compilación,
+     autocompletado y selector nativo de archivos).
 2. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
 3. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
    falle (el YAML no se validó).
@@ -245,6 +257,9 @@ producto; estas decisiones son posteriores y mandan sobre él:
      podría congelar la ventana.
    - `stored_password` devuelve la contraseña a la interfaz (necesario para el login; la CSP solo
      permite contenido propio).
+   - La línea 1 de `crates/openpl-core/tests/live_catalog.rs` dice "solo lectura", pero
+     `ventana_sql_pagina_salida_y_errores` ejecuta bloques PL/SQL de `DBMS_OUTPUT`. Corregir el
+     comentario o la prueba.
 
 ## Próximos pasos (planes)
 
@@ -257,7 +272,8 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 
 ### Plan 3 — Ventana SQL (en curso: solo validación contra Oracle)
 - Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la
-  validación contra Oracle real, bloqueada por credenciales y por la orden explícita de escritura.
+  validación contra Oracle real: la lectura espera la corrida con credenciales; las escrituras las
+  prueba el usuario.
 
 ### Plan 4 — Ventana de prueba (planificado, código en espera)
 - [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
