@@ -21,7 +21,7 @@ export interface RoutineOverload {
 export interface TestOutputBind {
   name: string;
   label: string;
-  kind: "Text" | "Clob" | "Cursor";
+  kind: "Text" | "Number" | "Date" | "Timestamp" | "Clob" | "Cursor";
 }
 
 export interface TestRoutine {
@@ -37,7 +37,31 @@ const scalarTypes = new Map([
   ["PL/SQL BOOLEAN", "BOOLEAN"], ["TIMESTAMP", "TIMESTAMP"],
   ["CLOB", "CLOB"], ["REF CURSOR", "SYS_REFCURSOR"],
 ]);
-const identifier = (name: string) => `"${name.replace(/"/g, '""')}"`;
+// Oracle 12c SQL and PL/SQL reserved words.
+const reserved = new Set(`ACCESS ADD ALL ALTER AND ANY AS ASC AT AUDIT BEGIN BETWEEN BY CASE CHAR CHECK
+  CLUSTER CLUSTERS COLAUTH COLUMN COLUMNS COMMENT COMPRESS CONNECT CRASH CREATE CURRENT CURSOR DATE
+  DECIMAL DECLARE DEFAULT DELETE DESC DISTINCT DROP ELSE END EXCEPTION EXCLUSIVE EXISTS FETCH FILE FLOAT
+  FOR FROM FUNCTION GOTO GRANT GROUP HAVING IDENTIFIED IF IMMEDIATE IN INCREMENT INDEX INDEXES INITIAL
+  INSERT INTEGER INTERSECT INTO IS LEVEL LIKE LOCK LONG MAXEXTENTS MINUS MODE MODIFY NOAUDIT NOCOMPRESS
+  NOT NOWAIT NULL NUMBER OF OFFLINE ON ONLINE OPTION OR ORDER OVERLAPS PCTFREE PRIOR PRIVILEGES PROCEDURE
+  PUBLIC RAW RENAME RESOURCE REVOKE ROW ROWID ROWNUM ROWS SELECT SESSION SET SHARE SIZE SMALLINT SQL START
+  SUBTYPE SUCCESSFUL SYNC TABAUTH TABLE THEN TO TRIGGER TYPE UID UNION UNIQUE UPDATE USER VALIDATE VALUES
+  VARCHAR VARCHAR2 VIEW VIEWS WHEN WHENEVER WHERE WITH`.split(/\s+/));
+const ordinary = (name: string) => /^[A-Z][A-Z0-9_$#]*$/.test(name) && !reserved.has(name);
+const identifier = (name: string) => ordinary(name) ? name : `"${name.replace(/"/g, '""')}"`;
+
+function outputKind(type: string): TestOutputBind["kind"] {
+  switch (type) {
+    case "NUMBER":
+    case "PLS_INTEGER":
+    case "BINARY_INTEGER": return "Number";
+    case "DATE": return "Date";
+    case "TIMESTAMP": return "Timestamp";
+    case "CLOB": return "Clob";
+    case "SYS_REFCURSOR": return "Cursor";
+    default: return "Text";
+  }
+}
 
 export function routineDraft(path: string[], signature: RoutineOverload, overloaded = false, omitted: number[] = []) {
   const declarations: string[] = [];
@@ -73,9 +97,13 @@ export function routineDraft(path: string[], signature: RoutineOverload, overloa
       return [{ name: identifier(name), expression: variable }];
     }
     const normal = name.toUpperCase();
-    const bindName = /^[A-Z][A-Z0-9_$#]{0,29}$/.test(normal) && names.indexOf(normal) === index
+    const bindName = normal.length <= 30 && ordinary(normal) && names.indexOf(normal) === index
       ? normal : unique(`ARG_${index + 1}`);
     const bind = `:${bindName}`;
+    if (!overloaded && direction === "OUT" && ["DATE", "TIMESTAMP", "NUMBER", "VARCHAR2(32767)", "CLOB", "SYS_REFCURSOR"].includes(type)) {
+      outputs.push({ name: bindName, label: name, kind: outputKind(type) });
+      return [{ name: identifier(name), expression: bind }];
+    }
     if (direction !== "OUT") {
       bindKinds[bindName] = type === "DATE" || type === "TIMESTAMP" ? "Date"
         : ["VARCHAR2(32767)", "CHAR(32767)", "CLOB"].includes(type) ? "Text" : "Number";
@@ -88,17 +116,25 @@ export function routineDraft(path: string[], signature: RoutineOverload, overloa
     if (direction !== "IN") addOutput(index, variable, type, name);
     return [{ name: identifier(name), expression: variable }];
   });
+  let resultTarget = "";
   if (signature.returns) {
     const declaration = signature.returns.declaration;
     const type = scalarTypes.get(declaration.data_type);
-    declarations.push(`  resultado ${type ?? namedType(declaration)};`);
-    if (type) addOutput(signature.parameters.length, "resultado", type, "Retorno");
+    if (type && type !== "BOOLEAN") {
+      const name = unique("RESULTADO");
+      outputs.push({ name, label: "Retorno", kind: outputKind(type) });
+      resultTarget = `:${name} := `;
+    } else {
+      declarations.push(`  resultado ${type ?? namedType(declaration)};`);
+      if (type) addOutput(signature.parameters.length, "resultado", type, "Retorno");
+      resultTarget = "resultado := ";
+    }
   }
   const width = Math.max(0, ...parameters.map(({ name }) => name.length));
   const argumentsSql = parameters.map(({ name, expression }) => `    ${name.padEnd(width)} => ${expression}`);
-  const call = `${signature.returns ? "resultado := " : ""}${path.map(identifier).join(".")}(${
-    argumentsSql.length ? `\n${argumentsSql.join(",\n")}\n  ` : ""
-  });`;
+  const call = `${resultTarget}${path.map(identifier).join(".")}${
+    argumentsSql.length ? `(\n${argumentsSql.join(",\n")}\n  )` : ""
+  };`;
   return {
     source: [...(declarations.length ? ["DECLARE", ...declarations] : []), "BEGIN",
       ...assignments, `  ${call}`, ...outputSql, "END;", "/"].join("\n"),
@@ -107,7 +143,7 @@ export function routineDraft(path: string[], signature: RoutineOverload, overloa
 
   function addOutput(index: number, variable: string, type: string, label: string) {
     const name = unique(`OPENPL_SALIDA_${index + 1}`);
-    const kind = type === "SYS_REFCURSOR" ? "Cursor" : type === "CLOB" ? "Clob" : "Text";
+    const kind = outputKind(type);
     const expression = type === "BOOLEAN" ? `CASE WHEN ${variable} THEN 'TRUE' WHEN NOT ${variable} THEN 'FALSE' END` : variable;
     outputs.push({ name, label, kind });
     outputSql.push(`  :${name} := ${expression};`);

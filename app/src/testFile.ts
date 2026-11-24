@@ -38,7 +38,7 @@ export function parseTestFile(text: string): TestFile {
     const { name, kind, label } = output;
     if (typeof name !== "string" || !BIND_NAME.test(name) || names.has(name) ||
       Object.prototype.hasOwnProperty.call(bindKinds, name) || typeof label !== "string" ||
-      !["Text", "Clob", "Cursor"].includes(kind)) throw invalid();
+      !["Text", "Number", "Date", "Timestamp", "Clob", "Cursor"].includes(kind)) throw invalid();
     names.add(name);
     return { name, label, kind } as TestOutputBind;
   });

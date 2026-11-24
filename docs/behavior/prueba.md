@@ -13,9 +13,10 @@ cualquiera sin salir de OpenPL, pasarle valores de entrada y leer lo que devuelv
 1. El usuario elige "Probar" sobre una rutina (ver Puntos de entrada).
 2. Si la rutina tiene sobrecargas, OpenPL pregunta cuál probar. La firma se lee del
    diccionario de datos.
-3. Se abre una ventana nueva con un bloque anónimo ya armado: la llamada usa parámetros
-   nombrados y una variable bind por cada parámetro, más una para el retorno si es una
-   función. El bloque es texto común y se puede editar.
+3. Se abre una ventana nueva con un bloque anónimo ya armado. La llamada usa parámetros
+   nombrados. Una función con retorno escalar compatible escribe directamente en un bind
+   tipado, como `:RESULTADO` para un retorno NUMBER. Los nombres simples en mayúsculas se
+   escriben sin comillas. El bloque se puede editar.
 4. El usuario completa los valores de entrada en la grilla de variables.
 5. F8 ejecuta el bloque en la sesión propia de la ventana.
 6. Al terminar, la grilla muestra los valores de salida y la pestaña de salida muestra lo

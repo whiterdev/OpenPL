@@ -106,6 +106,9 @@ pub struct ExecOutcome {
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub enum TestOutputKind {
     Text,
+    Number,
+    Date,
+    Timestamp,
     Clob,
     Cursor,
 }
@@ -114,6 +117,9 @@ impl TestOutputKind {
     fn oracle_type(self) -> OracleType {
         match self {
             Self::Text => OracleType::Varchar2(32767),
+            Self::Number => OracleType::Number(0, -127),
+            Self::Date => OracleType::Date,
+            Self::Timestamp => OracleType::Timestamp(9),
             Self::Clob => OracleType::CLOB,
             Self::Cursor => OracleType::RefCursor,
         }
@@ -166,7 +172,10 @@ fn read_test_output(
 ) -> Result<TestOutputValue, DbError> {
     let name = bind.name.as_str();
     match bind.kind {
-        TestOutputKind::Text => Ok(TestOutputValue::Scalar {
+        TestOutputKind::Text
+        | TestOutputKind::Number
+        | TestOutputKind::Date
+        | TestOutputKind::Timestamp => Ok(TestOutputValue::Scalar {
             value: stmt.bind_value(name)?,
         }),
         TestOutputKind::Clob => {
@@ -507,6 +516,15 @@ mod tests {
         );
         assert_eq!(TestOutputKind::Clob.oracle_type(), OracleType::CLOB);
         assert_eq!(TestOutputKind::Cursor.oracle_type(), OracleType::RefCursor);
+        assert_eq!(
+            TestOutputKind::Number.oracle_type(),
+            OracleType::Number(0, -127)
+        );
+        assert_eq!(TestOutputKind::Date.oracle_type(), OracleType::Date);
+        assert_eq!(
+            TestOutputKind::Timestamp.oracle_type(),
+            OracleType::Timestamp(9)
+        );
     }
 
     #[test]

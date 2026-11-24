@@ -179,7 +179,7 @@ test("puede omitir una entrada con valor por defecto y guardar la prueba", async
       { declaration: { name: "ID", data_type: "NUMBER", direction: "IN", defaulted: true } },
     ],
   } };
-  const { ref, view } = setup('BEGIN\n  "HR"."DEMO"(\n    "ID" => :ID\n  );\nEND;\n/', {
+  const { ref, view } = setup("BEGIN\n  HR.DEMO(\n    ID => :ID\n  );\nEND;\n/", {
     testSettings: { routine, bindKinds: { ID: "Number" }, outputs: [] },
   });
   const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("demo.tst");
@@ -187,7 +187,7 @@ test("puede omitir una entrada con valor por defecto y guardar la prueba", async
   expect(view.state.doc.toString()).not.toContain(":ID");
   expect(screen.getByRole("checkbox", { name: "Usar ID" })).not.toBeChecked();
   await act(async () => ref.current!.save!());
-  expect(save).toHaveBeenCalledWith('-- openpl-test v1\n-- {"bindKinds":{},"outputs":[]}\nBEGIN\n  "HR"."DEMO"();\nEND;\n/', "tst", null);
+  expect(save).toHaveBeenCalledWith('-- openpl-test v1\n-- {"bindKinds":{},"outputs":[]}\nBEGIN\n  HR.DEMO;\nEND;\n/', "tst", null);
 });
 
 test("F8 ejecuta la sentencia bajo el cursor y muestra la grilla", async () => {

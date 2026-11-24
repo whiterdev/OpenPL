@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- `EDIT` completa solo en el esquema indicado o en el usuario conectado. Las pruebas de rutinas generan binds de salida tipados y usan comillas únicamente para los identificadores que las necesitan.
+
 - La ventana de comandos presenta una terminal con entrada al final de la transcripción y continuación numerada. [Comandos](behavior/comandos.md).
 
 - La auditoría con `emil-design-eng` unificó el feedback de pulsación y corrigió navegación, foco y ancho del menú principal. [Auditoría](../anti-slop/audit-emil-design-eng-2026-11-24.md).
