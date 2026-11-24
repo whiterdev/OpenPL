@@ -121,6 +121,7 @@ export interface ActiveConnection {
 export interface ProgramPart {
   kind: string;
   source: string;
+  last_ddl_time: string | null;
   diagnostics: { line: number; column: number; text: string; warning: boolean }[];
 }
 

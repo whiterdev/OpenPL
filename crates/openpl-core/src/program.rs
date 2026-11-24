@@ -37,6 +37,7 @@ pub struct ProgramDiagnostic {
 pub struct ProgramPart {
     kind: &'static str,
     source: String,
+    last_ddl_time: Option<String>,
     diagnostics: Vec<ProgramDiagnostic>,
 }
 
@@ -50,15 +51,22 @@ pub fn load_program(
     let mut parts = Vec::new();
     for part in program_kinds(kind) {
         let lines = db
-            .query_as::<Option<String>>(
-                "SELECT text FROM all_source WHERE owner = :1 AND name = :2 AND type = :3 ORDER BY line",
+            .query_as::<(Option<String>, Option<String>)>(
+                "SELECT s.text, TO_CHAR(o.last_ddl_time, 'YYYY-MM-DD\"T\"HH24:MI:SS')
+                 FROM all_source s LEFT JOIN all_objects o
+                   ON o.owner = s.owner AND o.object_name = s.name AND o.object_type = s.type
+                 WHERE s.owner = :1 AND s.name = :2 AND s.type = :3 ORDER BY s.line",
                 &[&owner, &name, part],
             )?
             .collect::<Result<Vec<_>, _>>()?;
-        if lines.is_empty() {
+        let Some((_, last_ddl_time)) = lines.first() else {
             continue;
-        }
-        let source = source_text(lines.iter().map(|line| line.as_deref().unwrap_or_default()));
+        };
+        let source = source_text(
+            lines
+                .iter()
+                .map(|(line, _)| line.as_deref().unwrap_or_default()),
+        );
         let diagnostics = db
             .query_as::<(u32, u32, String, String)>(
                 "SELECT line, position, text, attribute FROM all_errors
@@ -82,11 +90,9 @@ pub fn load_program(
         parts.push(ProgramPart {
             kind: part,
             source,
+            last_ddl_time: last_ddl_time.clone(),
             diagnostics,
         });
-    }
-    if parts.is_empty() {
-        return Err(DbError::from_code(None, "Fuente no disponible."));
     }
     Ok(parts)
 }

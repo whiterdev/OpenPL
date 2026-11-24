@@ -24,6 +24,7 @@ export type CommandId =
   | "sideBySide"
   | "goToDeclaration"
   | "objectActions"
+  | "compareProgram"
   | "goToLine"
   | "find"
   | "replace"
@@ -70,6 +71,7 @@ const list: Command[] = [
   { id: "sideBySide", label: "Spec y Body lado a lado", keys: "Ctrl+\\" },
   { id: "goToDeclaration", label: "Ir a la declaración", keys: "F12" },
   { id: "objectActions", label: "Acciones del objeto", keys: "Alt+Enter" },
+  { id: "compareProgram", label: "Comparar con Oracle", keys: "Alt+Shift+D" },
   { id: "goToLine", label: "Ir a línea", keys: "Ctrl+G" },
   { id: "find", label: "Buscar", keys: "Ctrl+F" },
   { id: "replace", label: "Reemplazar", keys: "Ctrl+H" },

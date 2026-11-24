@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import { FloppyDisk, SplitVertical } from "@phosphor-icons/react";
+import { FloppyDisk, GitDiff, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { gotoLine, openSearchPanel } from "@codemirror/search";
@@ -10,6 +10,7 @@ import { describeError, type ObjectInfo, type ProgramPart } from "../types";
 import { editorReference } from "../editorReference";
 import { positionAt, ProgramEditor } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
+import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>>;
 
@@ -21,6 +22,7 @@ interface Props {
   fileName?: string;
   catalog?: ObjectCatalog;
   active?: boolean;
+  readCurrentProgram?: () => Promise<ProgramPart[]>;
 }
 
 const caption = (kind: string) => {
@@ -38,12 +40,13 @@ function declarations(source: string) {
   });
 }
 
-export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog, active = true }: Props) {
+export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog, active = true, readCurrentProgram }: Props) {
   const [selected, setSelected] = useState(0);
   const [split, setSplit] = useState(false);
   const [values, setValues] = useState(() => parts.map((part) => part.source));
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult } | null>(null);
   const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
   const objectRequestId = useRef(0);
@@ -58,6 +61,7 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
   const part = parts[selected];
 
   function focusPart(index: number) {
+    setComparison(null);
     setSelected(index);
     requestAnimationFrame(() => views.current[index]?.focus());
   }
@@ -71,6 +75,7 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
   }
 
   function declaration() {
+    if (comparison) return;
     const view = views.current[selected];
     if (!view) return;
     const selection = view.state.selection.main;
@@ -106,9 +111,26 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
 
   function runInEditor(action: (view: EditorView) => unknown) {
     return () => {
+      if (comparison) return;
       const view = views.current[selected];
       if (view) action(view);
     };
+  }
+
+  async function compare() {
+    if (!readCurrentProgram || comparison?.result.state === "loading") return;
+    const request = { index: selected, result: { state: "loading" } } as const;
+    setComparison(request);
+    closeObjectMenu();
+    const finish = (result: ComparisonResult) =>
+      setComparison((current) => current === request ? { ...request, result } : current);
+    try {
+      const latest = await readCurrentProgram();
+      finish({ state: "ready", current: latest.find((entry) => entry.kind === part.kind) ?? null });
+    } catch (error) {
+      const detail = describeError(error);
+      finish({ state: "error", message: detail.code ? `${detail.code} ${detail.message}` : detail.message });
+    }
   }
 
   function changeCase(transform: (value: string) => string) {
@@ -128,8 +150,12 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
     save: () => void save(),
     spec: canSplit ? () => focusPart(0) : undefined,
     body: canSplit ? () => focusPart(1) : undefined,
-    sideBySide: canSplit ? () => setSplit((value) => !value) : undefined,
+    sideBySide: canSplit ? () => {
+      setComparison(null);
+      setSplit((value) => !value);
+    } : undefined,
     goToDeclaration: declaration,
+    compareProgram: readCurrentProgram ? () => void compare() : undefined,
     objectActions: catalog ? runInEditor((view) => {
       const position = view.state.selection.main.head;
       const reference = editorReference(view.state, position) ?? (position > 0 ? editorReference(view.state, position - 1) : null);
@@ -172,10 +198,15 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
         <button className="btn" disabled={saving} onClick={actions.save}>
           <FloppyDisk size={14} aria-hidden /> Guardar <span className="kbd">{keyLabel("save")}</span>
         </button>
+        {readCurrentProgram && (
+          <button className="btn" onClick={actions.compareProgram} disabled={comparison?.result.state === "loading"}>
+            <GitDiff size={14} aria-hidden /> Comparar con Oracle <span className="kbd">{keyLabel("compareProgram")}</span>
+          </button>
+        )}
         {readOnly && <span className="program-muted">Solo lectura</span>}
         {message && <span role="status" className="program-muted">{message}</span>}
       </div>
-      <div className="program-main">
+      <div className="program-main" hidden={!!comparison}>
         <aside className="program-outline" aria-label="Estructura">
           <div>Estructura</div>
           {outline.map((entry) => (
@@ -210,7 +241,11 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
           ))}
         </div>
       </div>
-      {description && (
+      {comparison && (
+        <ProgramComparison label={caption(parts[comparison.index].kind)} original={parts[comparison.index]}
+          local={values[comparison.index]} result={comparison.result} onClose={() => focusPart(comparison.index)} />
+      )}
+      {!comparison && description && (
         <ObjectDescription key={description.id} object={description.object} sessionId={description.sessionId}
           onClose={() => setDescription(null)} />
       )}
@@ -219,7 +254,7 @@ export function ProgramWindow({ parts, readOnly, onDirty, ref, fileName, catalog
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
       )}
-      {diagnostics.length > 0 && (
+      {!comparison && diagnostics.length > 0 && (
         <div className="program-problems" aria-label="Problemas">
           <div>Problemas <span>{diagnostics.length}</span></div>
           {diagnostics.map((item, index) => (

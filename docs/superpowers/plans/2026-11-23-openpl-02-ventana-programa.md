@@ -36,6 +36,12 @@
 - [x] **Menú.** `ProgramEditor` obtiene la posición del clic. `ProgramWindow` reutiliza `ContextMenu` para Describir, Ver fuente, Copiar nombre y Copiar DDL. La prueba cubre la ruta de clic derecho y la sesión de origen.
 - [ ] **Oracle real.** Verificar resolución de objetos y sinónimos locales y confirmar que se describen las columnas esperadas. Las columnas del catálogo fueron verificadas con metadatos y la prueba de la consulta completa recibió `DATABASE_OUT_OF_SCOPE` en DBX.
 
+### Comparación de fuentes y control de cambios
+
+- [x] **Versión por parte.** `load_program` carga el texto y `LAST_DDL_TIME` en la misma consulta por tipo. `ProgramPart.last_ddl_time` viaja como cadena o `null`. Una consulta sin fuentes devuelve una lista vacía. La apertura inicial sigue mostrando «Fuente no disponible» en ese caso.
+- [x] **Comparación.** `ProgramWindow` consulta de nuevo en la sesión de origen y compara la parte solicitada con la versión abierta y el borrador local. `ProgramComparison.tsx` muestra diferencias con CodeMirror MergeView en modo de solo lectura. Las pruebas cubren cambios en el mismo segundo, cambios de metadatos, errores de lectura, ausencia de Body y conservación de cambios locales.
+- [ ] **Compilación.** Reutilizar la comparación para detectar conflictos antes de F8. El prechequeo de lectura no impide que dos sesiones actúen entre la verificación y la escritura. Verificar la operación con dobles y mantener las pruebas contra Oracle en solo lectura.
+
 ## Verificación
 
 Ejecutar `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `npx.cmd tsc --noEmit` y `npm.cmd test` en sus carpetas correspondientes. Registrar resultados, límites y punto de continuación en [ESTADO.md](../../ESTADO.md).

@@ -35,7 +35,7 @@ interface ProgramTab {
   id: string;
   label: string;
   connection?: ActiveConnection;
-  owner?: string;
+  object?: Pick<ObjectInfo, "owner" | "name" | "object_type">;
   readOnly: boolean;
   dirty: boolean;
   parts?: ProgramPart[];
@@ -66,15 +66,17 @@ export default function App() {
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
   const program = programs.find((tab) => tab.id === programId);
+  const programObject = program?.object;
   const editorConnection = program?.connection
     ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
     : active;
   const currentProgramActions = Object.fromEntries(
-    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "goToLine", "find", "replace",
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "compareProgram", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
       .filter((id) => {
         if (!program?.parts) return false;
         if (id === "objectActions") return !!editorConnection;
+        if (id === "compareProgram") return !!program.object && !!editorConnection;
         if (id === "spec" || id === "body" || id === "sideBySide") return program.parts.length === 2;
         return !program.readOnly || ["save", "goToDeclaration", "goToLine", "find"].includes(id);
       })
@@ -165,7 +167,7 @@ export default function App() {
   function newProgram() {
     addProgram({
       id: crypto.randomUUID(), label: "Programa", readOnly: false, dirty: false,
-      parts: [{ kind: "SQL", source: "", diagnostics: [] }],
+      parts: [{ kind: "SQL", source: "", last_ddl_time: null, diagnostics: [] }],
     });
   }
 
@@ -177,7 +179,7 @@ export default function App() {
       const kind = name.endsWith(".pks") ? "PACKAGE" : name.endsWith(".pkb") ? "PACKAGE BODY" : "SQL";
       addProgram({
         id: crypto.randomUUID(), label: file.name, fileName: file.name, readOnly: false, dirty: false,
-        parts: [{ kind, source: file.source.replace(/\r\n?/g, "\n"), diagnostics: [] }],
+        parts: [{ kind, source: file.source.replace(/\r\n?/g, "\n"), last_ddl_time: null, diagnostics: [] }],
       });
     } catch (error) {
       showNotice(describeError(error).message);
@@ -207,21 +209,32 @@ export default function App() {
       updateProgram(id, { error: undefined, load });
     } else {
       addProgram({
-        id, connection, owner: object.owner, label: `${object.owner}.${object.name} @ ${connection.label}`,
+        id, connection, object, label: `${object.owner}.${object.name} @ ${connection.label}`,
         readOnly: mode === "view", dirty: false, load,
       });
     }
     try {
-      const parts = [...await api.programSource(connection.sessionId, object.object_type, object.owner, object.name)];
+      const parts = [...await fetchProgram(connection.sessionId, object)];
+      if (parts.length === 0) throw new Error("Fuente no disponible.");
       const first = parts[0]?.kind;
       if (parts.length === 1 && (first === "PACKAGE" || first === "TYPE")) {
-        parts.push({ kind: `${first} BODY`, source: "", diagnostics: [] });
+        parts.push({ kind: `${first} BODY`, source: "", last_ddl_time: null, diagnostics: [] });
       }
       updateProgram(id, { parts, load: undefined }, load);
     } catch (error) {
       const detail = describeError(error);
-      if (detail.kind === "ConnectionLost") setStates((all) => ({ ...all, [connection.sessionId]: "Disconnected" }));
       updateProgram(id, { error: detail.code ? `${detail.code} ${detail.message}` : detail.message, load: undefined }, load);
+    }
+  }
+
+  async function fetchProgram(sessionId: string, object: NonNullable<ProgramTab["object"]>) {
+    try {
+      return await api.programSource(sessionId, object.object_type, object.owner, object.name);
+    } catch (error) {
+      if (describeError(error).kind === "ConnectionLost") {
+        setStates((all) => ({ ...all, [sessionId]: "Disconnected" }));
+      }
+      throw error;
     }
   }
 
@@ -249,7 +262,7 @@ export default function App() {
       label: "Buscar",
       items: [run("find"), run("replace"), "sep", run("palette")],
     },
-    { label: "Ver", items: [run("toggleExplorer"), run("refreshExplorer")] },
+    { label: "Ver", items: [run("toggleExplorer"), run("refreshExplorer"), "sep", run("compareProgram")] },
     {
       label: "Sesión",
       items: [
@@ -357,9 +370,12 @@ export default function App() {
                         active={tab.id === programId}
                         catalog={tab.id === programId && editorConnection ? {
                           sessionId: editorConnection.sessionId,
-                          owner: tab.owner ?? null,
+                          owner: tab.object?.owner ?? null,
                           openProgram: (object) => void onOpenObject(object, "view", editorConnection),
                         } : undefined}
+                        readCurrentProgram={tab.id === programId && editorConnection && programObject
+                          ? () => fetchProgram(editorConnection.sessionId, programObject)
+                          : undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={(dirty) => updateProgram(tab.id, { dirty })} />
                     </Suspense>

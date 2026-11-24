@@ -10,7 +10,7 @@ import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
 
-const syntax = HighlightStyle.define([
+export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
   { tag: tags.typeName, color: "var(--ty)" },
   { tag: tags.string, color: "var(--st)" },
@@ -46,7 +46,7 @@ export function ProgramEditor(props: Props) {
       extensions: [
         lineNumbers(), foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
-        syntaxHighlighting(syntax),
+        syntaxHighlighting(programSyntax),
         EditorState.phrases.of({
           Find: "Buscar", next: "siguiente", previous: "anterior", all: "todas",
           Replace: "Reemplazar", replace: "reemplazar", "replace all": "reemplazar todo",

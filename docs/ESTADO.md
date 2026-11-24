@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 75 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 80 de interfaz,
   más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -30,9 +30,8 @@
 - **Archivos:** los comandos Tauri abren el selector nativo. El guardado sustituye un archivo después de
   escribirlo completo. Cerrar una pestaña o la aplicación con cambios pide confirmación.
   [Comportamiento de la ventana](behavior/programa.md)
-- **Punto de continuación:** leer y conservar `LAST_DDL_TIME` por parte. Diseñar el conflicto de edición
-  y probarlo con dobles antes de conectar F8. Ampliar la estructura para variables y sobrecargas.
-  Quedan pendientes el plegado de bloques PL/SQL y el autocompletado de catálogo.
+- Quedan pendientes la estructura para variables y sobrecargas, el plegado de bloques PL/SQL y el
+  autocompletado de catálogo.
 
 ### Plan 2 — Acciones de objeto desde el editor
 
@@ -48,6 +47,20 @@
   completa con `DATABASE_OUT_OF_SCOPE`.
 - La prueba de interfaz usa un catálogo simulado y verifica que el clic derecho descrito muestra
   las columnas sin cambiar la sesión. El build de depuración de Windows incluye el menú.
+
+### Plan 2 — Comparación con Oracle
+
+- **Comparar con Oracle** (Alt+Shift+D) vuelve a consultar la fuente con la sesión original del
+  programa. `ProgramComparison.tsx` muestra el borrador y el texto de Oracle con las diferencias
+  marcadas. Cerrar el panel conserva el borrador y el historial de edición.
+- `crates/openpl-core/src/program.rs` obtiene el texto y `LAST_DDL_TIME` en una consulta por parte.
+  La comparación revisa ambos. Así detecta cambios de texto con la misma marca de tiempo y cambios
+  de metadatos con texto idéntico. Una fuente ausente o inaccesible se informa por separado.
+  [Referencia de ALL_OBJECTS en Oracle 12.1](https://docs.oracle.com/database/121/REFRN/GUID-AA6DEF8B-F04F-482A-8440-DBCB18F6C976.htm)
+- **Punto de continuación:** usar el mismo criterio para el prechequeo de F8, diseñar las opciones
+  cuando haya un conflicto y actualizar los diagnósticos después de compilar. La comparación actual
+  es de solo lectura. La consulta compuesta y la interfaz nativa quedan por verificar contra Oracle.
+  [Nota de comportamiento](behavior/programa.md)
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 
