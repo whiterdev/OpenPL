@@ -25,17 +25,13 @@ cualquiera sin salir de OpenPL, pasarle valores de entrada y leer lo que devuelv
 
 ## Variables
 
-- Columnas de la grilla: usar, variable, tipo y valor (decisión 7 de
-  [ESTADO](../ESTADO.md)). El spec además muestra la dirección (entrada, salida o ambas):
-  si esa columna se ve o no, a confirmar.
-- Semántica de "usar": a confirmar. Propuesta: la casilla solo se puede desmarcar en
-  parámetros que tienen valor por omisión (DEFAULTED=Y en el diccionario), y desmarcarla
-  quita ese parámetro de la llamada para que la rutina use su valor por omisión.
+- **Variables** muestra el nombre, el tipo y el valor de entrada. Las salidas aparecen debajo,
+  con su nombre, una vez ejecutado el bloque.
+- **Usar** solo se ofrece para entradas con valor predeterminado. Al desmarcarla se omite el
+  parámetro de la llamada. Las casillas se deshabilitan si se modifica manualmente el bloque.
 - Tipos escalares de v1: VARCHAR2, CHAR, NUMBER, INTEGER, DATE, TIMESTAMP, BOOLEAN y CLOB.
-- BOOLEAN: a confirmar. Propuesta: en la grilla se carga y se muestra como 0/1, y el bloque
-  hace la conversión, porque un bind no puede ser BOOLEAN.
-- Los escalares no se declaran a mano: cada uno es una variable bind que vive en la grilla, y
-  el bloque solo la referencia.
+- BOOLEAN se carga como 0/1 y el bloque hace la conversión. Las salidas se muestran como
+  TRUE, FALSE o NULL. Las sobrecargas conservan variables locales con el tipo de la firma.
 
 ## Registros, colecciones y objetos
 
@@ -45,8 +41,8 @@ donde el usuario tiene que asignarle valores a mano antes de ejecutar.
 
 ## REF CURSOR de salida
 
-Si la rutina devuelve un REF CURSOR (como parámetro de salida o como retorno), el resultado
-se muestra en una grilla de solo lectura. No se edita ni se aplica nada desde ahí.
+Si la rutina devuelve un REF CURSOR, como salida o retorno, **Variables** muestra las primeras
+50 filas en una grilla de solo lectura. La interfaz indica si se limitó la vista.
 
 ## Transacción
 
@@ -61,21 +57,23 @@ se muestra en una grilla de solo lectura. No se edita ni se aplica nada desde ah
 
 - El contenido de la prueba se guarda en un archivo `.tst` propio, en texto plano organizado
   por líneas, y se puede volver a abrir.
-- Guarda el bloque y las variables. Qué datos exactos de cada variable se guardan: a
-  confirmar.
-- No guarda la conexión ni credenciales. Al reabrirlo, la prueba usa la conexión activa.
+- Guarda el bloque y los metadatos de los binds. Los valores que se escriben en los campos
+  quedan en memoria. El archivo no guarda la conexión ni credenciales.
+- **Archivo → Abrir** reabre la prueba en una sesión SQL propia de la conexión activa.
 
 ## Puntos de entrada
 
-OpenPL ofrece **Probar** en el menú de una declaración pública del código o de **Estructura**. La acción carga la firma, presenta las sobrecargas cuando corresponde y abre el bloque editable en SQL. La llamada pone un argumento por línea y usa los nombres de la firma para los binds. Con entradas, la pestaña **Variables** abre debajo del editor con el tipo sugerido y el valor editable. Las sobrecargas y salidas conservan variables locales tipadas. La ventana dedicada que se describe arriba sigue pendiente.
+OpenPL ofrece **Probar** en el explorador, el menú de una declaración pública y **Estructura**.
+Un paquete permite elegir una rutina del spec. La acción carga la firma, presenta las
+sobrecargas y abre una pestaña **Prueba** con el bloque editable y los argumentos alineados.
+**Variables** abre debajo del editor. **Nuevo → Ventana de prueba** abre una prueba vacía.
 
 - "Probar" en el menú contextual del explorador, sobre procedimientos y funciones sueltos o
   de paquete.
 - "Probar" en el panel de estructura de la ventana de programa.
 - "Probar" se deshabilita en rutinas privadas de un paquete (las que están solo en el
   cuerpo), porque no se pueden llamar desde afuera.
-- Abrir una ventana de prueba vacía para escribir un bloque anónimo libre: comando y atajo a
-  confirmar.
+- Abrir una prueba vacía con Ctrl+Alt+T.
 
 ## Fuera de v1
 
