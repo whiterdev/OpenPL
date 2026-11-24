@@ -44,7 +44,7 @@ import {
 } from "@phosphor-icons/react";
 import { api } from "../api";
 import { commands, formatKeys } from "../keymap";
-import { objectMenuItems } from "../objectMenu";
+import { objectMenuItems, type InspectMode } from "../objectMenu";
 import { describeError, type ActiveConnection, type ObjectInfo, type ObjectType, type Scope } from "../types";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
 import "./ObjectBrowser.css";
@@ -111,10 +111,11 @@ interface Props {
   onQueryData?: (o: ObjectInfo) => void;
   onEditData?: (o: ObjectInfo) => void;
   onExportData?: (o: ObjectInfo) => void;
+  onInspect?: (object: ObjectInfo, mode: InspectMode) => void;
   onTest?: (o: ObjectInfo, x: number, y: number) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onTest }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onInspect, onTest }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -145,6 +146,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       queryData: onQueryData && (() => onQueryData(o)),
       editData: onEditData && (() => onEditData(o)),
       exportData: onExportData && (() => onExportData(o)),
+      inspect: onInspect && ((mode) => onInspect(o, mode)),
       test: onTest && (() => onTest(o, e.clientX, e.clientY)),
     });
     setMenu({ x: e.clientX, y: e.clientY, label: full, items });

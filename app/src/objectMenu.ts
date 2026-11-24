@@ -3,6 +3,7 @@ import { commands } from "./keymap";
 import type { ObjectType } from "./types";
 
 export type MenuEntry = ContextItem | "sep";
+export type InspectMode = "describe" | "properties" | "compare";
 
 /** Acciones ya ligadas al objeto del menú. Sin `queryData`/`editData` esas opciones quedan pendientes. */
 export interface ObjectMenuHandlers {
@@ -17,6 +18,7 @@ export interface ObjectMenuHandlers {
   queryData?: () => void;
   editData?: () => void;
   exportData?: () => void;
+  inspect?: (mode: InspectMode) => void;
   test?: () => void;
 }
 
@@ -55,7 +57,7 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Ver", run: h.view },
     { label: "Editar", run: h.edit },
   );
-  else if (code || data) items.push({ label: "Ver", pending: true }, { label: "Editar", pending: true });
+  else if ((code || data) && !NO_DDL.has(t)) items.push({ label: "Ver", run: h.view }, { label: "Editar", run: h.edit });
   if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: h.test ? undefined : commands.test.keys,
     run: h.test, pending: h.test ? undefined : true });
   if (data) items.push(...dataGroup(t, h));
@@ -65,10 +67,14 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Privilegios", pending: true },
     { label: "Copiar DDL", run: h.copyDdl },
   );
-  items.push("sep", { label: "Describir", pending: true }, { label: "Propiedades", pending: true });
+  const inspect = h.inspect;
+  items.push("sep",
+    { label: "Describir", run: inspect && (() => inspect("describe")) },
+    { label: "Propiedades", run: inspect && (() => inspect("properties")) },
+  );
   if (RECOMPILABLE.has(t)) items.push({ label: "Recompilar", run: h.recompile });
   if (!user && !NO_DDL.has(t)) items.push({ label: "Copiar DDL", run: h.copyDdl });
-  if (code || data) items.push({ label: "Comparar con…", pending: true });
+  if ((code || data) && !NO_DDL.has(t)) items.push({ label: "Comparar con…", run: inspect && (() => inspect("compare")) });
   items.push(
     "sep",
     { label: "Copiar nombre", keys: "Ctrl+C", run: h.copyName },

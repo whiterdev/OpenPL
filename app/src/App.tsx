@@ -25,6 +25,7 @@ import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
+import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
@@ -137,6 +138,7 @@ const editorEdits = [
 
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
+  const [inspection, setInspection] = useState<Inspection | null>(null);
   const [connections, setConnections] = useState<ActiveConnection[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, SessionState>>({});
@@ -588,8 +590,18 @@ export default function App() {
     mode: "view" | "edit" = "view",
     connection = active,
   ) {
-    if (!connection || !supportsProgram.has(object.object_type)) {
-      showNotice("Edición disponible en una versión posterior");
+    if (!connection) return;
+    if (!supportsProgram.has(object.object_type)) {
+      if (mode === "edit") {
+        try {
+          const ddl = await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name);
+          await openSql(connection, ddl);
+        } catch (error) {
+          showNotice(describeError(error).message);
+        }
+      } else {
+        setInspection({ object, sessionId: connection.sessionId, mode: "describe" });
+      }
       return;
     }
     const id = JSON.stringify([
@@ -892,6 +904,7 @@ export default function App() {
             onQueryData={(object) => queryData(object)}
             onEditData={(object) => queryData(object, true)}
             onExportData={(object) => queryData(object, false, true)}
+            onInspect={(object, mode) => setInspection({ object, mode, sessionId: active.sessionId })}
             onTest={(object, x, y) => void testObject(active, object, x, y)}
           />
         )}
@@ -1106,6 +1119,7 @@ export default function App() {
           }}
         />
       )}
+      {inspection && <ObjectInspector {...inspection} onClose={() => setInspection(null)} />}
     </div>
   );
 }
