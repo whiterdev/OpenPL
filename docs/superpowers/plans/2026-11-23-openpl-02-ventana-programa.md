@@ -28,7 +28,8 @@
 - [x] **Archivos.** Los comandos `open_program_file()` y `save_program_file(source, extension, name)` abren un selector nativo. El guardado usa reemplazo en el directorio de destino. `App.test.tsx` cubre cancelación, guardado y cierre con cambios.
 - [x] **Preparación de compilación.** F8 verifica la versión y abre la comparación antes de ofrecer el guardado de un script manual. El detalle y las pruebas están en la sección de preparación.
 - [x] **Estructura.** El editor muestra variables de paquete y distingue las funciones y procedimientos sobrecargados.
-- [ ] **Editor.** Añadir plegado de bloques PL/SQL y autocompletado con el catálogo por conexión.
+- [x] **Plegado.** Plegar paquetes, rutinas y bloques PL/SQL.
+- [ ] **Autocompletado.** Sugerir palabras clave, objetos del esquema y columnas usando la sesión del programa.
 
 ### Menú de objeto en el editor
 
@@ -54,6 +55,12 @@
 - [x] **Ámbito.** `programStructure(source)` en `app/src/programStructure.ts` identifica declaraciones del nivel del paquete, conserva posiciones y excluye variables y subprogramas locales. Reutiliza la tokenización Oracle del editor para comentarios, cadenas e identificadores entre comillas.
 - [x] **Firmas.** `ProgramDeclaration.key` normaliza las firmas sin valores por defecto. Se usa para emparejar Spec y Body, distinguir público de privado y preferir una implementación frente a su declaración adelantada.
 - [x] **Navegación.** `ProgramWindow` presenta las firmas y variables de la parte activa. Clic salta al identificador. F12 abre un selector cuando hay varias declaraciones candidatas. `ProgramWindow.test.tsx` cubre ambos caminos de navegación.
+
+### Plegado PL/SQL
+
+- [x] **Delimitadores.** `programFoldRanges(source)` reutiliza el análisis de Estructura para emparejar bloques y cabeceras de paquete y rutina. `programFolding.test.ts` cubre comentarios, literales, directivas condicionales y bloques incompletos.
+- [x] **Editor.** `programFolding` registra los rangos por documento en el servicio de CodeMirror. La apertura y el cierre quedan visibles. [Servicio de plegado en CodeMirror](https://codemirror.net/docs/ref/#language.foldService)
+- [x] **Navegación.** Plegar y Desplegar están en el registro de atajos. `App.test.tsx` comprueba ambos atajos. `ProgramWindow.test.tsx` comprueba el plegado en modo de solo lectura y la navegación dentro de un rango plegado.
 
 ## Verificación
 

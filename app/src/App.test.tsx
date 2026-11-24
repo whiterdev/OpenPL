@@ -71,7 +71,8 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
     owner: "HR", name: "PKG_A", object_type: "Package", status: "Valid", last_ddl_time: "2026-01-01T12:00:00",
   }]);
   const spec = {
-    kind: "PACKAGE", source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND;", last_ddl_time: "2026-01-01T12:00:00", diagnostics: [],
+    kind: "PACKAGE", source: "CREATE OR REPLACE PACKAGE PKG_A AS\n  g_total NUMBER;\nEND;",
+    last_ddl_time: "2026-01-01T12:00:00", diagnostics: [],
   };
   vi.mocked(api.programSource).mockResolvedValueOnce([spec])
     .mockResolvedValueOnce([{ ...spec, source: "CREATE OR REPLACE PACKAGE PKG_A AS\nEND; -- remoto" }])
@@ -94,7 +95,11 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
   const object = await screen.findByRole("treeitem", { name: "PKG_A" });
   fireEvent.contextMenu(object);
   fireEvent.click(screen.getByRole("menuitem", { name: "Editar Spec y Body" }));
-  await screen.findByRole("textbox", { name: "Spec" });
+  const editor = await screen.findByRole("textbox", { name: "Spec" });
+  fireEvent.keyDown(window, { key: "P", altKey: true, shiftKey: true });
+  expect(editor.querySelector(".cm-foldPlaceholder")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "A", altKey: true, shiftKey: true });
+  expect(editor.querySelector(".cm-foldPlaceholder")).not.toBeInTheDocument();
   fireEvent.keyDown(window, { key: "l", ctrlKey: true, shiftKey: true });
   await login("QA");
   fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });

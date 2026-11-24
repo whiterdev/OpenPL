@@ -9,6 +9,7 @@ import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
+import { programFolding } from "../programFolding";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -44,7 +45,7 @@ export function ProgramEditor(props: Props) {
       parent: host.current!,
       doc: part.source,
       extensions: [
-        lineNumbers(), foldGutter(), drawSelection(), rectangularSelection(), history(),
+        lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax),
         EditorState.phrases.of({

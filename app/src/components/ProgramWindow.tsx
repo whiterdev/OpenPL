@@ -2,6 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 import { FileCode, FloppyDisk, GitDiff, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
+import { foldCode, unfoldCode } from "@codemirror/language";
 import { gotoLine, openSearchPanel } from "@codemirror/search";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
@@ -210,6 +211,8 @@ export function ProgramWindow({
       setSplit((value) => !value);
     } : undefined,
     goToDeclaration: declaration,
+    foldBlock: runInEditor(foldCode),
+    unfoldBlock: runInEditor(unfoldCode),
     execute: !readOnly && readCurrentProgram && compilationTarget
       ? () => void compare(compilationTarget)
       : undefined,

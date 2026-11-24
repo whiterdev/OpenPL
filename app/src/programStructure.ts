@@ -23,6 +23,8 @@ const bodyMarkers = new Set([";", "AS", "IS"]);
 const signatureModifiers = new Set(["ACCESSIBLE", "AUTHID", "DETERMINISTIC", "PARALLEL_ENABLE", "PIPELINED", "RESULT_CACHE"]);
 const openings = new Set(["BEGIN", "IF", "LOOP", "CASE"]);
 const closingWords = new Set(["IF", "LOOP", "CASE"]);
+type BlockEnds = ReadonlyMap<number, number>;
+type AddFold = (opening: number, closing: number) => void;
 
 function tokenize(source: string) {
   const tokens: Token[] = [];
@@ -106,48 +108,77 @@ function afterStatement(tokens: Token[], start: number) {
 }
 const statementEnd = new Set([";"]);
 
-function afterBlock(tokens: Token[], start: number) {
-  let depth = 0;
-  for (let i = start; i < tokens.length; i += 1) {
+function matchingBlocks(tokens: Token[]) {
+  const ends = new Map<number, number>();
+  const stack: { kind: string; index: number }[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
     const { key } = tokens[i];
-    if (openings.has(key)) depth += 1;
-    if (key !== "END") continue;
-    depth -= 1;
-    if (depth === 0) return afterStatement(tokens, i + 1);
-    if (closingWords.has(tokens[i + 1]?.key)) i += 1;
+    const previous = tokens[i - 1];
+    const directive = previous?.key === "$" && previous.from + 1 === tokens[i].from;
+    if (openings.has(key)) {
+      stack.push({ kind: directive ? `$${key}` : key, index: i });
+    } else if (key === "END") {
+      const top = stack[stack.length - 1];
+      const suffix = tokens[i + 1]?.key;
+      const hasSuffix = !directive && closingWords.has(suffix);
+      const expected = directive ? "$IF" : hasSuffix ? suffix : null;
+      const matches = top && (expected ? top.kind === expected : top.kind === "BEGIN" || top.kind === "CASE");
+      if (matches) {
+        stack.pop();
+        ends.set(top.index, i);
+      }
+      if (hasSuffix) i += 1;
+    }
   }
-  return tokens.length;
+  return ends;
 }
 
-function afterRoutine(tokens: Token[], start: number): number {
+function routineEnd(
+  tokens: Token[], start: number, blocks: BlockEnds, addFold: AddFold,
+): { next: number; closing?: number } {
   for (let i = start; i < tokens.length;) {
     const { key } = tokens[i];
-    if (key === "BEGIN") return afterBlock(tokens, i);
-    if (key === "END") return afterStatement(tokens, i);
+    if (key === "BEGIN") {
+      const closing = blocks.get(i);
+      return closing === undefined ? { next: tokens.length } : { next: afterStatement(tokens, closing + 1), closing };
+    }
+    if (key === "END") return { next: afterStatement(tokens, i) };
     if (key === "PROCEDURE" || key === "FUNCTION") {
       const nested = routine(tokens, i);
       if (nested?.entry.definition) {
-        i = afterRoutine(tokens, nested.body + 1);
+        const { next, closing } = routineEnd(tokens, nested.body + 1, blocks, addFold);
+        if (closing !== undefined) addFold(i, closing);
+        i = next;
         continue;
       }
     }
-    if (key === "LANGUAGE" || key === "EXTERNAL") return afterStatement(tokens, i);
+    if (key === "LANGUAGE" || key === "EXTERNAL") return { next: afterStatement(tokens, i) };
     i = afterStatement(tokens, i);
   }
-  return tokens.length;
+  return { next: tokens.length };
 }
 
-function packageMembers(tokens: Token[], start: number) {
+function packageMembers(tokens: Token[], start: number, blocks: BlockEnds, addFold: AddFold) {
   const entries = new Map<string, ProgramDeclaration>();
+  let closing: number | undefined;
   for (let i = start; i < tokens.length;) {
     const { key } = tokens[i];
-    if (key === "BEGIN" || key === "END" || key === "WRAPPED") break;
+    if (key === "BEGIN" || key === "END" || key === "WRAPPED") {
+      closing = key === "BEGIN" ? blocks.get(i) : key === "END" ? i : undefined;
+      break;
+    }
     if (routines.has(key)) {
       const member = routine(tokens, i);
       if (member) {
         if (!entries.has(member.entry.key) || member.entry.definition) entries.set(member.entry.key, member.entry);
         const { body } = member;
-        i = member.entry.definition && key !== "CURSOR" ? afterRoutine(tokens, body + 1) : afterStatement(tokens, body);
+        if (member.entry.definition && key !== "CURSOR") {
+          const end = routineEnd(tokens, body + 1, blocks, addFold);
+          if (end.closing !== undefined) addFold(i, end.closing);
+          i = end.next;
+        } else {
+          i = afterStatement(tokens, body);
+        }
         continue;
       }
     }
@@ -159,18 +190,27 @@ function packageMembers(tokens: Token[], start: number) {
     }
     i = end + 1;
   }
-  return [...entries.values()].sort((a, b) => a.from - b.from);
+  return { entries: [...entries.values()].sort((a, b) => a.from - b.from), closing };
 }
 
-/** Analiza la estructura del primer programa del documento a partir de los tokens de Oracle. */
-export function programStructure(source: string): ProgramDeclaration[] {
-  const tokens = tokenize(source);
+function analyzeUnit(tokens: Token[], blocks: BlockEnds, addFold: AddFold): ProgramDeclaration[] {
   const unit = storedUnits.has(tokens[0]?.key) ? 0 : findCreatedUnit(tokens);
-  if (unit < 0) return [];
+  if (unit < 0) {
+    if (tokens[0]?.key === "DECLARE") {
+      const { closing } = routineEnd(tokens, 1, blocks, addFold);
+      if (closing !== undefined) addFold(0, closing);
+    }
+    return [];
+  }
   const kind = tokens[unit].key;
   if (routines.has(kind)) {
-    const entry = routine(tokens, unit)?.entry;
-    return entry ? [entry] : [];
+    const member = routine(tokens, unit);
+    if (!member) return [];
+    if (member.entry.definition) {
+      const { closing } = routineEnd(tokens, member.body + 1, blocks, addFold);
+      if (closing !== undefined) addFold(unit, closing);
+    }
+    return [member.entry];
   }
   const isBody = tokens[unit + 1]?.key === "BODY";
   const nameIndex = readName(tokens, unit + (isBody ? 2 : 1));
@@ -178,9 +218,32 @@ export function programStructure(source: string): ProgramDeclaration[] {
   if (!isIdentifier(name)) return [];
   if (kind === "PACKAGE") {
     const headerEnd = boundary(tokens, nameIndex + 1, bodyMarkers);
-    if (tokens[headerEnd]?.key !== ";") return packageMembers(tokens, headerEnd + 1);
+    if (tokens[headerEnd]?.key !== ";") {
+      const { entries, closing } = packageMembers(tokens, headerEnd + 1, blocks, addFold);
+      if (closing !== undefined) addFold(unit, closing);
+      return entries;
+    }
   }
   return [{ name: nameOf(name), label: name.text, key: nameOf(name), from: name.from, definition: false }];
+}
+
+/** Analiza la estructura del primer programa del documento. */
+export function programStructure(source: string): ProgramDeclaration[] {
+  const tokens = tokenize(source);
+  return analyzeUnit(tokens, matchingBlocks(tokens), () => {});
+}
+
+/** Las posiciones indican el primer token de las líneas de apertura y cierre. */
+export function programFoldRanges(source: string): { opening: number; closing: number }[] {
+  const tokens = tokenize(source);
+  const blocks = matchingBlocks(tokens);
+  const ranges: { opening: number; closing: number }[] = [];
+  const addFold: AddFold = (opening, closing) => {
+    ranges.push({ opening: tokens[opening].from, closing: tokens[closing].from });
+  };
+  blocks.forEach((closing, opening) => addFold(opening, closing));
+  analyzeUnit(tokens, blocks, addFold);
+  return ranges;
 }
 
 function findCreatedUnit(tokens: Token[]) {

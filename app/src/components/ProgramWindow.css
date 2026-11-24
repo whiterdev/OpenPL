@@ -122,6 +122,7 @@
 .program-editor .cm-editor .cm-activeLine, .program-editor .cm-editor .cm-activeLineGutter { background: var(--s2); }
 .program-editor .cm-content { caret-color: var(--text); }
 .program-editor .cm-editor .cm-cursor { border-left-color: var(--text); }
+.program-editor .cm-foldPlaceholder { background: var(--s2); border-color: var(--line2); color: var(--muted); }
 .program-editor .cm-editor .cm-selectionBackground { background: var(--s3) !important; }
 .program-editor .cm-panels, .program-editor .cm-tooltip { background: var(--s1); color: var(--text); border-color: var(--line2); }
 .program-editor .cm-textfield, .program-editor .cm-button { background: var(--s2); color: var(--text); border-color: var(--line2); }

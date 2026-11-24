@@ -71,7 +71,7 @@ export default function App() {
     ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
     : active;
   const currentProgramActions = Object.fromEntries(
-    (["save", "spec", "body", "sideBySide", "goToDeclaration", "objectActions", "compareProgram", "execute", "goToLine", "find", "replace",
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "foldBlock", "unfoldBlock", "objectActions", "compareProgram", "execute", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
       .filter((id) => {
         if (!program?.parts) return false;
@@ -79,7 +79,7 @@ export default function App() {
         if (id === "compareProgram") return !!program.object && !!editorConnection;
         if (id === "execute") return !program.readOnly && !!program.object && !!editorConnection;
         if (id === "spec" || id === "body" || id === "sideBySide") return program.parts.length === 2;
-        return !program.readOnly || ["save", "goToDeclaration", "goToLine", "find"].includes(id);
+        return !program.readOnly || ["save", "goToDeclaration", "foldBlock", "unfoldBlock", "goToLine", "find"].includes(id);
       })
       .map((id) => [id, () => programActions.current?.[id]?.()]),
   );
@@ -263,7 +263,10 @@ export default function App() {
       label: "Buscar",
       items: [run("find"), run("replace"), "sep", run("palette")],
     },
-    { label: "Ver", items: [run("toggleExplorer"), run("refreshExplorer"), "sep", run("compareProgram")] },
+    {
+      label: "Ver",
+      items: [run("toggleExplorer"), run("refreshExplorer"), "sep", run("foldBlock"), run("unfoldBlock"), run("compareProgram")],
+    },
     {
       label: "Sesión",
       items: [

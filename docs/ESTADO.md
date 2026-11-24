@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 94 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 100 de interfaz,
   más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -30,7 +30,7 @@
 - **Archivos:** los comandos Tauri abren el selector nativo. El guardado sustituye un archivo después de
   escribirlo completo. Cerrar una pestaña o la aplicación con cambios pide confirmación.
   [Comportamiento de la ventana](behavior/programa.md)
-- Quedan pendientes el plegado de bloques PL/SQL y el autocompletado de catálogo.
+- Queda pendiente el autocompletado de catálogo.
 
 ### Plan 2 — Acciones de objeto desde el editor
 
@@ -80,8 +80,19 @@
 - `app/src/programStructure.ts` analiza los tokens del primer programa del documento. El alcance
   es la navegación por el nivel de paquete y la cabecera de programas independientes. La prueba
   nativa de visualización del panel queda pendiente. [Comportamiento de la ventana](behavior/programa.md)
-- **Punto de continuación:** añadir plegado de bloques PL/SQL y probarlo con cuerpos de paquete,
-  rutinas anidadas y bloques condicionales. Luego incorporar el autocompletado de catálogo.
+
+### Plan 2 — Plegado PL/SQL
+
+- **Plegar bloque** (Alt+Shift+P) y **Desplegar bloque** (Alt+Shift+A) están en **Ver** y se pueden
+  usar con el cursor en la línea de apertura. El margen también permite plegar. La apertura y el
+  cierre quedan visibles. Ir a una declaración o problema abre el rango que lo oculta.
+- `app/src/programStructure.ts` empareja los delimitadores a partir de los tokens que usa el editor.
+  `app/src/programFolding.ts` guarda los rangos por documento. Las pruebas cubren paquetes,
+  rutinas anidadas, `DECLARE`, `BEGIN`, `IF`, `LOOP`, `CASE` y directivas `$IF` y `$END`.
+  Las cabeceras se detectan para el primer programa del documento. [Comportamiento de la ventana](behavior/programa.md)
+- **Punto de continuación:** añadir sugerencias de palabras clave, objetos del esquema y columnas
+  para referencias calificadas. Mantener las consultas de catálogo en la sesión del programa y
+  verificar que los resultados de una conexión no aparezcan en otra.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 

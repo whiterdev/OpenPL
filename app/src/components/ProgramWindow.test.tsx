@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
+import { foldedRanges } from "@codemirror/language";
 import { createRef } from "react";
 import { expect, test, vi } from "vitest";
 import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
@@ -165,4 +166,24 @@ test("el panel distingue las sobrecargas y F12 permite seleccionar su declaraci√
   const selected = screen.getByRole("textbox", { name: "Spec" });
   const specView = EditorView.findFromDOM(selected.closest<HTMLElement>(".cm-editor")!)!;
   expect(specView.state.selection.main.head).toBe(spec.indexOf("registrar("));
+});
+
+test("el editor de solo lectura pliega y despliega sin modificar la fuente", () => {
+  const source = "PACKAGE PKG_A AS\n  g_total NUMBER;\nEND;";
+  const ref = createRef<ProgramActions>();
+  const dirty = vi.fn();
+  render(<ProgramWindow readOnly onDirty={dirty} ref={ref} parts={[{ ...parts[0], source }]} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => ref.current!.foldBlock!());
+  expect(foldedRanges(view.state).size).toBe(1);
+  act(() => ref.current!.unfoldBlock!());
+  expect(foldedRanges(view.state).size).toBe(0);
+
+  act(() => ref.current!.foldBlock!());
+  fireEvent.click(screen.getByRole("button", { name: "g_total" }));
+  expect(foldedRanges(view.state).size).toBe(0);
+  expect(view.state.selection.main.head).toBe(source.indexOf("g_total"));
+  expect(view.state.doc.toString()).toBe(source);
+  expect(dirty).not.toHaveBeenCalled();
 });
