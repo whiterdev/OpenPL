@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
+import { Check } from "@phosphor-icons/react";
 import { formatKeys } from "../keymap";
 
 export interface ContextItem {
   label: string;
   keys?: string;
+  checked?: boolean;
   /** Sin `run` el ítem aparece deshabilitado. */
   run?: () => void;
   /** Función que todavía no existe: deshabilitada con la marca "Próximamente". */
@@ -68,7 +70,8 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
         ) : (
           <button
             key={it.label}
-            role="menuitem"
+            role={it.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={it.checked}
             className="menu-item"
             disabled={!it.run}
             onClick={() => {
@@ -77,6 +80,7 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
             }}
           >
             <span className="menu-label">{it.label}</span>
+            {it.checked && <Check size={16} aria-hidden="true" />}
             {it.pending && !it.run && <span className="menu-soon">Próximamente</span>}
             {it.keys && <span className="menu-kbd">{formatKeys(it.keys)}</span>}
           </button>

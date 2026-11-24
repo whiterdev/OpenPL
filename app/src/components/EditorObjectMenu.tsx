@@ -22,13 +22,14 @@ interface Props {
   onClose: () => void;
   onDescribe: (object: ObjectInfo) => void;
   onMessage: (message: string) => void;
+  readOnlyItem?: ContextItem;
 }
 
 const tableTypes = new Set(["Table", "View", "MaterializedView"]);
 const programTypes = new Set(["Package", "Type", "Function", "Procedure", "Trigger"]);
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-export function EditorObjectMenu({ request, catalog, onClose, onDescribe, onMessage }: Props) {
+export function EditorObjectMenu({ request, catalog, onClose, onDescribe, onMessage, readOnlyItem }: Props) {
   const [result, setResult] = useState<{ object: ObjectInfo | null; message?: string }>();
   const { reference } = request;
   const { sessionId, owner } = catalog;
@@ -50,7 +51,7 @@ export function EditorObjectMenu({ request, catalog, onClose, onDescribe, onMess
       onMessage(describeError(error).message);
     }
   }
-  const items: (ContextItem | "sep")[] = [];
+  const items: (ContextItem | "sep")[] = readOnlyItem ? [readOnlyItem, "sep"] : [];
   if (object) {
     if (tableTypes.has(object.object_type)) items.push({ label: "Describir", run: () => onDescribe(object) });
     if (programTypes.has(object.object_type)) items.push({ label: "Ver fuente", run: () => catalog.openProgram(object) });

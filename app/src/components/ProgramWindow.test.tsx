@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import { foldedRanges } from "@codemirror/language";
-import { createRef } from "react";
+import { createRef, useState } from "react";
 import { expect, test, vi } from "vitest";
 import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
@@ -155,8 +155,9 @@ test("clic derecho resuelve y describe una tabla de la sesión del programa", as
   vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 16, assoc: 1 });
   try {
     render(<ProgramWindow parts={[{ kind: "SQL", source: "select * from ventas", diagnostics: [], last_ddl_time: null }]}
-      readOnly onDirty={vi.fn()} catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+      readOnly onReadOnlyChange={vi.fn()} onDirty={vi.fn()} catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
     fireEvent.contextMenu(screen.getByRole("textbox", { name: "Fuente" }), { clientX: 100, clientY: 100 });
+    expect(screen.getByRole("menuitemcheckbox", { name: "Solo lectura", checked: true })).toHaveFocus();
     fireEvent.click(await screen.findByRole("menuitem", { name: "Describir" }));
     expect(lookup).toHaveBeenCalledWith("s1", { owner: null, name: "VENTAS" }, "HR");
     expect(describe).toHaveBeenCalledWith("s1", "HR", "VENTAS");
@@ -438,4 +439,23 @@ test("Detener solo se habilita mientras compila y cancela la compilación", asyn
   await act(async () => fail({ Db: { code: "ORA-01013", kind: "Other", message: "cancelado" } }));
   expect(await screen.findByText("Compilación detenida")).toBeInTheDocument();
   expect(stop).toBeDisabled();
+});
+
+test("Solo lectura permite alternar la edicion sin recrear el editor ni perder cambios", () => {
+  function Window() {
+    const [readOnly, setReadOnly] = useState(true);
+    return <ProgramWindow parts={parts} readOnly={readOnly} onReadOnlyChange={setReadOnly} onDirty={vi.fn()} />;
+  }
+  render(<Window />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  expect(editor).toHaveAttribute("aria-readonly", "true");
+  fireEvent.contextMenu(editor);
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Solo lectura", checked: true }));
+  expect(editor).toHaveAttribute("aria-readonly", "false");
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "-- nota\n" } }));
+  fireEvent.contextMenu(editor);
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Solo lectura", checked: false }));
+  expect(editor).toHaveAttribute("aria-readonly", "true");
+  expect(view.state.doc.toString()).toBe("-- nota\n" + parts[0].source);
 });
