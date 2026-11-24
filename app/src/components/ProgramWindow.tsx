@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { FileCode, FloppyDisk, GitDiff, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
@@ -12,6 +12,8 @@ import { positionAt, ProgramEditor } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
 import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
 import { prepareProgramScript, type CompilationTarget } from "../programScript";
+import { programStructure, type ProgramDeclaration } from "../programStructure";
+import { ContextMenu } from "./ContextMenu";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>>;
 
@@ -33,13 +35,9 @@ const caption = (kind: string) => {
   return "Fuente";
 };
 
-function declarations(source: string) {
-  // Conserva los saltos de línea al omitir comentarios y cadenas SQL ordinarias.
-  const code = source.replace(/\/\*[\s\S]*?\*\/|--[^\n]*|'(?:''|[^'])*'/g, (text) => text.replace(/[^\r\n]/g, " "));
-  return code.split("\n").flatMap((text, index) => {
-    const match = /^\s*(?:(?:create\s+or\s+replace)\s+)?(?:procedure|function|type|subtype|cursor)\s+("[^"]+"|[\w$#]+)/i.exec(text);
-    return match ? [{ name: match[1], line: index + 1 }] : [];
-  });
+interface DeclarationTarget {
+  index: number;
+  entry: ProgramDeclaration;
 }
 
 export function ProgramWindow({
@@ -53,43 +51,70 @@ export function ProgramWindow({
   const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult; script?: string } | null>(null);
   const [savingScript, setSavingScript] = useState(false);
   const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
+  const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
   const objectRequestId = useRef(0);
   const closeObjectMenu = useCallback(() => setObjectMenu(null), []);
-  useEffect(() => { closeObjectMenu(); }, [active, catalog?.sessionId, closeObjectMenu]);
+  const closeDeclarationMenu = useCallback(() => setDeclarationMenu(null), []);
+  useEffect(() => {
+    closeObjectMenu();
+    closeDeclarationMenu();
+  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
   const names = useRef<(string | null)[]>([fileName ?? null]);
   const canSplit = parts.length === 2;
-  const spec = canSplit ? declarations(values[0]) : [];
-  const outline = declarations(values[selected]);
+  const firstOutline = useMemo(() => programStructure(values[0]), [values[0]]);
+  const secondOutline = useMemo(() => values[1] ? programStructure(values[1]) : [], [values[1]]);
+  const outline = selected === 0 ? firstOutline : secondOutline;
+  const publicKeys = useMemo(() => new Set(firstOutline.map((entry) => entry.key)), [firstOutline]);
   const part = parts[selected];
 
   function focusPart(index: number) {
     setComparison(null);
+    closeDeclarationMenu();
     setSelected(index);
     requestAnimationFrame(() => views.current[index]?.focus());
   }
 
-  function navigate(index: number, line: number, column = 1) {
+  function navigateAt(index: number, anchor: number) {
     const view = views.current[index];
     if (!view) return;
-    const anchor = positionAt(view, line, column);
     view.dispatch({ selection: { anchor }, scrollIntoView: true });
     focusPart(index);
+  }
+
+  function navigate(index: number, line: number, column = 1) {
+    const view = views.current[index];
+    if (view) navigateAt(index, positionAt(view, line, column));
   }
 
   function declaration() {
     if (comparison) return;
     const view = views.current[selected];
     if (!view) return;
-    const selection = view.state.selection.main;
-    const range = selection.empty ? view.state.wordAt(selection.head) : selection;
-    const name = range && view.state.sliceDoc(range.from, range.to).toUpperCase();
-    const publicEntry = spec.find((entry) => entry.name.toUpperCase() === name);
-    const entry = outline.find((item) => item.name.toUpperCase() === name);
-    if (publicEntry) navigate(0, publicEntry.line);
-    else if (entry) navigate(selected, entry.line);
+    const position = view.state.selection.main.from;
+    const reference = editorReference(view.state, position)
+      ?? (position > 0 ? editorReference(view.state, position - 1) : null);
+    if (!reference || (reference.owner && compilationTarget && reference.owner !== compilationTarget.name)) return;
+
+    const bySignature = new Map<string, DeclarationTarget>();
+    for (const entry of outline) {
+      if (entry.name === reference.name) bySignature.set(entry.key, { index: selected, entry });
+    }
+    if (canSplit && selected === 1) {
+      for (const entry of firstOutline) {
+        if (entry.name === reference.name) bySignature.set(entry.key, { index: 0, entry });
+      }
+    }
+    const targets = [...bySignature.values()];
+    if (targets.length === 1) {
+      navigateAt(targets[0].index, targets[0].entry.from);
+    } else if (targets.length > 1) {
+      const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
+      closeObjectMenu();
+      setDeclarationMenu({ name: reference.name, x: coords.left, y: coords.bottom, targets });
+    }
   }
 
   async function save() {
@@ -136,6 +161,7 @@ export function ProgramWindow({
     const request = { index: selected, result: { state: "loading" }, script } as const;
     setComparison(request);
     closeObjectMenu();
+    closeDeclarationMenu();
     const finish = (result: ComparisonResult) =>
       setComparison((current) => current === request ? { ...request, result } : current);
     try {
@@ -193,6 +219,7 @@ export function ProgramWindow({
       const reference = editorReference(view.state, position) ?? (position > 0 ? editorReference(view.state, position - 1) : null);
       if (!reference) return;
       const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
+      closeDeclarationMenu();
       setObjectMenu({ reference, x: coords.left, y: coords.bottom, id: ++objectRequestId.current });
     }) : undefined,
     goToLine: runInEditor(gotoLine),
@@ -247,9 +274,9 @@ export function ProgramWindow({
         <aside className="program-outline" aria-label="Estructura">
           <div>Estructura</div>
           {outline.map((entry) => (
-            <button key={entry.line} type="button" onClick={() => navigate(selected, entry.line)}>
-              {entry.name}
-              {canSplit && <small>{selected === 0 || spec.some((item) => item.name.toUpperCase() === entry.name.toUpperCase()) ? "Público" : "Privado"}</small>}
+            <button key={entry.from} type="button" title={entry.label} onClick={() => navigateAt(selected, entry.from)}>
+              <span>{entry.label}</span>
+              {canSplit && <small>{selected === 0 || publicKeys.has(entry.key) ? "Público" : "Privado"}</small>}
             </button>
           ))}
         </aside>
@@ -263,10 +290,12 @@ export function ProgramWindow({
                 readOnly={readOnly}
                 activate={() => setSelected(index)}
                 onObjectContext={catalog ? (reference, x, y) => {
+                  closeDeclarationMenu();
                   setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
                 } : undefined}
                 onView={(view) => { views.current[index] = view; }}
                 onChange={(value) => {
+                  closeDeclarationMenu();
                   const updated = parts.map((other, i) => i === index
                     ? value
                     : views.current[i]?.state.doc.toString() ?? other.source);
@@ -292,6 +321,15 @@ export function ProgramWindow({
         <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
+      )}
+      {active && declarationMenu && !comparison && (
+        <ContextMenu x={declarationMenu.x} y={declarationMenu.y}
+          label={`Declaraciones de ${declarationMenu.name}`} width={360} className="program-declaration-menu"
+          items={declarationMenu.targets.map(({ entry, index }) => ({
+            label: canSplit ? `${caption(parts[index].kind)} · ${entry.label}` : entry.label,
+            run: () => navigateAt(index, entry.from),
+          }))}
+          onClose={closeDeclarationMenu} />
       )}
       {!comparison && diagnostics.length > 0 && (
         <div className="program-problems" aria-label="Problemas">

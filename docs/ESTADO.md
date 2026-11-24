@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 88 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 94 de interfaz,
   más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -30,8 +30,7 @@
 - **Archivos:** los comandos Tauri abren el selector nativo. El guardado sustituye un archivo después de
   escribirlo completo. Cerrar una pestaña o la aplicación con cambios pide confirmación.
   [Comportamiento de la ventana](behavior/programa.md)
-- Quedan pendientes la estructura para variables y sobrecargas, el plegado de bloques PL/SQL y el
-  autocompletado de catálogo.
+- Quedan pendientes el plegado de bloques PL/SQL y el autocompletado de catálogo.
 
 ### Plan 2 — Acciones de objeto desde el editor
 
@@ -70,8 +69,19 @@
 - `app/src/programScript.ts` arma el archivo SQL local con el nombre calificado a partir del
   borrador. El script se revisa y ejecuta manualmente. Ejecutar F8 en la app solo hace lecturas.
   [Nota de comportamiento](behavior/programa.md)
-- **Punto de continuación:** ampliar el panel Estructura para variables y sobrecargas. La ejecución
-  de DDL y la actualización automática de diagnósticos tras compilar siguen fuera de este flujo.
+- La ejecución de DDL y la actualización automática de diagnósticos tras compilar siguen fuera de
+  este flujo.
+
+### Plan 2 — Estructura de los programas
+
+- **Estructura** enumera las variables y constantes globales, los tipos, los cursores y las
+  rutinas de un paquete. Las firmas distinguen sobrecargas y determinan qué entradas del Body
+  corresponden al Spec. Clic lleva al identificador y F12 ofrece las firmas candidatas.
+- `app/src/programStructure.ts` analiza los tokens del primer programa del documento. El alcance
+  es la navegación por el nivel de paquete y la cabecera de programas independientes. La prueba
+  nativa de visualización del panel queda pendiente. [Comportamiento de la ventana](behavior/programa.md)
+- **Punto de continuación:** añadir plegado de bloques PL/SQL y probarlo con cuerpos de paquete,
+  rutinas anidadas y bloques condicionales. Luego incorporar el autocompletado de catálogo.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 

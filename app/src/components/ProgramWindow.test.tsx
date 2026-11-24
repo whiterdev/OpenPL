@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
+import { createRef } from "react";
 import { expect, test, vi } from "vitest";
-import { ProgramWindow } from "./ProgramWindow";
+import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
 import type { ProgramPart } from "../types";
 import "./ProgramWindow.css";
@@ -140,4 +141,28 @@ test("muestra fuente de solo lectura y permite navegar al diagnóstico", () => {
   fireEvent.click(screen.getByRole("button", { name: /PLS-00103/ }));
   const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
   expect(view.state.selection.main.head).toBe(view.state.doc.line(2).from + 2);
+});
+
+test("el panel distingue las sobrecargas y F12 permite seleccionar su declaración", async () => {
+  const spec = "PACKAGE PKG_A AS\n  g_total NUMBER;\n  PROCEDURE registrar(p_id NUMBER);\nEND;";
+  const body = "PACKAGE BODY PKG_A AS\n  PROCEDURE registrar(p_id NUMBER) IS BEGIN NULL; END;\n"
+    + "  PROCEDURE registrar(p_id VARCHAR2) IS BEGIN NULL; END;\nBEGIN\n  registrar(1);\nEND;";
+  const ref = createRef<ProgramActions>();
+  render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref}
+    parts={[{ ...parts[0], source: spec }, { ...parts[1], source: body }]} />);
+  const outline = within(screen.getByRole("complementary", { name: "Estructura" }));
+  expect(outline.getByRole("button", { name: /g_total.*Público/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  const editor = screen.getByRole("textbox", { name: "Body" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  expect(outline.getByRole("button", { name: /registrar\(p_id NUMBER\).*Público/ })).toBeInTheDocument();
+  fireEvent.click(outline.getByRole("button", { name: /registrar\(p_id VARCHAR2\).*Privado/ }));
+  expect(view.state.selection.main.head).toBe(body.indexOf("registrar(p_id VARCHAR2"));
+  act(() => view.dispatch({ selection: { anchor: body.lastIndexOf("registrar(") + 1 } }));
+  act(() => ref.current!.goToDeclaration!());
+  const menu = within(await screen.findByRole("menu", { name: "Declaraciones de REGISTRAR" }));
+  fireEvent.click(menu.getByRole("menuitem", { name: /Spec.*registrar\(p_id NUMBER\)/ }));
+  const selected = screen.getByRole("textbox", { name: "Spec" });
+  const specView = EditorView.findFromDOM(selected.closest<HTMLElement>(".cm-editor")!)!;
+  expect(specView.state.selection.main.head).toBe(spec.indexOf("registrar("));
 });

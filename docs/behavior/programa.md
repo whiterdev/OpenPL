@@ -5,6 +5,7 @@ La observación previa por uso normal está en [observaciones-referencia.md](obs
 - **Abrir** (Enter o doble clic) y **Ver** muestran la fuente. **Editar** habilita un borrador local. Los programas abiertos aparecen en pestañas identificadas por objeto y conexión.
 - Un paquete abre una ventana con **Spec** y **Body**. Se alternan con Alt+S y Alt+B. Ctrl+\ permite ver ambos. Un paquete sin cuerpo sigue abriendo su Spec.
 - La estructura sigue la parte activa. Los problemas obtenidos del diccionario indican línea y columna. Seleccionar una entrada lleva al editor.
+- **Estructura** muestra variables y constantes de paquete, tipos, cursores y rutinas. Las sobrecargas se distinguen por sus firmas. **F12** abre un selector si el nombre tiene varias declaraciones.
 - **Programa** en la barra superior o **Archivo → Nuevo programa** abre un borrador. **Abrir programa** acepta archivos UTF-8 con extensión `.pks`, `.pkb` o `.sql`. El editor usa saltos de línea LF.
 - **Guardar** abre el selector del sistema y escribe la parte activa en un archivo local. Si se cancela el selector, el borrador conserva su estado. Cerrar la pestaña o la aplicación pide confirmación si hay cambios.
 - **Clic derecho** sobre un identificador o **Alt+Enter** en el cursor abre sus acciones de objeto cuando el diccionario lo reconoce. **Describir** muestra el nombre, tipo y nulabilidad de las columnas de tablas y vistas. **Ver fuente** abre objetos PL/SQL en otra pestaña si corresponde. También se puede copiar el nombre o el DDL.

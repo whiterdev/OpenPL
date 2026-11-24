@@ -43,7 +43,7 @@
 }
 .program-main, .program-editors { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .program-outline {
-    flex: 0 0 clamp(112px, 20%, 180px);
+    flex: 0 0 clamp(112px, 26%, 248px);
     min-width: 0;
     overflow: auto;
     border-right: 1px solid var(--line);
@@ -63,7 +63,10 @@
     padding: 3px 8px;
     overflow-wrap: anywhere;
 }
-.program-outline small { margin-left: auto; color: var(--muted); }
+.program-outline button > span { min-width: 0; font-family: var(--font-code); }
+.program-outline small { margin-left: auto; flex-shrink: 0; color: var(--muted); }
+.program-declaration-menu .menu-item { height: auto; min-height: 28px; white-space: normal; }
+.program-declaration-menu .menu-label { min-width: 0; overflow-wrap: anywhere; }
 .program-pane:not([hidden]) + .program-pane:not([hidden]) { border-left: 1px solid var(--line); }
 .program-pane-label, .program-problems { background: var(--s1); }
 .program-problems { max-height: 28%; overflow: auto; border-top: 1px solid var(--line); }

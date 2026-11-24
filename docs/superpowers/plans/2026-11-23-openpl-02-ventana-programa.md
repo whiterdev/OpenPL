@@ -27,7 +27,8 @@
 - [x] **Ventana.** `App.tsx` mantiene identidad y selección de documentos. `ObjectBrowser.tsx` envía el objeto y modo de apertura. `ProgramWindow.tsx` edita Spec/Body, navega estructura y problemas y alterna vista lateral. Las pruebas de los componentes cubren apertura, borradores, modo de solo lectura y navegación.
 - [x] **Archivos.** Los comandos `open_program_file()` y `save_program_file(source, extension, name)` abren un selector nativo. El guardado usa reemplazo en el directorio de destino. `App.test.tsx` cubre cancelación, guardado y cierre con cambios.
 - [x] **Preparación de compilación.** F8 verifica la versión y abre la comparación antes de ofrecer el guardado de un script manual. El detalle y las pruebas están en la sección de preparación.
-- [ ] **Editor.** Ampliar la estructura para variables globales y sobrecargas, validar plegado de bloques y añadir autocompletado con el catálogo por conexión.
+- [x] **Estructura.** El editor muestra variables de paquete y distingue las funciones y procedimientos sobrecargados.
+- [ ] **Editor.** Añadir plegado de bloques PL/SQL y autocompletado con el catálogo por conexión.
 
 ### Menú de objeto en el editor
 
@@ -47,6 +48,12 @@
 - [x] **Script local.** `prepareProgramScript(source, kind, target)` valida tipo, nombre y esquema del encabezado contra el objeto abierto. Escribe un nombre calificado y un terminador para SQL*Plus. Las pruebas cubren nombres entre comillas, encabezados de otro objeto y separadores ambiguos.
 - [x] **Verificación previa.** F8 consulta la fuente actual con la sesión original, reutiliza la comparación y habilita **Guardar script** si se pudo verificar la versión. Si hay cambios, muestra las diferencias y requiere elegir **Guardar pese al cambio**. Una fuente o marca de DDL no visible impide exportar desde F8.
 - [x] **Guardado.** `save_program_file` escribe el script para revisión y ejecución manual. El guardado conserva el borrador. Las pruebas cubren el descarte de lecturas pendientes al cerrar y el atajo F8 después de cambiar la conexión activa.
+
+### Estructura y sobrecargas
+
+- [x] **Ámbito.** `programStructure(source)` en `app/src/programStructure.ts` identifica declaraciones del nivel del paquete, conserva posiciones y excluye variables y subprogramas locales. Reutiliza la tokenización Oracle del editor para comentarios, cadenas e identificadores entre comillas.
+- [x] **Firmas.** `ProgramDeclaration.key` normaliza las firmas sin valores por defecto. Se usa para emparejar Spec y Body, distinguir público de privado y preferir una implementación frente a su declaración adelantada.
+- [x] **Navegación.** `ProgramWindow` presenta las firmas y variables de la parte activa. Clic salta al identificador. F12 abre un selector cuando hay varias declaraciones candidatas. `ProgramWindow.test.tsx` cubre ambos caminos de navegación.
 
 ## Verificación
 

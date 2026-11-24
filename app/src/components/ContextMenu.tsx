@@ -14,19 +14,25 @@ interface Props {
   label: string;
   items: (ContextItem | "sep")[];
   onClose: () => void;
+  width?: number;
+  className?: string;
 }
 
 /** Menú de clic derecho en la posición del puntero. Se cierra con Escape, clic fuera o al elegir. */
-export function ContextMenu({ x, y, label, items, onClose }: Props) {
+export function ContextMenu({ x, y, label, items, onClose, width = 260, className = "" }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const hasAction = items.some((item) => item !== "sep" && item.run);
 
   useEffect(() => {
+    const previousFocus = document.activeElement;
     const out = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        if (ref.current?.contains(document.activeElement) && previousFocus instanceof HTMLElement) previousFocus.focus();
+      }
     };
     document.addEventListener("mousedown", out);
     document.addEventListener("keydown", esc);
@@ -38,11 +44,22 @@ export function ContextMenu({ x, y, label, items, onClose }: Props) {
   }, [onClose, hasAction]);
 
   // Mantener el menú dentro de la ventana.
-  const left = Math.max(0, Math.min(x, window.innerWidth - 270));
+  const fittedWidth = Math.min(width, window.innerWidth);
+  const left = Math.max(0, Math.min(x, window.innerWidth - fittedWidth - 10));
   const top = Math.max(0, Math.min(y, window.innerHeight - items.length * 30 - 16));
 
   return (
-    <div ref={ref} role="menu" aria-label={label} className="menu" style={{ position: "fixed", left, top, width: 260 }}>
+    <div ref={ref} role="menu" aria-label={label} className={`menu ${className}`}
+      style={{ position: "fixed", left, top, width: fittedWidth, maxHeight: `calc(100vh - ${top}px)`, overflow: "auto" }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+        if (!buttons.length) return;
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = current + (event.key === "ArrowDown" ? 1 : -1);
+        buttons[(next + buttons.length) % buttons.length]?.focus();
+        event.preventDefault();
+      }}>
       {items.map((it, i) =>
         it === "sep" ? (
           <div key={`sep${i}`} className="menu-sep" role="separator" />
