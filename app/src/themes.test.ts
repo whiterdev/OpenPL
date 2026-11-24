@@ -21,6 +21,16 @@ type Fs = { readFileSync(path: string, encoding: "utf8"): string };
 const fs = (globalThis as unknown as { process: { getBuiltinModule(id: string): Fs } }).process.getBuiltinModule("node:fs");
 const themeCss = fs.readFileSync("src/theme.css", "utf8");
 
+it("Papel usa un fondo menos luminoso que el blanco casi puro", () => {
+  const { colors } = PRESETS.find((theme) => theme.id === "papel")!;
+  expect(contrastRatio(colors.s0, "#ffffff")).toBeGreaterThanOrEqual(1.2);
+});
+
+it.each(PRESETS)("el codigo tiene prioridad visual sobre los comentarios en $name", ({ colors }) => {
+  expect(contrastRatio(colors.text, colors.cm)).toBeGreaterThanOrEqual(1.8);
+  expect(contrastRatio(colors.cm, colors.s0)).toBeGreaterThanOrEqual(4.5);
+});
+
 const grafito = () => PRESETS.find((t) => t.id === "grafito")!;
 
 function custom(overrides: Partial<Theme> = {}): Theme {

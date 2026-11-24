@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { sql } from "@codemirror/lang-sql";
+import { syntaxTree } from "@codemirror/language";
+import { oracleDialect } from "../editorReference";
 import { EditorSelection, EditorState, type Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { tags } from "@lezer/highlight";
+import { highlightTree, tags } from "@lezer/highlight";
 import { indentKeys, programSyntax } from "./ProgramEditor";
 
 // Vitest vacía los imports ?raw de CSS; el proyecto no tiene @types/node.
@@ -13,6 +16,17 @@ describe("programSyntax", () => {
   it("los comentarios van en cursiva con --cm", () => {
     const comment = programSyntax.specs.find((spec) => spec.tag === tags.comment);
     expect(comment).toMatchObject({ color: "var(--cm)", fontStyle: "italic" });
+  });
+
+  it("resalta comentarios de linea y bloque en SQL real", () => {
+    const doc = "-- nota\nselect /* detalle */ 1 from dual";
+    const state = EditorState.create({ doc, extensions: [sql({ dialect: oracleDialect })] });
+    const comments: string[] = [];
+    const commentClass = programSyntax.style([tags.comment]);
+    highlightTree(syntaxTree(state), programSyntax, (from, to, classes) => {
+      if (classes === commentClass) comments.push(doc.slice(from, to));
+    });
+    expect(comments).toEqual(["-- nota", "/* detalle */"]);
   });
 
   it("los comentarios tienen otra clase que las palabras clave", () => {
