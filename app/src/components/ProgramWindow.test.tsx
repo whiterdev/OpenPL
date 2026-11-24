@@ -146,6 +146,33 @@ test("en solo lectura no ofrece completar", () => {
   expect(ref.current?.complete).toBeUndefined();
 });
 
+test("la estructura muestra una línea por entrada y se puede ensanchar", () => {
+  localStorage.removeItem("openpl.outlineWidth");
+  const spec = ["PACKAGE PKG_A AS", "  PROCEDURE registrar(p_id NUMBER, p_nombre VARCHAR2, p_fecha DATE);", "END;"].join("\n");
+  render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source: spec }]} />);
+  const outline = screen.getByRole("complementary", { name: "Estructura" });
+  const entry = within(outline).getByRole("button", { name: /registrar/ });
+  expect(entry).toHaveAttribute("title", "registrar(p_id NUMBER, p_nombre VARCHAR2, p_fecha DATE)");
+  expect(entry.querySelector(".program-outline-name")).toHaveTextContent("registrar(");
+
+  const handle = screen.getByRole("separator", { name: "Ancho de Estructura" });
+  expect(handle).toHaveAttribute("aria-valuenow", "240");
+  fireEvent.keyDown(handle, { key: "ArrowRight" });
+  expect(handle).toHaveAttribute("aria-valuenow", "256");
+  expect(outline.style.width).toBe("256px");
+  fireEvent.pointerDown(handle, { clientX: 300, pointerId: 1 });
+  fireEvent.pointerMove(window, { clientX: 400, pointerId: 1 });
+  fireEvent.pointerUp(window, { pointerId: 1 });
+  expect(handle).toHaveAttribute("aria-valuenow", "356");
+  fireEvent.pointerMove(window, { clientX: 900, pointerId: 1 });
+  expect(handle).toHaveAttribute("aria-valuenow", "356");
+  fireEvent.keyDown(handle, { key: "Home" });
+  expect(handle).toHaveAttribute("aria-valuenow", "140");
+  fireEvent.doubleClick(handle);
+  expect(handle).toHaveAttribute("aria-valuenow", "240");
+  expect(localStorage.getItem("openpl.outlineWidth")).toBe("240");
+});
+
 test("guarda los borradores por parte y abre ambos editores", async () => {
   render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
   const editor = screen.getByRole("textbox", { name: "Spec" });

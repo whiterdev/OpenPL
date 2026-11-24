@@ -43,10 +43,10 @@
 }
 .program-main, .program-editors { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .program-outline {
-    flex: 0 0 clamp(112px, 26%, 248px);
-    min-width: 0;
-    overflow: auto;
-    border-right: 1px solid var(--line);
+    flex: 0 0 auto;
+    max-width: 60%;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--s1);
 }
 .program-outline > div, .program-problems > div, .program-pane-label {
@@ -54,7 +54,7 @@
     color: var(--muted);
     border-bottom: 1px solid var(--line);
 }
-.program-outline button, .program-problems button {
+.program-problems button {
     display: flex;
     gap: 8px;
     align-items: baseline;
@@ -63,8 +63,39 @@
     padding: 3px 8px;
     overflow-wrap: anywhere;
 }
-.program-outline button > span { min-width: 0; font-family: var(--font-code); }
-.program-outline small { margin-left: auto; flex-shrink: 0; color: var(--muted); }
+/* Una fila por declaración: el resto de la firma queda en el tooltip o se ve ensanchando el panel. */
+.program-outline button {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    height: 22px;
+    padding: 0 8px;
+}
+.program-outline-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-code);
+    font-size: 12px;
+}
+.program-outline small { flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.program-outline-resizer {
+    flex: 0 0 5px;
+    margin-left: -2px;
+    margin-right: -3px;
+    position: relative;
+    z-index: 1;
+    cursor: col-resize;
+    background: linear-gradient(to right, transparent 2px, var(--line) 2px, var(--line) 3px, transparent 3px);
+}
+.program-outline-resizer:hover, .program-outline-resizer:focus-visible {
+    background: linear-gradient(to right, transparent 1px, var(--accent) 1px, var(--accent) 4px, transparent 4px);
+    outline: none;
+}
+body.resizing-columns { cursor: col-resize; user-select: none; }
 .program-declaration-menu .menu-item { height: auto; min-height: 28px; white-space: normal; }
 .program-declaration-menu .menu-label { min-width: 0; overflow-wrap: anywhere; }
 .program-pane:not([hidden]) + .program-pane:not([hidden]) { border-left: 1px solid var(--line); }
