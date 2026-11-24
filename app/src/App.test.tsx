@@ -54,6 +54,7 @@ vi.mock("./api", () => ({
     listObjects: vi.fn(),
     programSource: vi.fn(),
     routineOverloads: vi.fn(),
+    completeObjects: vi.fn(),
     sqlOpen: vi.fn(),
     sqlClose: vi.fn(),
     sqlExecute: vi.fn(),
@@ -497,7 +498,7 @@ test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
   );
 });
 
-test("Editar datos del explorador abre la grilla en edición", async () => {
+test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición", async (entry) => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.listObjects).mockResolvedValue([
     {
@@ -509,6 +510,10 @@ test("Editar datos del explorador abre la grilla en edición", async () => {
     },
   ]);
   vi.mocked(api.sqlOpen).mockResolvedValue("w4");
+  if (entry === "consola") {
+    vi.mocked(api.sqlOpen).mockResolvedValueOnce("cmd1");
+    vi.mocked(api.completeObjects).mockResolvedValue([{ owner: "HR", name: "CLIENTES", object_type: "TABLE" }]);
+  }
   vi.mocked(api.sqlEditTarget).mockResolvedValue({
     owner: "HR",
     name: "CLIENTES",
@@ -544,11 +549,18 @@ test("Editar datos del explorador abre la grilla en edición", async () => {
     });
   render(<App />);
   await connectAs();
-  fireEvent.click(await screen.findByRole("treeitem", { name: "Tablas" }));
-  fireEvent.contextMenu(
-    await screen.findByRole("treeitem", { name: "CLIENTES" }),
-  );
-  fireEvent.click(screen.getByRole("menuitem", { name: /Editar datos/ }));
+  if (entry === "consola") {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true, shiftKey: true });
+    const prompt = await screen.findByRole("textbox", { name: "Comando SQL" });
+    expect(prompt).toHaveFocus();
+    fireEvent.change(prompt, { target: { value: "EDIT CLIENTES" } });
+    fireEvent.keyDown(prompt, { key: "Enter" });
+    expect(await screen.findByRole("button", { name: "HR.CLIENTES" })).toBeVisible();
+  } else {
+    fireEvent.click(await screen.findByRole("treeitem", { name: "Tablas" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "CLIENTES" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Editar datos/ }));
+  }
   expect(
     await screen.findByRole("button", { name: /Editando/ }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -558,6 +570,10 @@ test("Editar datos del explorador abre la grilla en edición", async () => {
     'SELECT t.ROWID AS "OPENPL$ROWID", t.* FROM "HR"."CLIENTES" t',
     [],
   );
+  if (entry === "consola") {
+    fireEvent.click(screen.getByRole("button", { name: /^Comando \d+$/ }));
+    expect(screen.getByRole("textbox", { name: "Comando SQL" })).toHaveFocus();
+  }
 });
 
 test("F8 compila el programa en una sesión hermana y Detener la cancela", async () => {

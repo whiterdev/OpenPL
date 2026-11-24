@@ -452,13 +452,14 @@ export default function App() {
     edit = false,
     test?: TestSettings,
     command = false,
+    label?: string,
   ) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
       sqlCount.current += 1;
       addProgram({
         id: crypto.randomUUID(),
-        label: test?.fileName ?? `${command ? "Comando" : test ? "Prueba" : "SQL"} ${sqlCount.current}`,
+        label: label ?? test?.fileName ?? `${command ? "Comando" : test ? "Prueba" : "SQL"} ${sqlCount.current}`,
         connection,
         readOnly: false,
         dirty: false,
@@ -472,13 +473,16 @@ export default function App() {
     }
   }
 
-  function queryData(object: ObjectInfo, edit = false, exportCsv = false) {
-    if (!active) return;
+  function queryData(object: Pick<ObjectInfo, "owner" | "name">, edit = false, exportCsv = false, connection = active) {
+    if (!connection) return;
     void openSql(
-      active,
+      connection,
       `SELECT t.* FROM ${quoteName(object.owner)}.${quoteName(object.name)} t`,
       exportCsv ? "export" : true,
       edit,
+      undefined,
+      false,
+      edit ? `${object.owner}.${object.name}` : undefined,
     );
   }
 
@@ -994,7 +998,12 @@ export default function App() {
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
                         command={tab.sql.command}
+                        active={tab.id === programId}
                         onEditObject={(object) => {
+                          if (object.object_type === "TABLE") {
+                            queryData(object, true, false, tab.connection);
+                            return;
+                          }
                           const type = commandObjectTypes[object.object_type as keyof typeof commandObjectTypes];
                           if (type) void onOpenObject({ ...object, object_type: type, status: "Valid", last_ddl_time: "" }, "edit", tab.connection);
                         }}

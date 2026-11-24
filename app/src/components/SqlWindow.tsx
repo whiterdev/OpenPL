@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -28,6 +28,7 @@ import "./SqlWindow.css";
 interface Props {
   sessionId: string;
   command?: boolean;
+  active?: boolean;
   onEditObject?: (object: CompletionObject) => void;
   initialSql?: string;
   testSettings?: TestSettings;
@@ -89,7 +90,7 @@ const editCommand = /^edit(?:\s|$)/i;
 const editTarget = /^edit\s+(?:([\w$#]+)\.)?([\w$#]+);?$/i;
 
 export function SqlWindow({
-  sessionId, command = false, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -113,6 +114,10 @@ export function SqlWindow({
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
   const terminal = useRef<HTMLDivElement>(null);
+  const commandInput = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    if (command && active) commandInput.current?.focus({ preventScroll: true });
+  }, [command, active]);
   const [prompt, setPrompt] = useState("");
   const [commandLines, setCommandLines] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
@@ -752,12 +757,12 @@ export function SqlWindow({
           void run(statements, true);
         }}>
           <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
-          <textarea id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
+          <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
             role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
             aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
             aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
-            value={prompt} readOnly={running} autoFocus
+            value={prompt} readOnly={running}
             onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.nativeEvent.isComposing) {

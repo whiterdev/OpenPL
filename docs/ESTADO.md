@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- El prompt recupera el foco al entrar a la consola. `EDIT` sobre una tabla abre una pestaña de datos con edición habilitada.
+
 - `EDIT` completa solo en el esquema indicado o en el usuario conectado. Las pruebas de rutinas generan binds de salida tipados y usan comillas únicamente para los identificadores que las necesitan.
 
 - La ventana de comandos presenta una terminal con entrada al final de la transcripción y continuación numerada. [Comandos](behavior/comandos.md).
