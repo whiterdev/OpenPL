@@ -1,7 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { EditorSelection, EditorState, type Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { indentKeys } from "./ProgramEditor";
+import { tags } from "@lezer/highlight";
+import { indentKeys, programSyntax } from "./ProgramEditor";
+
+// Vitest vacía los imports ?raw de CSS; el proyecto no tiene @types/node.
+type Fs = { readFileSync(path: string, encoding: "utf8"): string };
+const fs = (globalThis as unknown as { process: { getBuiltinModule(id: string): Fs } }).process.getBuiltinModule("node:fs");
+const windowCss = fs.readFileSync("src/components/ProgramWindow.css", "utf8");
+
+describe("programSyntax", () => {
+  it("los comentarios van en cursiva con --cm", () => {
+    const comment = programSyntax.specs.find((spec) => spec.tag === tags.comment);
+    expect(comment).toMatchObject({ color: "var(--cm)", fontStyle: "italic" });
+  });
+
+  it("los comentarios tienen otra clase que las palabras clave", () => {
+    const comment = programSyntax.style([tags.comment]);
+    expect(comment).toBeTruthy();
+    expect(comment).not.toBe(programSyntax.style([tags.keyword]));
+  });
+});
+
+describe("estilos del editor", () => {
+  const rules = (selector: string) =>
+    windowCss.split("\n").filter((line) => line.startsWith(".program-editor") && line.includes(selector));
+
+  it("la selección usa --sel sin !important", () => {
+    const selection = rules(".cm-selectionBackground");
+    expect(selection.length).toBeGreaterThan(0);
+    expect(selection.join("\n")).toContain("var(--sel)");
+    expect(selection.join("\n")).not.toContain("!important");
+    expect(rules(".cm-focused").join("\n")).toContain("var(--sel)");
+  });
+
+  it("las coincidencias usan --selMatch", () => {
+    expect(rules(".cm-selectionMatch").join("\n")).toContain("var(--selMatch)");
+  });
+
+  it("la línea activa es translúcida", () => {
+    expect(rules(".cm-activeLine").join("\n")).toContain("var(--activeLine)");
+  });
+});
 
 function press(key: "Tab" | "Shift-Tab", doc: string, selection: EditorSelection) {
   let state = EditorState.create({ doc, selection });

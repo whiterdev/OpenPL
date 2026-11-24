@@ -20,7 +20,7 @@ export const programSyntax = HighlightStyle.define([
   { tag: tags.typeName, color: "var(--ty)" },
   { tag: tags.string, color: "var(--st)" },
   { tag: tags.number, color: "var(--nu)" },
-  { tag: tags.comment, color: "var(--muted)" },
+  { tag: tags.comment, color: "var(--cm)", fontStyle: "italic" },
 ]);
 
 const INDENT = "  ";

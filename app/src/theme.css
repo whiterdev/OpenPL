@@ -4,6 +4,7 @@
 @import "@fontsource/ibm-plex-sans/600.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/400-italic.css";
 
 :root {
     --s0: #212327;
@@ -31,8 +32,11 @@
     --ty: #d6b27a;
     --st: #a7c08e;
     --nu: #da8f6e;
-    --cm: #7e7a72;
+    --cm: #a5a097;
     --fn: #c7a2d9;
+    --sel: rgba(201, 154, 59, 0.3);
+    --selMatch: rgba(141, 178, 203, 0.18);
+    --activeLine: rgba(255, 255, 255, 0.03);
     --font-ui: "IBM Plex Sans", system-ui, sans-serif;
     --font-code: "IBM Plex Mono", ui-monospace, monospace;
     color-scheme: dark;

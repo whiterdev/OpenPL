@@ -171,11 +171,14 @@ body.resizing-columns { cursor: col-resize; user-select: none; }
 .program-editor .cm-editor { height: 100%; background: var(--s0); }
 .program-editor .cm-scroller { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
 .program-editor .cm-gutters { background: var(--s1); color: var(--muted); border-color: var(--line); }
-.program-editor .cm-editor .cm-activeLine, .program-editor .cm-editor .cm-activeLineGutter { background: var(--s2); }
+.program-editor .cm-editor .cm-activeLine, .program-editor .cm-editor .cm-activeLineGutter { background: var(--activeLine); }
 .program-editor .cm-content { caret-color: var(--text); }
 .program-editor .cm-editor .cm-cursor { border-left-color: var(--text); }
 .program-editor .cm-foldPlaceholder { background: var(--s2); border-color: var(--line2); color: var(--muted); }
-.program-editor .cm-editor .cm-selectionBackground { background: var(--s3) !important; }
+/* La regla con foco lleva cinco clases para ganarle al tema base de CodeMirror sin !important. */
+.program-editor .cm-editor .cm-selectionLayer .cm-selectionBackground,
+.program-editor .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground { background: var(--sel); }
+.program-editor .cm-editor .cm-selectionMatch { background: var(--selMatch); }
 .program-editor .cm-panels, .program-editor .cm-tooltip { background: var(--s1); color: var(--text); border-color: var(--line2); }
 .program-editor .cm-textfield, .program-editor .cm-button { background: var(--s2); color: var(--text); border-color: var(--line2); }
 .program-editor .cm-textfield { border-color: var(--field-line); }
