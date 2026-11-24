@@ -152,8 +152,10 @@ test("la estructura muestra una línea por entrada y se puede ensanchar", () => 
   render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source: spec }]} />);
   const outline = screen.getByRole("complementary", { name: "Estructura" });
   const entry = within(outline).getByRole("button", { name: /registrar/ });
-  expect(entry).toHaveAttribute("title", "registrar(p_id NUMBER, p_nombre VARCHAR2, p_fecha DATE)");
+  expect(entry).toHaveAttribute("title", "Procedimiento · registrar(p_id NUMBER, p_nombre VARCHAR2, p_fecha DATE)");
   expect(entry.querySelector(".program-outline-name")).toHaveTextContent("registrar(");
+  expect(entry).toHaveAccessibleName(/^Procedimiento registrar\(/);
+  expect(entry.querySelector(".decl-badge")).toHaveTextContent("P");
 
   const handle = screen.getByRole("separator", { name: "Ancho de Estructura" });
   expect(handle).toHaveAttribute("aria-valuenow", "240");
@@ -237,7 +239,7 @@ test("el editor de solo lectura pliega y despliega sin modificar la fuente", () 
   expect(foldedRanges(view.state).size).toBe(0);
 
   act(() => ref.current!.foldBlock!());
-  fireEvent.click(screen.getByRole("button", { name: "g_total" }));
+  fireEvent.click(screen.getByRole("button", { name: "Variable g_total" }));
   expect(foldedRanges(view.state).size).toBe(0);
   expect(view.state.selection.main.head).toBe(source.indexOf("g_total"));
   expect(view.state.doc.toString()).toBe(source);

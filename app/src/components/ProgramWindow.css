@@ -81,6 +81,27 @@
     font-family: var(--font-code);
     font-size: 12px;
 }
+.decl-badge {
+    flex: 0 0 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-family: var(--font-code);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1;
+}
+.decl-procedure { color: var(--kw); }
+.decl-function { color: var(--fn); }
+.decl-package, .decl-trigger { color: var(--accent); }
+.decl-cursor { color: var(--st); }
+.decl-type { color: var(--ty); }
+.decl-variable { color: var(--muted); }
+.decl-constant { color: var(--nu); }
+.decl-exception { color: var(--err); }
 .program-outline small { flex-shrink: 0; font-size: 11px; color: var(--muted); }
 .program-outline-resizer {
     flex: 0 0 5px;

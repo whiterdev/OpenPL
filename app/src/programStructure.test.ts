@@ -77,3 +77,22 @@ test("una declaración adelantada navega a la implementación cuando está dispo
   expect(outline.map(({ label }) => label)).toEqual(["registrar(p_id NUMBER)", "ultima"]);
   expect(outline[0].from).toBe(source.lastIndexOf("registrar"));
 });
+
+test("cada declaración indica su clase", () => {
+  const outline = programStructure(`PACKAGE PKG_VENTAS AS
+    g_total NUMBER;
+    c_limite CONSTANT NUMBER := 10;
+    e_sin_stock EXCEPTION;
+    TYPE t_fila IS RECORD (id NUMBER);
+    SUBTYPE t_id IS NUMBER;
+    CURSOR c_ventas IS SELECT 1 FROM dual;
+    PROCEDURE registrar(p_id NUMBER);
+    FUNCTION total RETURN NUMBER;
+  END;`);
+  expect(outline.map(({ name, kind }) => [name, kind])).toEqual([
+    ["G_TOTAL", "variable"], ["C_LIMITE", "constant"], ["E_SIN_STOCK", "exception"], ["T_FILA", "type"],
+    ["T_ID", "type"], ["C_VENTAS", "cursor"], ["REGISTRAR", "procedure"], ["TOTAL", "function"],
+  ]);
+  expect(programStructure("CREATE OR REPLACE PROCEDURE procesar IS BEGIN NULL; END;")[0].kind).toBe("procedure");
+  expect(programStructure("CREATE OR REPLACE TRIGGER trg_ventas BEFORE INSERT ON ventas BEGIN NULL; END;")[0].kind).toBe("trigger");
+});

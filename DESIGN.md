@@ -27,6 +27,7 @@ Fuente de dirección para toda interfaz nueva. Se aplica junto con el filtro ant
 | `--muted` | `#b1aca2` | Texto secundario y atajos. Mínimo 4.59:1 (sobre `--s3`). |
 | `--faint` | `#6e6b66` | Solo controles deshabilitados (WCAG los exime). Nunca texto informativo. |
 | `--accent` | `#c99a3b` | Ocre del logo. 5.59:1 sobre `--s1`. |
+| `--err` | `#ec8478` | Errores y excepciones. 4.62:1 sobre `--s2` (fila en hover). |
 | `--env-dev/qa/prod` | verde, ámbar, rojo | Entorno de la conexión. Siempre acompañado de texto. |
 | Sintaxis | `--kw`, `--ty`, `--st`, `--nu` | Todos sobre 6:1 contra `--s0`. Los comentarios usan `--muted`. |
 
@@ -42,6 +43,10 @@ Todo par nuevo de texto y fondo se mide con `contrast-check.py` de antislop-huma
 - Filas de 22 a 24 px y barras de 26 a 38 px: densidad de IDE, mucha información visible sin desplazar.
 - Radio de 4 px en botones y campos, 3 px en filas, 6 px en menús y diálogos. Nada con forma de píldora.
 - Paneles separados por líneas de 1 px, sin tarjetas.
+
+## Estructura del programa
+
+- Cada entrada lleva una insignia cuadrada con la letra de su clase: P procedimiento, F función, C cursor, V variable, N constante, T tipo, E excepción, K paquete, G trigger. Una letra se distingue mejor que un pictograma a 16 px y remite a la palabra clave que se escribe. El color repite el de la sintaxis de esa clase (todas sobre 4.6:1 en hover). El nombre completo de la clase va en el tooltip y en el nombre accesible.
 
 ## Sombras
 

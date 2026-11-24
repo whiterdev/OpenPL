@@ -1,6 +1,10 @@
 import { oracleDialect } from "./editorReference";
 
+export type DeclarationKind =
+  | "package" | "procedure" | "function" | "trigger" | "cursor" | "type" | "variable" | "constant" | "exception";
+
 export interface ProgramDeclaration {
+  kind: DeclarationKind;
   name: string;
   label: string;
   key: string;
@@ -94,6 +98,7 @@ function routine(tokens: Token[], start: number) {
   if (option >= 0) returnType.length = option;
   const signature = kind === "CURSOR" && !parts.length ? name.text : `${name.text}(${parts.map(format).join(", ")})`;
   const entry: ProgramDeclaration = {
+    kind: kind === "CURSOR" ? "cursor" : kind === "FUNCTION" ? "function" : "procedure",
     name: nameOf(name),
     label: returnType.length ? `${signature} RETURN ${format(returnType)}` : signature,
     key: JSON.stringify([kind, nameOf(name), parts.map(normalizedParameter), returnType.map((token) => token.key)]),
@@ -185,7 +190,10 @@ function packageMembers(tokens: Token[], start: number, blocks: BlockEnds, addFo
     const end = boundary(tokens, i, statementEnd);
     const name = key === "TYPE" || key === "SUBTYPE" ? tokens[i + 1] : tokens[i];
     if (key !== "PRAGMA" && end > i + 1 && isIdentifier(name) && isIdentifier(tokens[i + 1])) {
-      const entry = { name: nameOf(name), label: name.text, key: nameOf(name), from: name.from, definition: false };
+      const kind: DeclarationKind = key === "TYPE" || key === "SUBTYPE" ? "type"
+        : tokens[i + 1].key === "CONSTANT" ? "constant"
+          : tokens[i + 1].key === "EXCEPTION" ? "exception" : "variable";
+      const entry = { kind, name: nameOf(name), label: name.text, key: nameOf(name), from: name.from, definition: false };
       entries.set(entry.key, entry);
     }
     i = end + 1;
@@ -224,7 +232,8 @@ function analyzeUnit(tokens: Token[], blocks: BlockEnds, addFold: AddFold): Prog
       return entries;
     }
   }
-  return [{ name: nameOf(name), label: name.text, key: nameOf(name), from: name.from, definition: false }];
+  const unitKind: DeclarationKind = kind === "TRIGGER" ? "trigger" : kind === "TYPE" ? "type" : "package";
+  return [{ kind: unitKind, name: nameOf(name), label: name.text, key: nameOf(name), from: name.from, definition: false }];
 }
 
 /** Analiza la estructura del primer programa del documento. */
