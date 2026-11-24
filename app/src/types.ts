@@ -73,7 +73,12 @@ export interface EditTarget {
 }
 
 export type RowChange =
-  | { kind: "Update"; rowid: string; original: Record<string, string | null>; values: Record<string, string | null> }
+  | {
+      kind: "Update";
+      rowid: string;
+      original: Record<string, string | null>;
+      values: Record<string, string | null>;
+    }
   | { kind: "Delete"; rowid: string; original: Record<string, string | null> }
   | { kind: "Insert"; values: Record<string, string | null> };
 
@@ -84,7 +89,13 @@ export interface Conflict {
 }
 
 export type ApplyResult =
-  | { kind: "Applied"; updated: number; deleted: number; inserted: string[]; transaction: boolean }
+  | {
+      kind: "Applied";
+      updated: number;
+      deleted: number;
+      inserted: string[];
+      transaction: boolean;
+    }
   | { kind: "Conflicts"; conflicts: Conflict[] };
 
 export interface ExecOutcome {
@@ -182,7 +193,12 @@ export interface ProgramPart {
   kind: string;
   source: string;
   last_ddl_time: string | null;
-  diagnostics: { line: number; column: number; text: string; warning: boolean }[];
+  diagnostics: {
+    line: number;
+    column: number;
+    text: string;
+    warning: boolean;
+  }[];
 }
 
 export interface CompletionObject {
@@ -217,7 +233,12 @@ export function describeError(e: unknown): {
     const o = e as Record<string, unknown>;
     if (o.Db && typeof o.Db === "object") {
       const d = o.Db as DbError;
-      return { code: d.code, kind: d.kind, message: d.message, offset: d.offset ?? null };
+      return {
+        code: d.code,
+        kind: d.kind,
+        message: d.message,
+        offset: d.offset ?? null,
+      };
     }
     for (const k of ["Io", "Json", "Secret"])
       if (typeof o[k] === "string")

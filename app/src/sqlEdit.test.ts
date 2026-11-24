@@ -3,19 +3,26 @@ import { editableQuery, ROWID_COLUMN } from "./sqlEdit";
 
 describe("editableQuery", () => {
   test("agrega el ROWID oculto en una consulta de una tabla", () => {
-    expect(editableQuery("select * from clientes where ciudad = :c order by id")).toEqual({
+    expect(
+      editableQuery("select * from clientes where ciudad = :c order by id"),
+    ).toEqual({
       table: { owner: null, name: "CLIENTES" },
       sql: `select clientes.ROWID AS "${ROWID_COLUMN}", clientes.* from clientes where ciudad = :c order by id`,
     });
   });
 
   test("usa el alias y conserva esquema, comillas y FOR UPDATE", () => {
-    expect(editableQuery('SELECT c.id, c.nombre FROM hr."Clientes 2026" c FOR UPDATE')).toEqual({
+    expect(
+      editableQuery(
+        'SELECT c.id, c.nombre FROM hr."Clientes 2026" c FOR UPDATE',
+      ),
+    ).toEqual({
       table: { owner: "HR", name: "Clientes 2026" },
       sql: `SELECT c.ROWID AS "${ROWID_COLUMN}", c.id, c.nombre FROM hr."Clientes 2026" c FOR UPDATE`,
     });
-    expect(editableQuery("select t.* from ventas t")?.sql)
-      .toBe(`select t.ROWID AS "${ROWID_COLUMN}", t.* from ventas t`);
+    expect(editableQuery("select t.* from ventas t")?.sql).toBe(
+      `select t.ROWID AS "${ROWID_COLUMN}", t.* from ventas t`,
+    );
   });
 
   test.each([

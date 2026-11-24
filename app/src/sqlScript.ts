@@ -11,12 +11,49 @@ export interface ScriptStatement {
 }
 
 const SQLPLUS = new Set([
-  "SET", "PROMPT", "SPOOL", "DEFINE", "UNDEFINE", "SHOW", "EXEC", "EXECUTE", "VARIABLE", "VAR", "PRINT",
-  "COLUMN", "COL", "CONNECT", "CONN", "DISCONNECT", "WHENEVER", "ACCEPT", "PAUSE", "REM", "REMARK", "CLEAR",
-  "BREAK", "COMPUTE", "TTITLE", "BTITLE", "DESC", "DESCRIBE", "HOST", "START", "EXIT", "QUIT", "TIMING", "SPO",
+  "SET",
+  "PROMPT",
+  "SPOOL",
+  "DEFINE",
+  "UNDEFINE",
+  "SHOW",
+  "EXEC",
+  "EXECUTE",
+  "VARIABLE",
+  "VAR",
+  "PRINT",
+  "COLUMN",
+  "COL",
+  "CONNECT",
+  "CONN",
+  "DISCONNECT",
+  "WHENEVER",
+  "ACCEPT",
+  "PAUSE",
+  "REM",
+  "REMARK",
+  "CLEAR",
+  "BREAK",
+  "COMPUTE",
+  "TTITLE",
+  "BTITLE",
+  "DESC",
+  "DESCRIBE",
+  "HOST",
+  "START",
+  "EXIT",
+  "QUIT",
+  "TIMING",
+  "SPO",
 ]);
-const PLSQL_UNITS = /^(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE|LIBRARY|JAVA)\b/;
-const CLOSERS: Record<string, string> = { "[": "]", "(": ")", "{": "}", "<": ">" };
+const PLSQL_UNITS =
+  /^(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE|LIBRARY|JAVA)\b/;
+const CLOSERS: Record<string, string> = {
+  "[": "]",
+  "(": ")",
+  "{": "}",
+  "<": ">",
+};
 
 /** Si en `i` empieza un literal o comentario, devuelve dónde termina; si no, -1. */
 function skipOpaque(source: string, i: number): number {
@@ -30,7 +67,12 @@ function skipOpaque(source: string, i: number): number {
     const end = source.indexOf("*/", i + 2);
     return end < 0 ? source.length : end + 2;
   }
-  if ((c === "q" || c === "Q") && next === "'" && i + 2 < source.length && !/[\w$#]/.test(source[i - 1] ?? "")) {
+  if (
+    (c === "q" || c === "Q") &&
+    next === "'" &&
+    i + 2 < source.length &&
+    !/[\w$#]/.test(source[i - 1] ?? "")
+  ) {
     const open = source[i + 2];
     const close = CLOSERS[open] ?? open;
     const end = source.indexOf(`${close}'`, i + 3);
@@ -40,7 +82,10 @@ function skipOpaque(source: string, i: number): number {
     let j = i + 1;
     while (j < source.length) {
       if (source[j] === c) {
-        if (source[j + 1] === c) { j += 2; continue; }
+        if (source[j + 1] === c) {
+          j += 2;
+          continue;
+        }
         return j + 1;
       }
       j += 1;
@@ -58,12 +103,17 @@ function slashLine(source: string, lineStart: number): number {
 }
 
 function firstWords(source: string, i: number) {
-  return source.slice(i, i + 120).toUpperCase().replace(/\s+/g, " ");
+  return source
+    .slice(i, i + 120)
+    .toUpperCase()
+    .replace(/\s+/g, " ");
 }
 
 function isPlsqlStart(head: string) {
   if (/^(?:DECLARE|BEGIN)\b/.test(head)) return true;
-  const create = /^CREATE (?:OR REPLACE )?(?:(?:NON)?EDITIONABLE )?(.*)$/.exec(head);
+  const create = /^CREATE (?:OR REPLACE )?(?:(?:NON)?EDITIONABLE )?(.*)$/.exec(
+    head,
+  );
   return !!create && PLSQL_UNITS.test(create[1]);
 }
 
@@ -77,15 +127,25 @@ export function splitScript(source: string): ScriptStatement[] {
   let i = 0;
   const push = (kind: StatementKind, from: number, to: number) => {
     const end = trimEnd(source, from, to);
-    if (end > from) out.push({ kind, text: source.slice(from, end), from, to: end });
+    if (end > from)
+      out.push({ kind, text: source.slice(from, end), from, to: end });
   };
 
   while (i < source.length) {
     // Saltar espacios, comentarios y terminadores sueltos entre sentencias.
-    if (/\s|;/.test(source[i])) { i += 1; continue; }
-    if (source.startsWith("--", i) || source.startsWith("/*", i)) { i = skipOpaque(source, i); continue; }
+    if (/\s|;/.test(source[i])) {
+      i += 1;
+      continue;
+    }
+    if (source.startsWith("--", i) || source.startsWith("/*", i)) {
+      i = skipOpaque(source, i);
+      continue;
+    }
     const lineStart = source.lastIndexOf("\n", i - 1) + 1;
-    if (source[i] === "/" && slashLine(source, lineStart) > 0) { i = slashLine(source, lineStart); continue; }
+    if (source[i] === "/" && slashLine(source, lineStart) > 0) {
+      i = slashLine(source, lineStart);
+      continue;
+    }
 
     const start = i;
     const head = firstWords(source, start);
@@ -104,12 +164,23 @@ export function splitScript(source: string): ScriptStatement[] {
     let next = source.length;
     while (j < source.length) {
       const skip = skipOpaque(source, j);
-      if (skip > 0) { j = skip; continue; }
+      if (skip > 0) {
+        j = skip;
+        continue;
+      }
       if (source[j] === "\n") {
         const after = slashLine(source, j + 1);
-        if (after > 0) { end = j; next = after; break; }
+        if (after > 0) {
+          end = j;
+          next = after;
+          break;
+        }
       }
-      if (!plsql && source[j] === ";") { end = j; next = j + 1; break; }
+      if (!plsql && source[j] === ";") {
+        end = j;
+        next = j + 1;
+        break;
+      }
       j += 1;
     }
     push(plsql ? "plsql" : "sql", start, end);
@@ -119,7 +190,10 @@ export function splitScript(source: string): ScriptStatement[] {
 }
 
 /** La sentencia que contiene `position`, o la última que termina antes; si no hay, la primera. */
-export function statementAt(list: ScriptStatement[], position: number): ScriptStatement | null {
+export function statementAt(
+  list: ScriptStatement[],
+  position: number,
+): ScriptStatement | null {
   let best: ScriptStatement | null = null;
   for (const statement of list) {
     if (statement.from <= position) best = statement;

@@ -12,13 +12,34 @@ export interface EditableQuery {
 const NAME = /^(?:"[^"]+"|[\p{L}][\p{L}\p{N}_$#]*)$/u;
 // Cualquiera de estas a nivel superior impide asociar cada fila a una fila de la tabla.
 const BLOCKERS = new Set([
-  "DISTINCT", "UNIQUE", "GROUP", "UNION", "INTERSECT", "MINUS", "CONNECT", "JOIN", "PIVOT", "UNPIVOT", "MODEL",
-  "HAVING", "START",
+  "DISTINCT",
+  "UNIQUE",
+  "GROUP",
+  "UNION",
+  "INTERSECT",
+  "MINUS",
+  "CONNECT",
+  "JOIN",
+  "PIVOT",
+  "UNPIVOT",
+  "MODEL",
+  "HAVING",
+  "START",
 ]);
-const AFTER_TABLE = new Set(["WHERE", "ORDER", "FOR", "FETCH", "OFFSET", "SAMPLE", "PARTITION", "AS"]);
+const AFTER_TABLE = new Set([
+  "WHERE",
+  "ORDER",
+  "FOR",
+  "FETCH",
+  "OFFSET",
+  "SAMPLE",
+  "PARTITION",
+  "AS",
+]);
 
 const isName = (token: Token | undefined) => !!token && NAME.test(token.text);
-const nameOf = (token: Token) => token.text.startsWith('"') ? token.text.slice(1, -1) : token.key;
+const nameOf = (token: Token) =>
+  token.text.startsWith('"') ? token.text.slice(1, -1) : token.key;
 
 export function editableQuery(sql: string): EditableQuery | null {
   const tokens = tokenize(sql);
@@ -45,13 +66,17 @@ export function editableQuery(sql: string): EditableQuery | null {
     end = i + 2;
   }
   i = end + 1;
-  let ref = sql.slice(tokens[from + 1].from, tokens[end].from + tokens[end].text.length);
+  let ref = sql.slice(
+    tokens[from + 1].from,
+    tokens[end].from + tokens[end].text.length,
+  );
   if (isName(tokens[i]) && !AFTER_TABLE.has(tokens[i].key)) {
     ref = tokens[i].text;
     i += 1;
   }
   // Tras la tabla solo puede seguir una cláusula, nunca otra tabla.
-  if (tokens[i] && !AFTER_TABLE.has(tokens[i].key) && tokens[i].key !== ";") return null;
+  if (tokens[i] && !AFTER_TABLE.has(tokens[i].key) && tokens[i].key !== ";")
+    return null;
 
   const select = tokens[0];
   const list = tokens.slice(1, from);
@@ -59,7 +84,13 @@ export function editableQuery(sql: string): EditableQuery | null {
   const rowid = ` ${ref}.ROWID AS "${ROWID_COLUMN}",`;
   if (list.length === 1 && list[0].text === "*") {
     const star = list[0];
-    return { table, sql: `${head}${rowid} ${ref}.*${sql.slice(star.from + 1)}` };
+    return {
+      table,
+      sql: `${head}${rowid} ${ref}.*${sql.slice(star.from + 1)}`,
+    };
   }
-  return { table, sql: `${head}${rowid}${sql.slice(select.from + select.text.length)}` };
+  return {
+    table,
+    sql: `${head}${rowid}${sql.slice(select.from + select.text.length)}`,
+  };
 }

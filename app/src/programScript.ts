@@ -8,13 +8,22 @@ const header = new RegExp(
   "iu",
 );
 
-const dictionaryName = (name: string) => name.startsWith('"') ? name.slice(1, -1) : name.toUpperCase();
+const dictionaryName = (name: string) =>
+  name.startsWith('"') ? name.slice(1, -1) : name.toUpperCase();
 const quoted = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
 /** Califica el encabezado para que la ejecución manual apunte al objeto abierto. */
-export function prepareProgramScript(source: string, kind: string, target: CompilationTarget): string {
-  const text = source.replace(/\r\n?/g, "\n").trimEnd().replace(/\n[ \t]*\/$/, "");
-  if (/^[ \t]*\/[ \t]*$/m.test(text)) throw new Error("Hay más de un bloque en el borrador.");
+export function prepareProgramScript(
+  source: string,
+  kind: string,
+  target: CompilationTarget,
+): string {
+  const text = source
+    .replace(/\r\n?/g, "\n")
+    .trimEnd()
+    .replace(/\n[ \t]*\/$/, "");
+  if (/^[ \t]*\/[ \t]*$/m.test(text))
+    throw new Error("Hay más de un bloque en el borrador.");
   const match = header.exec(text);
   if (!match) throw new Error("Encabezado CREATE OR REPLACE inválido.");
 
@@ -22,8 +31,12 @@ export function prepareProgramScript(source: string, kind: string, target: Compi
   const owner = second ? dictionaryName(first) : target.owner;
   const name = dictionaryName(second ?? first);
   const remainder = text.slice(match[0].length);
-  if (declaredKind.toUpperCase().replace(/\s+/g, " ") !== kind
-    || owner !== target.owner || name !== target.name || /^[.@]/.test(remainder.trimStart())) {
+  if (
+    declaredKind.toUpperCase().replace(/\s+/g, " ") !== kind ||
+    owner !== target.owner ||
+    name !== target.name ||
+    /^[.@]/.test(remainder.trimStart())
+  ) {
     throw new Error("El encabezado no coincide con el objeto abierto.");
   }
 

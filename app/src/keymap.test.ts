@@ -13,7 +13,13 @@ describe("keymap", () => {
 
   test("Ctrl Space completa en el editor", () => {
     expect(commands.complete.keys).toBe("Ctrl+Space");
-    const ev = { key: " ", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
+    const ev = {
+      key: " ",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+    };
     expect(matches(ev, "Ctrl+Space")).toBe(true);
     expect(matches({ ...ev, ctrlKey: false }, "Ctrl+Space")).toBe(false);
   });
@@ -60,23 +66,51 @@ describe("keymap", () => {
   });
 
   test("un atajo registrado sin acción igual se bloquea (F5, Ctrl R no recargan la ventana)", () => {
-    const ev = { key: "F5", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    const ev = {
+      key: "F5",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    };
     expect(handleShortcut(ev, {})).toBe(false);
     expect(ev.preventDefault).toHaveBeenCalled();
-    const r = { key: "r", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    const r = {
+      key: "r",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    };
     handleShortcut(r, {});
     expect(r.preventDefault).toHaveBeenCalled();
   });
 
   test("handleShortcut ejecuta la acción del atajo", () => {
     const run = vi.fn();
-    const ev = { key: "b", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    const ev = {
+      key: "b",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    };
     expect(handleShortcut(ev, { toggleExplorer: run })).toBe(true);
     expect(run).toHaveBeenCalled();
   });
 
   test("teclas sin atajo no se bloquean", () => {
-    const ev = { key: "a", ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, preventDefault: vi.fn() };
+    const ev = {
+      key: "a",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    };
     handleShortcut(ev, {});
     expect(ev.preventDefault).not.toHaveBeenCalled();
   });

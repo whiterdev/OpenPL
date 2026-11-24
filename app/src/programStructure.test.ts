@@ -27,7 +27,11 @@ test("distingue globales de locales y recupera el siguiente miembro después de 
   END PKG_VENTAS;`;
   const outline = programStructure(source);
   expect(outline.map(({ label }) => label)).toEqual([
-    "g_total", '"Mi Constante"', "t_fila", "registrar(p_id IN NUMBER)", "g_estado",
+    "g_total",
+    '"Mi Constante"',
+    "t_fila",
+    "registrar(p_id IN NUMBER)",
+    "g_estado",
   ]);
   expect(outline[1].from).toBe(source.indexOf('"Mi Constante"'));
 });
@@ -48,16 +52,22 @@ test("empareja firmas públicas aunque los encabezados tengan valores por defect
     CURSOR filas(p_id NUMBER) RETURN t_fila IS SELECT 1 FROM dual;
   END;`);
   expect(spec.map((entry) => entry.label)).toEqual([
-    "registrar(p_id IN NUMBER, p_fecha DATE)", "calcular(p_id NUMBER) RETURN NUMBER", "filas(p_id NUMBER) RETURN t_fila",
+    "registrar(p_id IN NUMBER, p_fecha DATE)",
+    "calcular(p_id NUMBER) RETURN NUMBER",
+    "filas(p_id NUMBER) RETURN t_fila",
   ]);
-  expect(body.map((entry) => spec.some(({ key }) => key === entry.key))).toEqual([true, false, true, true]);
+  expect(
+    body.map((entry) => spec.some(({ key }) => key === entry.key)),
+  ).toEqual([true, false, true, true]);
 });
 
 test("incluye la rutina independiente y excluye sus declaraciones locales", () => {
-  expect(programStructure(`CREATE OR REPLACE PROCEDURE HR.procesar(p_ref NUMBER) IS
+  expect(
+    programStructure(`CREATE OR REPLACE PROCEDURE HR.procesar(p_ref NUMBER) IS
     l_temp VARCHAR2(1);
     PROCEDURE local IS BEGIN NULL; END;
-  BEGIN NULL; END;`).map((entry) => entry.label)).toEqual(["procesar(p_ref NUMBER)"]);
+  BEGIN NULL; END;`).map((entry) => entry.label),
+  ).toEqual(["procesar(p_ref NUMBER)"]);
 });
 
 test("un SELECT con un nombre que parece tipo no se interpreta como un programa", () => {
@@ -74,7 +84,10 @@ test("una declaración adelantada navega a la implementación cuando está dispo
     ultima BOOLEAN;
   END;`;
   const outline = programStructure(source);
-  expect(outline.map(({ label }) => label)).toEqual(["registrar(p_id NUMBER)", "ultima"]);
+  expect(outline.map(({ label }) => label)).toEqual([
+    "registrar(p_id NUMBER)",
+    "ultima",
+  ]);
   expect(outline[0].from).toBe(source.lastIndexOf("registrar"));
 });
 
@@ -90,9 +103,23 @@ test("cada declaración indica su clase", () => {
     FUNCTION total RETURN NUMBER;
   END;`);
   expect(outline.map(({ name, kind }) => [name, kind])).toEqual([
-    ["G_TOTAL", "variable"], ["C_LIMITE", "constant"], ["E_SIN_STOCK", "exception"], ["T_FILA", "type"],
-    ["T_ID", "type"], ["C_VENTAS", "cursor"], ["REGISTRAR", "procedure"], ["TOTAL", "function"],
+    ["G_TOTAL", "variable"],
+    ["C_LIMITE", "constant"],
+    ["E_SIN_STOCK", "exception"],
+    ["T_FILA", "type"],
+    ["T_ID", "type"],
+    ["C_VENTAS", "cursor"],
+    ["REGISTRAR", "procedure"],
+    ["TOTAL", "function"],
   ]);
-  expect(programStructure("CREATE OR REPLACE PROCEDURE procesar IS BEGIN NULL; END;")[0].kind).toBe("procedure");
-  expect(programStructure("CREATE OR REPLACE TRIGGER trg_ventas BEFORE INSERT ON ventas BEGIN NULL; END;")[0].kind).toBe("trigger");
+  expect(
+    programStructure(
+      "CREATE OR REPLACE PROCEDURE procesar IS BEGIN NULL; END;",
+    )[0].kind,
+  ).toBe("procedure");
+  expect(
+    programStructure(
+      "CREATE OR REPLACE TRIGGER trg_ventas BEFORE INSERT ON ventas BEGIN NULL; END;",
+    )[0].kind,
+  ).toBe("trigger");
 });

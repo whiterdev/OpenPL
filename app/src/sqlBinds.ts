@@ -24,7 +24,8 @@ function scan(source: string, visit: Visit) {
       i = end < 0 ? source.length : end + 2;
     } else if (c === "'" || c === '"') {
       let j = i + 1;
-      while (j < source.length && !(source[j] === c && source[j + 1] !== c)) j += source[j] === c ? 2 : 1;
+      while (j < source.length && !(source[j] === c && source[j + 1] !== c))
+        j += source[j] === c ? 2 : 1;
       i = j + 1;
     } else {
       const jump = visit(i, c);
@@ -39,11 +40,16 @@ export function findVariables(source: string): SqlVariable[] {
   if (/^\s*create\b/i.test(source)) return [];
   const found = new Map<string, SqlVariable>();
   scan(source, (i, c) => {
-    if (c === ":" && source[i + 1] !== "=" && !/[\p{L}\p{N}_:]/u.test(source[i - 1] ?? "")) {
+    if (
+      c === ":" &&
+      source[i + 1] !== "=" &&
+      !/[\p{L}\p{N}_:]/u.test(source[i - 1] ?? "")
+    ) {
       const name = NAME.exec(source.slice(i + 1))?.[0];
       if (!name) return;
       const key = name.toUpperCase();
-      if (!found.has(`bind ${key}`)) found.set(`bind ${key}`, { kind: "bind", name, key });
+      if (!found.has(`bind ${key}`))
+        found.set(`bind ${key}`, { kind: "bind", name, key });
       return i + 1 + name.length;
     }
     if (c === "&") {
@@ -51,7 +57,8 @@ export function findVariables(source: string): SqlVariable[] {
       const name = NAME.exec(source.slice(i + amp))?.[0];
       if (!name) return;
       const key = name.toUpperCase();
-      if (!found.has(`subst ${key}`)) found.set(`subst ${key}`, { kind: "subst", name, key });
+      if (!found.has(`subst ${key}`))
+        found.set(`subst ${key}`, { kind: "subst", name, key });
       return i + amp + name.length;
     }
   });
@@ -59,7 +66,10 @@ export function findVariables(source: string): SqlVariable[] {
 }
 
 /** Reemplaza `&x` y `&&x` por el valor guardado con la clave `X`; sin valor, deja el texto como está. */
-export function applySubstitutions(source: string, values: Record<string, string>): string {
+export function applySubstitutions(
+  source: string,
+  values: Record<string, string>,
+): string {
   let out = "";
   let last = 0;
   scan(source, (i, c) => {

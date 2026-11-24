@@ -13,7 +13,8 @@ export const programFolding = foldService.of(({ doc }, lineStart) => {
       const line = doc.lineAt(opening);
       const from = line.to;
       const to = doc.lineAt(closing).from - 1;
-      if (to > from && to > (folds.get(line.from)?.to ?? 0)) folds.set(line.from, { from, to });
+      if (to > from && to > (folds.get(line.from)?.to ?? 0))
+        folds.set(line.from, { from, to });
     }
     documents.set(doc, folds);
   }

@@ -63,7 +63,12 @@ const list: Command[] = [
   { id: "palette", label: "Buscar comando", keys: "Ctrl+K", pending: true },
   { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
   { id: "test", label: "Probar", keys: "Ctrl+T", pending: true },
-  { id: "newCommand", label: "Nueva ventana de comando", keys: "Ctrl+Shift+N", pending: true },
+  {
+    id: "newCommand",
+    label: "Nueva ventana de comando",
+    keys: "Ctrl+Shift+N",
+    pending: true,
+  },
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
   { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },
   { id: "undo", label: "Deshacer", keys: "Ctrl+Z" },

@@ -4,7 +4,10 @@ import { expect, test } from "vitest";
 import { editorReference, oracleDialect } from "./editorReference";
 
 function reference(source: string, word: string) {
-  const state = EditorState.create({ doc: source, extensions: [sql({ dialect: oracleDialect })] });
+  const state = EditorState.create({
+    doc: source,
+    extensions: [sql({ dialect: oracleDialect })],
+  });
   return editorReference(state, source.lastIndexOf(word) + 1);
 }
 
@@ -12,12 +15,18 @@ test("reconoce el objeto al pulsar sobre el esquema o el nombre", () => {
   const source = "select * from hr . ventas";
   expect(reference(source, "hr")).toEqual({ owner: "HR", name: "VENTAS" });
   expect(reference(source, "ventas")).toEqual({ owner: "HR", name: "VENTAS" });
-  expect(reference("select * from ventas", "ventas")).toEqual({ owner: null, name: "VENTAS" });
+  expect(reference("select * from ventas", "ventas")).toEqual({
+    owner: null,
+    name: "VENTAS",
+  });
 });
 
 test("preserva los nombres Oracle entre comillas", () => {
-  expect(reference('select * from "Mi Esquema"."Tabla Mixta"', "Tabla")).toEqual({
-    owner: "Mi Esquema", name: "Tabla Mixta",
+  expect(
+    reference('select * from "Mi Esquema"."Tabla Mixta"', "Tabla"),
+  ).toEqual({
+    owner: "Mi Esquema",
+    name: "Tabla Mixta",
   });
 });
 
