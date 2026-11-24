@@ -70,6 +70,7 @@ const sqlTabActions = [
   "executeScript",
   "explainPlan",
   "fetchAllRows",
+  "exportData",
   "cancel",
   "commit",
   "rollback",
@@ -107,6 +108,7 @@ interface ProgramTab {
     sessionId: string;
     initial: string;
     run: boolean;
+    exportOnOpen?: boolean;
     edit?: boolean;
     test?: TestSettings;
     command?: boolean;
@@ -434,7 +436,7 @@ export default function App() {
   async function openSql(
     connection: ActiveConnection,
     initial = "",
-    run = false,
+    run: boolean | "export" = false,
     edit = false,
     test?: TestSettings,
     command = false,
@@ -448,7 +450,7 @@ export default function App() {
         connection,
         readOnly: false,
         dirty: false,
-        sql: { sessionId, initial, run, edit, test, command, transaction: false },
+        sql: { sessionId, initial, run: !!run, exportOnOpen: run === "export", edit, test, command, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -458,12 +460,12 @@ export default function App() {
     }
   }
 
-  function queryData(object: ObjectInfo, edit = false) {
+  function queryData(object: ObjectInfo, edit = false, exportCsv = false) {
     if (!active) return;
     void openSql(
       active,
       `SELECT t.* FROM ${quoteName(object.owner)}.${quoteName(object.name)} t`,
-      true,
+      exportCsv ? "export" : true,
       edit,
     );
   }
@@ -889,6 +891,7 @@ export default function App() {
             onNotice={showNotice}
             onQueryData={(object) => queryData(object)}
             onEditData={(object) => queryData(object, true)}
+            onExportData={(object) => queryData(object, false, true)}
             onTest={(object, x, y) => void testObject(active, object, x, y)}
           />
         )}
@@ -955,6 +958,7 @@ export default function App() {
                         command={tab.sql.command}
                         testSettings={tab.sql.test}
                         runOnOpen={tab.sql.run}
+                        exportOnOpen={tab.sql.exportOnOpen}
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}

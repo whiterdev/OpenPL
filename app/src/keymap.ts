@@ -2,6 +2,7 @@
 
 export type CommandId =
   | "fetchAllRows"
+  | "exportData"
   | "selectGridRows"
   | "copyGrid"
   | "execute"
@@ -60,6 +61,7 @@ export interface Command {
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
   { id: "fetchAllRows", label: "Traer todas", keys: "Ctrl+Shift+End" },
+  { id: "exportData", label: "Exportar CSV", keys: "Ctrl+Shift+X" },
   { id: "selectGridRows", label: "Seleccionar filas cargadas", keys: "Ctrl+A" },
   { id: "copyGrid", label: "Copiar", keys: "Ctrl+C" },
   // TODO(plan 4): ventana de prueba. TODO(fases posteriores): plan de ejecución, paleta, ventana de comando.

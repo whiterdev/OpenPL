@@ -14,6 +14,7 @@ import {
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
+import { copyGridCells } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
 import { applySubstitutions, findVariables } from "../sqlBinds";
@@ -31,6 +32,7 @@ interface Props {
   testSettings?: TestSettings;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
   runOnOpen?: boolean;
+  exportOnOpen?: boolean;
   /** Además, abrir la grilla en edición (Editar datos). */
   editOnOpen?: boolean;
   environment?: Environment;
@@ -84,7 +86,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function SqlWindow({
-  sessionId, command = false, initialSql = "", testSettings, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -219,7 +221,7 @@ export function SqlWindow({
     log("skip", `Comando no admitido: ${keyword.toUpperCase()}`);
   }
 
-  async function run(list: ScriptStatement[], entered = false) {
+  async function run(list: ScriptStatement[], entered = false, exportQuery = false) {
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setNotice("");
@@ -287,7 +289,9 @@ export function SqlWindow({
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
-          setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false });
+          const result = { cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false };
+          setGrid(result);
+          if (exportQuery) await exportRows(result);
           setSummary(null);
           if (command) {
             log("output", columns.map((column) => column.name).join("  "));
@@ -307,15 +311,16 @@ export function SqlWindow({
     }
   }
 
-  async function fetchAll() {
-    if (tab !== "results" || !grid?.more || running || applying || fetchingRef.current) return;
+  async function fetchAll(result = grid, forExport = false) {
+    if ((!forExport && (tab !== "results" || running)) || !result?.more || applying || fetchingRef.current) return;
     fetchingRef.current = true;
     stopFetchRef.current = false;
     setFetching(true);
     setSelected(null);
     setNotice("");
-    const cursor = grid.cursor;
-    let received = grid.rows.length;
+    const cursor = result.cursor;
+    let received = result.rows.length;
+    const exported = forExport ? [...result.rows] : [];
     const stopped = () => {
       setGrid((current) => current?.cursor === cursor ? { ...current, more: false } : current);
       setNotice(`Traer todas detenido. ${received === 1 ? "Se conserva 1 fila" : `Se conservan ${received} filas`}.`);
@@ -325,12 +330,14 @@ export function SqlWindow({
       do {
         const page = await api.sqlFetch(sessionId, cursor, FETCH_ALL);
         received += page.rows.length;
+        if (forExport) exported.push(...page.rows);
         setGrid((current) => current?.cursor === cursor
           ? { ...current, rows: [...current.rows, ...page.rows], more: page.more }
           : current);
         more = page.more;
       } while (more && !stopFetchRef.current);
       if (more) stopped();
+      else if (forExport) return exported;
     } catch (error) {
       const detail = describeError(error);
       if (detail.code === CANCELLED) {
@@ -345,6 +352,20 @@ export function SqlWindow({
     } finally {
       fetchingRef.current = false;
       setFetching(false);
+    }
+  }
+
+  async function exportRows(result: Grid) {
+    const rows = result.more ? await fetchAll(result, true) : result.rows;
+    if (!rows) return;
+    const offset = result.hiddenRowid ? 1 : 0;
+    const headers = result.columns.slice(offset).map((column) => column.name);
+    try {
+      const name = await api.saveProgramFile(copyGridCells([headers, ...rows.map((row) => row.slice(offset))], true),
+        "csv", "resultados.csv");
+      if (name) setNotice("CSV guardado");
+    } catch (error) {
+      setAlert(describeError(error).message);
     }
   }
 
@@ -551,6 +572,7 @@ export function SqlWindow({
     explainPlan: () => void explain(),
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    exportData: grid && !editSession && !running && !fetching && !applying ? () => void exportRows(grid) : undefined,
     fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
     cancel: running || fetching ? () => {
@@ -584,7 +606,7 @@ export function SqlWindow({
     if (editor && runOnOpen && !started.current) {
       started.current = true;
       queueMicrotask(async () => {
-        await run(splitScript(editor.state.doc.toString()));
+        await run(splitScript(editor.state.doc.toString()), false, exportOnOpen);
         if (editOnOpen) await toggleEdit();
       });
     }
@@ -737,6 +759,11 @@ export function SqlWindow({
               actions.fetchAllRows?.();
             }}>
               {commands.fetchAllRows.label} <span className="kbd">{key("fetchAllRows")}</span>
+            </button>
+          )}
+          {tab === "results" && grid && (
+            <button className="btn" onClick={actions.exportData} disabled={!actions.exportData}>
+              Exportar CSV <span className="kbd">{key("exportData")}</span>
             </button>
           )}
           {tab === "results" && grid && (

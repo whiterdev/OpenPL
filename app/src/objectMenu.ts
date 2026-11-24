@@ -16,6 +16,7 @@ export interface ObjectMenuHandlers {
   refresh: () => void;
   queryData?: () => void;
   editData?: () => void;
+  exportData?: () => void;
   test?: () => void;
 }
 
@@ -33,12 +34,12 @@ function dataGroup(t: ObjectType, h: ObjectMenuHandlers): MenuEntry[] {
     : { label: "Consultar datos", pending: true };
   if (t !== "Table") {
     // Vistas y vistas materializadas no tienen un ROWID útil para editar filas.
-    return ["sep", query, { label: "Editar datos" }];
+    return ["sep", query, { label: "Editar datos" }, { label: "Exportar datos", run: h.exportData }];
   }
   const edit: ContextItem = h.editData
     ? { label: "Editar datos", keys: editKeys, run: h.editData }
     : { label: "Editar datos", keys: editKeys, pending: true };
-  return ["sep", query, edit, { label: "Exportar datos", pending: true }];
+  return ["sep", query, edit, { label: "Exportar datos", run: h.exportData }];
 }
 
 export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry[] {

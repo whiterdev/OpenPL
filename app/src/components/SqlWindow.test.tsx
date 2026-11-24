@@ -57,6 +57,17 @@ test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => 
   expect(screen.getByRole("tabpanel", { name: "Plan" })).toHaveTextContent("TABLE ACCESS");
 });
 
+test("exporta CSV con encabezado y todas las páginas del cursor", async () => {
+  vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana, B"]], true));
+  const fetch = vi.spyOn(api, "sqlFetch").mockResolvedValue({ rows: [["2", "Beto"]], more: false });
+  const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("resultados.csv");
+  const { ref } = setup("SELECT 1 FROM DUAL;");
+  await act(async () => ref.current!.execute!());
+  await act(async () => ref.current!.exportData!());
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenCalledWith('ID,NOMBRE\r\n1,"Ana, B"\r\n2,Beto', "csv", "resultados.csv");
+});
+
 test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {
   setup("select 1 from dual");
   const divider = screen.getByRole("separator", { name: "Alto del editor" });

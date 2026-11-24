@@ -495,14 +495,14 @@ pub async fn save_program_file(
     name: Option<String>,
 ) -> Result<Option<String>, CoreError> {
     use tauri_plugin_dialog::DialogExt;
-    if !matches!(extension.as_str(), "pks" | "pkb" | "sql" | "tst") {
+    if !matches!(extension.as_str(), "pks" | "pkb" | "sql" | "tst" | "csv") {
         return Err(CoreError::Io("Extensión de programa inválida.".into()));
     }
     let dialog = app.dialog().file().add_filter(
-        if extension == "tst" {
-            "Prueba"
-        } else {
-            "PL/SQL"
+        match extension.as_str() {
+            "tst" => "Prueba",
+            "csv" => "CSV",
+            _ => "PL/SQL",
         },
         &[&extension],
     );
