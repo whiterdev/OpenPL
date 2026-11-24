@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (plan 4 planificado). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (plan 4 con plan, nota y regla de DEV; corrección de ORA-12704 en 42c4c36, pendiente de re-corrida contra DEV). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -12,7 +12,8 @@
 - Plan 2 (ventana de programa) **implementado, pendiente de validar contra Oracle**.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
 - Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
-  validación contra Oracle: la lectura espera la corrida con credenciales; las escrituras las prueba el usuario.
+  validación contra Oracle: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos ORA-12704;
+  corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
 - Plan 4 (ventana de prueba) **planificado**: plan y nota de comportamiento escritos. El código espera
   las respuestas del dueño a las decisiones abiertas y al mockup "3 · Ventana de prueba".
 - Verificación local en Windows (2026-11-24): `cargo fmt --check` y Clippy con `-D warnings` sin
@@ -20,12 +21,14 @@
   conectarse (imprimen `SKIP`); 170 pruebas de interfaz en 18 archivos; `tsc --noEmit` sin errores.
 - Pruebas `live` de lectura contra DEV (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
   Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
-  `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99); causa en análisis.
+  `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99); corrección en 42c4c36,
+  pendiente de re-corrida contra DEV.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
 - **No verificado todavía:** uso contra una base Oracle real (login, explorador, DDL, recompilar),
-  las pruebas `live` (necesitan `OPENPL_TEST_*`) y el CI (no hay constancia local de que haya corrido:
+  el resto de la validación contra base real (la corrida de lectura con `OPENPL_TEST_*` ya se hizo:
+  `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección) y el CI (no hay constancia local de que haya corrido:
   ninguna rama tiene upstream).
 
 ## Siguiente paso
@@ -37,8 +40,8 @@
    `edicion_en_grilla_solo_resuelve_tablas`. Resultado (2026-11-24, corrida del usuario, solo
    `SELECT`, sin escrituras): 4 de 6 OK. `live.rs` 2 de 2. `live_catalog.rs` 2 de 4: fallan con
    ORA-12704 (character set mismatch) `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`,
-   offset 500) y `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Causa en
-   análisis (ver "Pendiente inmediato").
+   offset 500) y `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99).
+   Corrección en 42c4c36, pendiente de re-corrida contra DEV (ver "Pendiente inmediato").
 2. Excluidas de las corridas de agentes: `clave_erronea_da_invalid_credentials` (login fallido en cada
    corrida, puede bloquear la cuenta de prueba) y `ventana_sql_pagina_salida_y_errores` (ejecuta
    bloques PL/SQL de `DBMS_OUTPUT`). Las decide el usuario.
@@ -249,10 +252,18 @@ producto; estas decisiones son posteriores y mandan sobre él:
      perfiles y contraseña guardada, explorador con los 35 tipos, Copiar DDL, Recompilar,
      reconexión, lectura de fuentes, menú de objeto, comparación, preparación de compilación,
      autocompletado y selector nativo de archivos).
-2. **ORA-12704 contra DEV** (causa en análisis): fallan `completa_objetos_y_columnas_sin_error`
-   (`live_catalog.rs:47`, offset 500) y `edicion_en_grilla_solo_resuelve_tablas`
-   (`live_catalog.rs:89`, offset 99). Son consultas de lectura, no es un fallo de escritura. Impacto:
-   contra DEV no funcionan completar objetos y columnas ni resolver la edición en grilla.
+2. **ORA-12704 contra DEV** (corrección en 42c4c36, pendiente de re-corrida contra DEV): fallaban
+   `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
+   `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Son consultas de
+   lectura, no es un fallo de escritura. Impacto: contra DEV fallaban `complete_objects`
+   (autocompletado de objetos) y `edit_target` (edición en grilla); la corrección cubre a los dos.
+   - Causa probable: binds NULL dentro de `COALESCE(..., SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))`,
+     la única diferencia con las pruebas que pasan.
+   - Corrección (`crates/openpl-core/src/catalog.rs`): los binds de texto que van en `COALESCE` o
+     `UNION ALL` pasan a `CAST(... AS VARCHAR2(4000))`. Verificada sin conexión: `cargo test`, fmt y
+     Clippy en verde.
+   - Si la re-corrida sigue dando ORA-12704: revisar el NLS de DEV (`NLS_NCHAR_CHARACTERSET`) con un
+     `SELECT` de solo lectura sobre `NLS_DATABASE_PARAMETERS`.
 3. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
 4. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
    falle (el YAML no se validó).
@@ -282,8 +293,8 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 
 ### Plan 3 — Ventana SQL (en curso: solo validación contra Oracle)
 - Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la
-  validación contra Oracle real: la lectura espera la corrida con credenciales; las escrituras las
-  prueba el usuario.
+  validación contra Oracle real: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos
+  ORA-12704; corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
 
 ### Plan 4 — Ventana de prueba (planificado, código en espera)
 - [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
