@@ -1,4 +1,5 @@
-//! Catálogo contra una base real (solo lectura). Requiere OPENPL_TEST_USER/PASSWORD/DB.
+//! Pruebas contra Oracle con OPENPL_TEST_USER/PASSWORD/DB.
+//! La prueba de ventana SQL usa DBMS_OUTPUT y queda fuera de las corridas de solo lectura.
 
 use openpl_core::catalog::{list_objects, ObjectType, Scope};
 use openpl_oracle::{ConnectParams, DbConn, Role};
@@ -31,6 +32,16 @@ fn lista_tablas_propias_sin_error() {
     let Some(c) = conn() else { return };
     let v = list_objects(&c, Scope::Mine, ObjectType::Table, None).unwrap();
     assert!(v.iter().all(|o| o.object_type == ObjectType::Table));
+}
+
+#[test]
+fn lee_firma_sin_ejecutar_la_rutina() {
+    let Some(c) = conn() else { return };
+    let signatures =
+        openpl_core::routine::list_overloads(&c, "SYS", Some("DBMS_OUTPUT"), "PUT_LINE").unwrap();
+    assert_eq!(signatures.len(), 1);
+    assert_eq!(signatures[0].parameters.len(), 1);
+    assert!(signatures[0].returns.is_none());
 }
 
 #[test]

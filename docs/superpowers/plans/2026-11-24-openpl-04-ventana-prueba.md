@@ -27,13 +27,14 @@
 - Los subprogramas privados de un cuerpo de paquete no se pueden llamar desde afuera: error claro, sin generar un bloque que falla.
 - El archivo `.tst` nunca guarda conexión, usuario ni contraseña.
 
-## Núcleo (fase código, espera aprobación)
+## Núcleo
 
-- [ ] **T1. Firma de rutinas.** `crates/openpl-core/src/routine.rs`.
-  - `group_overloads(rows) -> Vec<Overload>`, pura: agrupa filas de `ALL_ARGUMENTS` por `OVERLOAD`, ordena por `POSITION`, separa el retorno (`POSITION = 0`) y marca `DATA_LEVEL > 0` como parte de un tipo compuesto, no como parámetro.
+- [x] **T1. Firma de rutinas.** `crates/openpl-core/src/routine.rs`.
+  - `group_overloads(rows) -> Vec<Overload>`, pura: agrupa por `SUBPROGRAM_ID` y conserva `OVERLOAD` como etiqueta. Ordena por `POSITION`, separa el retorno (`POSITION = 0`) y adjunta las filas con `DATA_LEVEL > 0` a su argumento.
   - `list_overloads(conn, owner, package, name)`, Oracle, solo lectura: lee `ALL_ARGUMENTS` y confirma con `ALL_PROCEDURES` para cubrir las rutinas sin parámetros. Si la rutina no está en `ALL_PROCEDURES` (privada del cuerpo o inexistente), devuelve un error claro.
   - Metadatos verificados por DBX en desarrollo: ambas vistas exponen `SUBPROGRAM_ID` y `OVERLOAD`. Están disponibles `POSITION`, `SEQUENCE`, `DATA_LEVEL`, `DATA_TYPE`, `IN_OUT` y `DEFAULTED` en `ALL_ARGUMENTS`.
   - Pruebas: `group_overloads` con filas armadas a mano (función con retorno, procedimiento sin parámetros, dos sobrecargas, parámetro registro con campos); `live` de `list_overloads` solo con `SELECT` sobre `ALL_ARGUMENTS` y `ALL_PROCEDURES`, leyendo la firma de una rutina del sistema sin ejecutarla.
+  - Verificación DBX: el SELECT de la implementación, con valores literales de la rutina del sistema, devolvió la firma esperada en modo solo lectura. La prueba con binds de la app queda pendiente contra una base real.
   - Commit: `feat(core): firma y sobrecargas de rutinas`.
 
 - [ ] **T2. Generador del bloque.** `crates/openpl-core/src/testblock.rs`, función pura `generate(overload, uses) -> TestBlock` (texto del bloque más la lista de variables).

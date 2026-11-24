@@ -6,6 +6,7 @@ pub mod error;
 pub mod grid;
 pub mod profiles;
 pub mod program;
+pub mod routine;
 pub mod secrets;
 pub mod session;
 pub mod sql;

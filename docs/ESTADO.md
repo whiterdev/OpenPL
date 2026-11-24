@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (carga inicial de 50 filas y colores alternados en la grilla). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (grilla con 50 filas iniciales y lectura de firmas del plan 4). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -14,10 +14,10 @@
 - Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
   validación contra Oracle: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos ORA-12704;
   corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
-- Plan 4 (ventana de prueba) **planificado**: plan y nota de comportamiento escritos. El código espera
-  las respuestas del dueño a las decisiones abiertas y al mockup "3 · Ventana de prueba".
+- Plan 4 (ventana de prueba) **en curso**: lectura de firmas y sobrecargas implementada. La
+  interfaz espera las decisiones abiertas y el mockup "3 · Ventana de prueba".
 - Verificación local en Windows (2026-11-24): `cargo fmt --check`, Clippy con `-D warnings`
-  y `tsc --noEmit` pasan. Se ejecutaron 80 pruebas Rust sin base y 171 de interfaz. Las 8 pruebas
+  y `tsc --noEmit` pasan. Se ejecutaron 81 pruebas Rust sin base y 171 de interfaz. Las 9 pruebas
   Rust `live` terminan sin conectarse (imprimen `SKIP`).
 - Pruebas `live` de lectura contra DEV (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
   Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
@@ -182,10 +182,15 @@
   `DBMS_OUTPUT` incluso en consultas. Esa ruta no se usó contra una base en la verificación.
   [Auditoría de la grilla](../anti-slop/audit-002-2026-11-24.md)
 
-### Plan 4 — Verificación previa de metadatos
+### Plan 4 — Firmas y sobrecargas
 
-- Se confirmaron por DBX de solo lectura las columnas de `ALL_ARGUMENTS` y `ALL_PROCEDURES` para
-  T1 (firmas y sobrecargas). Queda pendiente implementarlo según el [plan 4](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md).
+- `crates/openpl-core/src/routine.rs` implementa T1 en solo lectura. `list_overloads` usa
+  `ALL_PROCEDURES` para conservar rutinas sin argumentos y `ALL_ARGUMENTS` para detallar parámetros,
+  retornos y campos compuestos. `group_overloads` agrupa por `SUBPROGRAM_ID`.
+- Se verificó en desarrollo con DBX el SELECT para la firma del procedimiento público
+  de ejemplo. Se comprobó un argumento de entrada y no se ejecutó la rutina.
+- **Punto de continuación:** T2, generador puro del bloque, con decisiones pendientes para **Usar**
+  y BOOLEAN. [Plan 4](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md)
 
 ### Auditoría antislop 001
 
@@ -314,9 +319,10 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
   validación contra Oracle real: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos
   ORA-12704; corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
 
-### Plan 4 — Ventana de prueba (planificado, código en espera)
+### Plan 4 — Ventana de prueba (en curso)
 - [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
-  (diseño §7.6, mockup "3 · Ventana de prueba"). El código espera las respuestas del dueño.
+  (diseño §7.6, mockup "3 · Ventana de prueba"). T1 está implementada. La interfaz espera el mockup
+  y las decisiones abiertas.
 - Alcance: generar el bloque desde `ALL_ARGUMENTS` (sobrecargas, no escalares en `declare`), grilla de variables, ejecutar (F8), `DBMS_OUTPUT`, guardar `.tst`. Habilitar "Probar".
 
 ### Plan 5 — Empaquetado
@@ -335,7 +341,7 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 | Plan 1 (terminado) | `docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md` |
 | Plan 2 (implementado, sin validar) | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
 | Plan 3 (en curso: validación) | `docs/superpowers/plans/2026-11-24-openpl-03-ventana-sql.md` |
-| Plan 4 (planificado) | `docs/superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md` |
+| Plan 4 (en curso) | `docs/superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md` |
 | Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md`, `programa.md`, `sql.md`, `prueba.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |
