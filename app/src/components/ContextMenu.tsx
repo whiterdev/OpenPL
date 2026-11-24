@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Check } from "@phosphor-icons/react";
 import { formatKeys } from "../keymap";
 
@@ -51,10 +51,14 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
   const fittedWidth = Math.min(width, window.innerWidth);
   const left = Math.max(0, Math.min(x, window.innerWidth - fittedWidth - 10));
   const top = Math.max(0, Math.min(y, window.innerHeight - items.length * 30 - 16));
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    if (menu) menu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth - 10))}px`;
+  });
 
   return (
     <div ref={ref} role="menu" aria-label={label} className={`menu ${className}`}
-      style={{ position: "fixed", left, top, width: fittedWidth, maxHeight: `calc(100vh - ${top}px)`, overflow: "auto" }}
+      style={{ position: "fixed", left, top, minWidth: fittedWidth, width: "max-content", maxWidth: "100vw", maxHeight: `calc(100vh - ${top}px)`, overflow: "auto" }}
       onKeyDown={(event) => {
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
         const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);

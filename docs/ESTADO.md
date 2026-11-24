@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- La consola admite entrada multilínea y resultados alineados. Los menús ajustan su ancho al contenido y el cliente Oracle 12c desde 12.1 figura como compatible.
+
 - La consola ofrece `EDIT [esquema.]objeto` con sugerencias del catálogo y apertura en pestaña. [Comandos](behavior/comandos.md).
 - Compilar Spec o Body actualiza la marca de guardado de esa parte. El asterisco permanece si otra parte tiene cambios pendientes.
 

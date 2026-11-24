@@ -113,16 +113,17 @@ export function SqlWindow({
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [prompt, setPrompt] = useState("");
+  const [commandLines, setCommandLines] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
   const [choice, setChoice] = useState<number>();
   const [dismissed, setDismissed] = useState(false);
-  const matchesEdit = prompt.trim().match(editTarget);
+  const matchesEdit = commandLines.length ? null : prompt.trim().match(editTarget);
   const candidates = suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
   const exact = candidates.findIndex((object) => object.name === matchesEdit?.[2].toUpperCase());
   const picked = choice ?? Math.max(0, exact);
   useEffect(() => {
     const target = prompt.trim().match(editTarget);
-    if (!command || !target) return;
+    if (!command || commandLines.length || !target) return;
     let current = true;
     const timer = setTimeout(() => {
       void api.completeObjects(sessionId, target[1]?.toUpperCase() ?? null, target[2].toUpperCase(), null, "edit")
@@ -130,7 +131,7 @@ export function SqlWindow({
         .catch(() => { if (current) setSuggestions(undefined); });
     }, 120);
     return () => { current = false; clearTimeout(timer); };
-  }, [command, prompt, sessionId]);
+  }, [command, commandLines.length, prompt, sessionId]);
   const commandHistory = useRef<string[]>([]);
   const historyIndex = useRef(0);
   const commandOptions = useRef({ echo: true, serverOutput: true });
@@ -315,8 +316,12 @@ export function SqlWindow({
           if (exportQuery) await exportRows(result);
           setSummary(null);
           if (command) {
-            log("output", columns.map((column) => column.name).join("  "));
-            page.rows.forEach((row) => log("output", row.map((value) => value ?? "NULL").join("  ")));
+            const rows = page.rows.map((row) => row.map((value) => (value ?? "NULL").replace(/\r?\n/g, " ")));
+            const widths = columns.map((column, i) => rows.reduce((size, row) => Math.max(size, row[i].length), column.name.length));
+            const line = (cells: string[]) => cells.map((value, i) => value.padEnd(widths[i])).join("  ").trimEnd();
+            log("output", line(columns.map((column) => column.name)));
+            log("output", line(widths.map((width) => "-".repeat(width))));
+            rows.forEach((row) => log("output", line(row)));
             if (page.more) log("info", `${page.rows.length} filas · ver Resultados`);
           }
           lastQuery = true;
@@ -925,12 +930,12 @@ export function SqlWindow({
           event.preventDefault();
           const entered = prompt.trim();
           if (running || !entered) return;
-          commandHistory.current.push(entered);
-          historyIndex.current = commandHistory.current.length;
           setPrompt("");
           setChoice(undefined);
           setDismissed(false);
-          if (editCommand.test(entered)) {
+          if (!commandLines.length && editCommand.test(entered)) {
+            commandHistory.current.push(entered);
+            historyIndex.current = commandHistory.current.length;
             setTab("output");
             log("info", `SQL> ${entered}`);
             if (!matchesEdit || !onEditObject) {
@@ -950,10 +955,21 @@ export function SqlWindow({
             }
             return;
           }
-          void run(splitScript(entered), true);
+          const source = [...commandLines, entered].join("\n");
+          const statements = splitScript(source);
+          const complete = /(?:^|\n)\s*\/$/.test(entered) || statements[0]?.kind === "sqlplus" ||
+            (statements[0]?.kind === "sql" && entered.endsWith(";"));
+          if (!complete) {
+            setCommandLines((lines) => [...lines, entered]);
+            return;
+          }
+          if (statements.length) commandHistory.current.push(source);
+          historyIndex.current = commandHistory.current.length;
+          setCommandLines([]);
+          void run(statements, true);
         }}>
-          <label htmlFor={`${tabPrefix}-prompt`} className="mono">SQL&gt;</label>
-          <input id={`${tabPrefix}-prompt`} className="fld mono" aria-label="Comando SQL"
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
+          <textarea id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
             role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
             aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
@@ -961,6 +977,17 @@ export function SqlWindow({
             value={prompt} readOnly={running} autoFocus
             onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
             onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+                return;
+              }
+              if (commandLines.length && event.key === "Escape") {
+                event.preventDefault();
+                setCommandLines([]);
+                setPrompt("");
+                return;
+              }
               if (candidates.length && event.key === "Escape") {
                 event.preventDefault();
                 setDismissed(true);

@@ -44,6 +44,25 @@ test("EDIT sugiere objetos y abre la selección sin ejecutar SQL", async () => {
   expect(execute).not.toHaveBeenCalled();
 });
 
+test("la consola acumula un bloque PL/SQL hasta recibir la barra", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue({
+    result: { kind: "Done", message: "Ejecutado" }, elapsed_ms: 0, output: ["Hola"], transaction: false,
+  });
+  setup("", { command: true });
+  const prompt = screen.getByLabelText("Comando SQL");
+  async function enter(value: string) {
+    fireEvent.change(prompt, { target: { value } });
+    await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  }
+  await enter("BEGIN");
+  await enter("dbms_output.put_line('Hola');");
+  await enter("END;");
+  expect(execute).not.toHaveBeenCalled();
+  await enter("/");
+  expect(execute).toHaveBeenCalledWith("w1", "BEGIN\ndbms_output.put_line('Hola');\nEND;", []);
+  expect(screen.getByText("Hola")).toBeVisible();
+});
+
 test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => {
   const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
   setup("", { command: true });
@@ -56,6 +75,7 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   await act(async () => { fireEvent.submit(prompt.closest("form")!); });
   expect(execute).toHaveBeenCalledWith("w1", "SELECT 7 FROM DUAL", []);
   expect(screen.getByText("SQL> SELECT 7 FROM DUAL;")).toBeVisible();
+  expect(screen.getByText(/^7\s+Ana$/)).toBeVisible();
   fireEvent.keyDown(prompt, { key: "ArrowUp" });
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
 });

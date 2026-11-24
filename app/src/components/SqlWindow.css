@@ -4,7 +4,7 @@
 .sql-command-objects { position: absolute; z-index: 5; bottom: 100%; left: 44px; max-width: calc(100% - 52px); max-height: 192px; overflow: auto; background: var(--s1); border: 1px solid var(--line); }
 .sql-command-objects [role="option"] { display: flex; justify-content: space-between; gap: 16px; padding: 4px 8px; cursor: pointer; }
 .sql-command-objects [aria-selected="true"], .sql-command-objects [role="option"]:hover { background: var(--s3); }
-.sql-command-prompt input { flex: 1; min-width: 0; }
+.sql-command-prompt textarea { flex: 1; min-width: 0; resize: none; }
 .sql-stop.active { background: var(--errSoft); border-color: var(--err); color: var(--err); }
 .sql-stop.active:hover:not(:disabled) { background: var(--err); color: var(--s0); }
 .sql-stop.active .kbd { background: transparent; color: inherit; padding: 0; }
