@@ -175,7 +175,7 @@ describe("ObjectBrowser", () => {
     const menu = screen.getByRole("menu", { name: /PKG_A/ });
     expect(within(menu).getByRole("menuitem", { name: /Abrir/ })).toHaveTextContent("Enter");
     expect(within(menu).getByRole("menuitem", { name: /Probar/ })).toHaveTextContent("Ctrl T");
-    expect(within(menu).getByRole("menuitem", { name: /Refrescar/ })).toHaveTextContent("Ctrl R");
+    expect(within(menu).getByRole("menuitem", { name: /Refrescar/ })).toHaveTextContent("Ctrl Shift R");
   });
 
   test("Abrir del menú contextual llama onOpenObject y cierra el menú", async () => {

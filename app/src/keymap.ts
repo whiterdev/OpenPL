@@ -48,18 +48,28 @@ export type CommandId =
   | "reconnect"
   | "toggleExplorer"
   | "refreshExplorer"
-  | "customizeUi";
+  | "customizeUi"
+  | "findNext"
+  | "findPrev"
+  | "nextTab"
+  | "prevTab"
+  | "moveTabLeft"
+  | "moveTabRight"
+  | "clearConsole"
+  | "viewCell";
 
 export interface Command {
   id: CommandId;
   label: string;
   keys?: string;
+  /** Teclas alternativas: funcionan igual pero los menús muestran solo `keys`. */
+  alt?: string[];
   /** La ventana o función todavía no existe: se muestra deshabilitado con "Próximamente". */
   pending?: true;
 }
 
 const list: Command[] = [
-  { id: "execute", label: "Ejecutar", keys: "F8" },
+  { id: "execute", label: "Ejecutar", keys: "F8", alt: ["Ctrl+Enter"] },
   { id: "fetchAllRows", label: "Traer todas", keys: "Ctrl+Shift+End" },
   { id: "exportData", label: "Exportar CSV", keys: "Ctrl+Shift+X" },
   { id: "selectGridRows", label: "Seleccionar filas cargadas", keys: "Ctrl+A" },
@@ -81,7 +91,7 @@ const list: Command[] = [
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
   { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },
   { id: "undo", label: "Deshacer", keys: "Ctrl+Z" },
-  { id: "redo", label: "Rehacer", keys: "Ctrl+Shift+Z" },
+  { id: "redo", label: "Rehacer", keys: "Ctrl+Shift+Z", alt: ["Ctrl+Y"] },
   { id: "indent", label: "Aumentar sangría", keys: "Ctrl+]" },
   { id: "outdent", label: "Reducir sangría", keys: "Ctrl+[" },
   { id: "save", label: "Guardar", keys: "Ctrl+S" },
@@ -97,7 +107,9 @@ const list: Command[] = [
   { id: "compareProgram", label: "Comparar con Oracle", keys: "Alt+Shift+D" },
   { id: "goToLine", label: "Ir a línea", keys: "Ctrl+G" },
   { id: "find", label: "Buscar", keys: "Ctrl+F" },
-  { id: "replace", label: "Reemplazar", keys: "Ctrl+H" },
+  { id: "replace", label: "Reemplazar", keys: "Ctrl+R", alt: ["Ctrl+H"] },
+  { id: "findNext", label: "Buscar siguiente", keys: "F3" },
+  { id: "findPrev", label: "Buscar anterior", keys: "Shift+F3" },
   { id: "comment", label: "Comentar líneas", keys: "Ctrl+/" },
   { id: "duplicateLine", label: "Duplicar línea", keys: "Ctrl+D" },
   { id: "deleteLine", label: "Borrar línea", keys: "Ctrl+Shift+K" },
@@ -113,8 +125,26 @@ const list: Command[] = [
     label: "Mostrar u ocultar explorador",
     keys: "Ctrl+B",
   },
-  { id: "refreshExplorer", label: "Refrescar explorador", keys: "Ctrl+R" },
+  {
+    id: "refreshExplorer",
+    label: "Refrescar explorador",
+    keys: "Ctrl+Shift+R",
+  },
   { id: "customizeUi", label: "Personalizar interfaz", keys: "Ctrl+," },
+  { id: "nextTab", label: "Pestaña siguiente", keys: "Ctrl+Tab" },
+  { id: "prevTab", label: "Pestaña anterior", keys: "Ctrl+Shift+Tab" },
+  {
+    id: "moveTabLeft",
+    label: "Mover pestaña a la izquierda",
+    keys: "Ctrl+Shift+PageUp",
+  },
+  {
+    id: "moveTabRight",
+    label: "Mover pestaña a la derecha",
+    keys: "Ctrl+Shift+PageDown",
+  },
+  { id: "clearConsole", label: "Limpiar consola", keys: "Ctrl+L" },
+  { id: "viewCell", label: "Ver celda", keys: "Shift+Space" },
 ];
 
 export const commands = Object.fromEntries(
@@ -135,10 +165,12 @@ export interface KeyLike {
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean;
+  getModifierState?: (key: "AltGraph") => boolean;
 }
 
-/** Coincidencia exacta de modificadores y tecla. */
+/** Coincidencia exacta de modificadores y tecla. AltGr (Ctrl+Alt en Windows) escribe, no es atajo. */
 export function matches(e: KeyLike, keys: string): boolean {
+  if (e.getModifierState?.("AltGraph")) return false;
   const parts = keys.split("+");
   const last = parts[parts.length - 1];
   const key = last === "Space" ? " " : last;
@@ -149,23 +181,44 @@ export function matches(e: KeyLike, keys: string): boolean {
   return e.key.toLowerCase() === key.toLowerCase();
 }
 
+const WEBVIEW_KEYS = [
+  "F5",
+  "Ctrl+F5",
+  "Ctrl+R",
+  "Ctrl+Shift+R",
+  "Ctrl+P",
+  "Ctrl+U",
+  "Ctrl+Shift+I",
+];
+
+/** Teclas que el webview usa para recargar, imprimir, ver fuente, devtools o zoom. */
+export function isWebviewKey(e: KeyLike): boolean {
+  const ctrl = e.ctrlKey || e.metaKey;
+  // El zoom va con o sin Shift según la distribución del teclado.
+  if (ctrl && !e.altKey && ["+", "=", "-", "0"].includes(e.key)) {
+    return !e.getModifierState?.("AltGraph");
+  }
+  return WEBVIEW_KEYS.some((k) => matches(e, k));
+}
+
 /**
- * Maneja una tecla contra el registro. Toda combinación registrada se bloquea aunque aún no
- * tenga acción (así F5 o Ctrl R no recargan la ventana); devuelve true si ejecutó una acción.
+ * Maneja una tecla contra el registro y devuelve true si una acción la manejó.
+ * Solo se bloquea la tecla si la acción la manejó (no devolvió false) o si es del webview.
  */
 export function handleShortcut(
   e: KeyLike & { preventDefault: () => void },
-  actions: Partial<Record<CommandId, () => void>>,
+  actions: Partial<Record<CommandId, () => void | boolean>>,
 ): boolean {
   for (const c of list) {
-    if (!c.keys || !matches(e, c.keys)) continue;
-    e.preventDefault();
+    const bound = [c.keys, ...(c.alt ?? [])];
+    if (!bound.some((k) => k && matches(e, k))) continue;
     const run = actions[c.id];
-    if (run) {
-      run();
+    if (run && run() !== false) {
+      e.preventDefault();
       return true;
     }
-    return false;
+    break;
   }
+  if (isWebviewKey(e)) e.preventDefault();
   return false;
 }
