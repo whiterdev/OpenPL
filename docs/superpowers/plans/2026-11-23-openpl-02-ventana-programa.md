@@ -29,7 +29,14 @@
 - [x] **Preparación de compilación.** F8 verifica la versión y abre la comparación antes de ofrecer el guardado de un script manual. El detalle y las pruebas están en la sección de preparación.
 - [x] **Estructura.** El editor muestra variables de paquete y distingue las funciones y procedimientos sobrecargados.
 - [x] **Plegado.** Plegar paquetes, rutinas y bloques PL/SQL.
-- [ ] **Autocompletado.** Sugerir palabras clave, objetos del esquema y columnas usando la sesión del programa.
+- [x] **Autocompletado.** Sugerir palabras clave, objetos del esquema y columnas usando la sesión del programa.
+
+### Autocompletado
+
+- [x] **Catálogo.** `complete_objects(sessionId, owner, prefix, contextOwner)` busca por prefijo literal (`LIKE ... ESCAPE`) con un máximo de 100 filas. `object_columns(sessionId, owner, name, contextOwner)` resuelve el nombre o sinónimo con `editor_object` y describe tablas y vistas. Ambas corren en el hilo de la sesión.
+- [x] **Editor.** `app/src/programCompletion.ts`: `completionTarget` (prefijo y calificador, descarta comentarios, literales y binds), `statementAliases` (FROM/JOIN/UPDATE/INTO de la sentencia actual, listas con coma, subconsultas sin alias), `catalogCompletion` y `keywordCompletion`. Resultados descartados si la sesión cambió durante la consulta. Caché por sesión en `ProgramWindow`.
+- [x] **Atajo.** `complete` (Ctrl+Space) en `keymap.ts` y en **Editar**.
+- [ ] **Oracle real.** Probar tiempos de respuesta con esquemas grandes y sinónimos públicos.
 
 ### Menú de objeto en el editor
 

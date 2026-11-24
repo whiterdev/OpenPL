@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
+  CaretDown,
   CheckCircle,
   MagnifyingGlass,
   Plus,
@@ -16,6 +17,8 @@ import { MenuBar, type MenuDef } from "./components/MenuBar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
+import { ContextMenu, type ContextItem } from "./components/ContextMenu";
+import { newWindowTemplates } from "./newWindows";
 import { commands, formatKeys, handleShortcut, matches, type CommandId } from "./keymap";
 import {
   describeError,
@@ -54,6 +57,9 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, SessionState>>({});
   const [showLogin, setShowLogin] = useState(false);
+  const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeNewMenu = useCallback(() => setNewMenu(null), []);
+  const pick = (run: () => void) => () => { setNewMenu(null); run(); };
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -86,7 +92,7 @@ export default function App() {
 
   const actions: Partial<Record<CommandId, () => void>> = {
     ...currentProgramActions,
-    newProgram,
+    newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
     connect: () => setShowLogin(true),
@@ -113,6 +119,16 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  useEffect(() => {
+    // Sin menú del navegador: solo los campos de texto conservan copiar y pegar.
+    const onContext = (e: MouseEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      e.preventDefault();
+    };
+    document.addEventListener("contextmenu", onContext);
+    return () => document.removeEventListener("contextmenu", onContext);
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -165,10 +181,10 @@ export default function App() {
     setProgramId(tab.id);
   }
 
-  function newProgram() {
+  function newProgram(template = newWindowTemplates[0]) {
     addProgram({
-      id: crypto.randomUUID(), label: "Programa", readOnly: false, dirty: false,
-      parts: [{ kind: "SQL", source: "", last_ddl_time: null, diagnostics: [] }],
+      id: crypto.randomUUID(), label: template.label, readOnly: false, dirty: false,
+      parts: template.parts.map(({ kind, source }) => ({ kind, source, last_ddl_time: null, diagnostics: [] })),
     });
   }
 
@@ -304,10 +320,29 @@ export default function App() {
       <header className="titlebar">
         <Logo size={18} />
         <MenuBar menus={menus} />
-        <button className="btn" title={`Nuevo programa (${formatKeys(commands.newProgram.keys!)})`} onClick={newProgram}>
+        <button className="btn" aria-haspopup="menu" aria-expanded={!!newMenu} onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            setNewMenu((open) => open ? null : { x: box.left, y: box.bottom + 2 });
+          }}>
           <Plus size={13} aria-hidden />
-          Programa
+          Nuevo
+          <CaretDown size={11} aria-hidden />
         </button>
+        {newMenu && (
+          <ContextMenu x={newMenu.x} y={newMenu.y} label="Nuevo" width={240} onClose={closeNewMenu}
+            items={[
+              ...([["newSql", "Ventana SQL"], ["test", "Ventana de prueba"], ["newCommand", "Ventana de comando"]] as const)
+                .map(([id, label]): ContextItem => ({
+                  label, keys: commands[id].keys, run: actions[id] && pick(actions[id]),
+                })),
+              "sep",
+              ...newWindowTemplates.map((template, index): ContextItem => ({
+                label: template.menu, keys: index === 0 ? commands.newProgram.keys : undefined,
+                run: pick(() => newProgram(template)),
+              })),
+            ]} />
+        )}
         <ConnectionBar
           connections={connections}
           activeId={activeId}

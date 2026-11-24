@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-23. Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24. Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -9,8 +9,8 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 64 pruebas de Rust sin base y 100 de interfaz,
-  más el chequeo de TypeScript. Las cinco pruebas Rust `live` se omitieron sin credenciales.
+- Verificación local en Windows: `cargo fmt`, Clippy, 73 pruebas de Rust sin base y 119 de interfaz,
+  más el chequeo de TypeScript. Las seis pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
@@ -90,9 +90,26 @@
   `app/src/programFolding.ts` guarda los rangos por documento. Las pruebas cubren paquetes,
   rutinas anidadas, `DECLARE`, `BEGIN`, `IF`, `LOOP`, `CASE` y directivas `$IF` y `$END`.
   Las cabeceras se detectan para el primer programa del documento. [Comportamiento de la ventana](behavior/programa.md)
-- **Punto de continuación:** añadir sugerencias de palabras clave, objetos del esquema y columnas
-  para referencias calificadas. Mantener las consultas de catálogo en la sesión del programa y
-  verificar que los resultados de una conexión no aparezcan en otra.
+
+### Plan 2 — Autocompletado
+
+- **Completar** (Ctrl+Space o al escribir): palabras clave siempre; con conexión, objetos del
+  esquema de trabajo y sinónimos públicos, objetos de `ESQUEMA.` y columnas tras `alias.`.
+  Consultas en la sesión del programa con caché por sesión; una respuesta que llega después de
+  cambiar de sesión se descarta. Detalle en el plan 2 y en [programa.md](behavior/programa.md).
+- `crates/openpl-core/src/catalog.rs`: `complete_objects`, `object_columns`.
+  `app/src/programCompletion.ts`: contexto del cursor, alias de la sentencia y fuentes de CodeMirror.
+- Pendiente con Oracle real: tiempos con esquemas grandes y muchos sinónimos públicos.
+
+### Barra superior
+
+- **Nuevo** reemplaza al botón Programa: despliega Ventana SQL / de prueba / de comando
+  (deshabilitadas hasta sus planes) y plantillas de programa en blanco, paquete, procedimiento,
+  función, trigger, tipo y vista (`app/src/newWindows.ts`).
+- El clic derecho fuera de campos de texto ya no abre el menú del navegador (WebView).
+
+- **Punto de continuación:** cerrar el plan 2 con la validación manual contra Oracle (lectura de
+  fuentes, menú de objeto, comparación, autocompletado) y pasar al plan 3 (ventana SQL).
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 
@@ -172,7 +189,7 @@ producto; estas decisiones son posteriores y mandan sobre él:
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
 ### Plan 2 — Ventana de programa (en curso)
-- Continuar desde la tarea 4 del [plan de implementación](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
+- Tareas de implementación terminadas. Falta la validación manual contra Oracle del [plan](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
 - Validar manualmente la apertura de un paquete con y sin Body, la navegación a diagnósticos y el
   selector nativo en Windows y Linux. Las pruebas de la aplicación contra Oracle serán de solo lectura.
 

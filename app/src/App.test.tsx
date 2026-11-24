@@ -111,3 +111,28 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
   expect(api.programSource).toHaveBeenCalledTimes(3);
   expect(api.programSource).toHaveBeenLastCalledWith("s1", "Package", "HR", "PKG_A");
 });
+
+test("Nuevo despliega los tipos de ventana y crea un paquete con Spec y Body", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Nuevo/ }));
+  const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
+  expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana de prueba/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Vista/ })).toBeEnabled();
+  fireEvent.click(menu.getByRole("menuitem", { name: /Paquete/ }));
+  expect(await screen.findByRole("textbox", { name: "Spec" })).toHaveTextContent("CREATE OR REPLACE PACKAGE nuevo_paquete AS");
+  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  expect(screen.getByRole("textbox", { name: "Body" })).toHaveTextContent("CREATE OR REPLACE PACKAGE BODY nuevo_paquete AS");
+  expect(screen.queryByRole("menu", { name: "Nuevo" })).not.toBeInTheDocument();
+});
+
+test("bloquea el menú del navegador salvo en campos de texto", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  const input = (await screen.findAllByRole("textbox"))[0];
+  expect(fireEvent.contextMenu(input)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(fireEvent.contextMenu(document.querySelector(".titlebar")!)).toBe(false);
+});
