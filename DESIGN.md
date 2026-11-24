@@ -11,7 +11,7 @@ Fuente de dirección para toda interfaz nueva. Se aplica junto con el filtro ant
 ## Identidad
 
 - **Motivo propio:** el ocre del logo (base de datos con la tapa abierta) es el único acento. Marca foco, selección principal, el botón primario y la pestaña activa sin entorno. El color del entorno (desarrollo, calidad, producción) reemplaza al ocre en el borde superior de la pestaña y en la franja de la conexión, porque saber contra qué base se trabaja es la información que más errores evita.
-- **Temas:** Grafito (oscuro) es el tema por defecto, porque la herramienta se usa jornadas completas frente a código. Hay cinco temas predefinidos: Grafito, Papel (claro), Medianoche, Bosque y Alto contraste (`app/src/themes.ts`). El usuario puede crear temas propios a partir de uno existente; se guardan en `localStorage` del equipo y el tema activo se aplica al arrancar. El botón Sol/Luna de la barra de título alterna entre el último tema oscuro y el último claro usados. **Personalizar interfaz** (Ctrl+,, menú Ver) edita los colores con vista previa en vivo y avisa cuando un par baja del contraste mínimo, sin bloquear. Los temas predefinidos no tienen avisos (7:1 el texto sobre el editor, 4.5:1 secundario, comentarios y sintaxis; lo comprueba `themes.test.ts`). Un tema propio se guarda aunque tenga avisos.
+- **Temas:** Grafito (oscuro) es el tema por defecto, porque la herramienta se usa jornadas completas frente a código. Hay cinco temas predefinidos: Grafito, Papel (claro), Medianoche, Bosque y Alto contraste (`app/src/themes.ts`). El usuario puede crear temas propios a partir de uno existente; se guardan en `localStorage` del equipo y el tema activo se aplica al arrancar. El botón Sol/Luna de la barra de título alterna entre el último tema oscuro y el último claro usados. **Personalizar interfaz** (Ctrl+,, menú Ver) edita los colores con vista previa en vivo y avisa cuando un par baja del contraste mínimo, sin bloquear. Los umbrales son 7:1 para el texto sobre el editor y 4,5:1 para el texto secundario y la sintaxis. `themes.test.ts` comprueba los avisos de la paleta Papel. Un tema propio se guarda aunque tenga avisos.
 - **Colores de entorno fijos:** `--env-dev`, `--env-qa` y `--env-prod` no forman parte de ningún tema ni se editan. Saber contra qué base se trabaja no depende del tema elegido.
 
 ## Color
@@ -32,9 +32,9 @@ Valores del tema Grafito. Los demás temas redefinen los mismos tokens, salvo lo
 | `--accent` | `#c99a3b` | Ocre del logo. 5.59:1 sobre `--s1`. |
 | `--err` | `#ec8478` | Errores y excepciones. 4.62:1 sobre `--s2` (fila en hover). |
 | `--env-dev/qa/prod` | verde, ámbar, rojo | Entorno de la conexión. Siempre acompañado de texto. |
-| Sintaxis | `--kw`, `--ty`, `--st`, `--nu`, `--cm` | Los comentarios usan terracota apagada y cursiva. Su contraste es menor que el del código base y alcanza al menos 4,5:1 sobre el editor. |
+| Sintaxis | `--kw`, `--ty`, `--st`, `--nu`, `--cm` | En Grafito los comentarios usan terracota apagada y cursiva, con un contraste de al menos 4,5:1 sobre el editor. |
 
-Papel usa un gris perla (`#e7e9ed`) para el editor, superficies vecinas gris azuladas y acento azul. El código base queda en carbón frío (`#202833`).
+Papel usa un gris perla (`#e7e9ed`) para el editor, superficies vecinas gris azuladas y acento azul. El código base queda en carbón frío (`#202833`). Las palabras clave en verde `#0b8e4a` y los comentarios en rojo `#f2280d` respetan la paleta elegida por el usuario y muestran avisos de contraste.
 
 Todo par nuevo de texto y fondo se mide con `contrast-check.py` de antislop-human antes de usarlo. Nada de colores sueltos fuera de `theme.css`.
 

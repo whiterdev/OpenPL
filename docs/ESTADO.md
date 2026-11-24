@@ -52,6 +52,10 @@
 
 ## Hecho
 
+### Sintaxis de Papel
+
+- Se aplicaron los valores de la captura del usuario al tema claro incluido. Las palabras clave y los comentarios conservan el aviso de contraste. [Auditoría](../anti-slop/audit-papel-sintaxis-2026-11-24.md).
+
 ### Diálogo de conexión y selección de resultados
 
 - El diálogo de conexión usa la misma capa que los demás diálogos de la aplicación, por encima del encabezado fijo de resultados.
