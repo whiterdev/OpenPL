@@ -37,8 +37,12 @@ test("EDIT sugiere objetos y abre la selección sin ejecutar SQL", async () => {
   const open = vi.fn();
   setup("", { command: true, onEditObject: open });
   const prompt = screen.getByLabelText("Comando SQL");
+  fireEvent.change(prompt, { target: { value: "edit vent" } });
+  expect(await screen.findByText("VENTAS_V", { exact: true })).toBeVisible();
+  expect(api.completeObjects).toHaveBeenLastCalledWith("w1", null, "VENT", null, "edit");
   fireEvent.change(prompt, { target: { value: "edit hr.vent" } });
-  expect(await screen.findByRole("option", { name: /VENTAS_V/ })).toBeVisible();
+  expect(await screen.findByText("HR.VENTAS_V", { exact: true })).toBeVisible();
+  expect(api.completeObjects).toHaveBeenLastCalledWith("w1", "HR", "VENT", null, "edit");
   fireEvent.keyDown(prompt, { key: "ArrowDown" });
   fireEvent.submit(prompt.closest("form")!);
   expect(open).toHaveBeenCalledWith(view);

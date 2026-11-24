@@ -560,7 +560,17 @@ fn complete_objects_sql(scope: CompletionScope) -> String {
                                   'INDEX', 'JAVA SOURCE', 'LIBRARY', 'CLUSTER'"
         }
     };
-    COMPLETE_OBJECTS_SQL.replace("{types}", types)
+    let owners = if scope == CompletionScope::Edit {
+        "o.owner = COALESCE(CAST(:owner AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'SESSION_USER'))"
+    } else {
+        "((:owner IS NOT NULL AND o.owner = :owner)
+           OR (:owner IS NULL
+               AND (o.owner = COALESCE(CAST(:context AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                    OR (o.owner = 'PUBLIC' AND o.object_type = 'SYNONYM'))))"
+    };
+    COMPLETE_OBJECTS_SQL
+        .replace("{types}", types)
+        .replace("{owners}", owners)
 }
 
 const COMPLETE_OBJECTS_SQL: &str = "SELECT owner, object_name, object_type FROM (
@@ -569,10 +579,7 @@ const COMPLETE_OBJECTS_SQL: &str = "SELECT owner, object_name, object_type FROM 
     WHERE o.object_name LIKE :prefix ESCAPE '\\'
       AND o.object_name NOT LIKE 'BIN$%'
       AND o.object_type IN ({types})
-      AND ((:owner IS NOT NULL AND o.owner = :owner)
-           OR (:owner IS NULL
-               AND (o.owner = COALESCE(CAST(:context AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
-                    OR (o.owner = 'PUBLIC' AND o.object_type = 'SYNONYM'))))
+      AND {owners}
     ORDER BY CASE WHEN o.owner = 'PUBLIC' THEN 1 ELSE 0 END, o.object_name,
              CASE o.object_type WHEN 'MATERIALIZED VIEW' THEN 0 ELSE 1 END
 ) WHERE ROWNUM <= 100";
@@ -585,7 +592,8 @@ pub struct CompletionObject {
 }
 
 /// Objetos cuyo nombre empieza por `prefix`, del esquema indicado o del esquema de trabajo
-/// más los sinónimos públicos. Devuelve como mucho `COMPLETION_LIMIT` filas.
+/// más los sinónimos públicos. EDIT usa el usuario de sesión si no se indica esquema.
+/// Devuelve como mucho `COMPLETION_LIMIT` filas.
 pub fn complete_objects(
     conn: &DbConn,
     owner: Option<&str>,
@@ -600,8 +608,13 @@ pub fn complete_objects(
         ("owner", &owner),
         ("context", &context_owner),
     ];
+    let params = if scope == CompletionScope::Edit {
+        &params[..2]
+    } else {
+        &params[..]
+    };
     conn.raw()
-        .query_named(&sql, &params)?
+        .query_named(&sql, params)?
         .map(|row| {
             let row = row?;
             Ok(CompletionObject {
@@ -666,6 +679,15 @@ mod tests {
         for t in ["PACKAGE", "PROCEDURE", "FUNCTION", "SEQUENCE", "'TYPE'"] {
             assert!(!sql.contains(t), "sobra {t}");
         }
+    }
+
+    #[test]
+    fn completado_edit_limita_el_esquema_al_usuario_o_al_prefijo_explicito() {
+        let sql = complete_objects_sql(CompletionScope::Edit);
+        assert!(sql.contains("FROM all_objects"));
+        assert!(sql.contains("o.owner = COALESCE(CAST(:owner AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'SESSION_USER'))"));
+        assert!(!sql.contains(":context"));
+        assert!(!sql.contains("OR (o.owner = 'PUBLIC'"));
     }
 
     #[test]

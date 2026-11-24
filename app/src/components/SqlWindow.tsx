@@ -794,7 +794,7 @@ export function SqlWindow({
               id={`${tabPrefix}-object-${index}`} aria-selected={picked === index}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => { onEditObject?.(object); setPrompt(""); setChoice(undefined); }}>
-              <span>{object.owner}.{object.name}</span><span>{object.object_type}</span>
+              <span>{matchesEdit?.[1] ? `${object.owner}.${object.name}` : object.name}</span><span>{object.object_type}</span>
             </div>)}
           </div>}
         </form>
