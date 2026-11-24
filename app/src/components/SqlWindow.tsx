@@ -96,9 +96,11 @@ export function SqlWindow({
   const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>({});
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
   const [editorHeight, setEditorHeight] = useState(220);
   const lineId = useRef(0);
   const fetchingRef = useRef(false);
+  const stopFetchRef = useRef(false);
   const saved = useRef(initialSql);
   const fileName = useRef<string | null>(null);
   const started = useRef(false);
@@ -135,6 +137,7 @@ export function SqlWindow({
   async function run(list: ScriptStatement[]) {
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
+    setNotice("");
     setMarkers([]);
     for (const statement of list) {
       for (const variable of findVariables(statement.text)) {
@@ -207,20 +210,33 @@ export function SqlWindow({
   async function fetchAll() {
     if (tab !== "results" || !grid?.more || running || applying || fetchingRef.current) return;
     fetchingRef.current = true;
+    stopFetchRef.current = false;
     setFetching(true);
     setSelected(null);
+    setNotice("");
     const cursor = grid.cursor;
+    let received = grid.rows.length;
+    const stopped = () => {
+      setGrid((current) => current?.cursor === cursor ? { ...current, more: false } : current);
+      setNotice(`Traer todas detenido. ${received === 1 ? "Se conserva 1 fila" : `Se conservan ${received} filas`}.`);
+    };
     try {
       let more: boolean;
       do {
         const page = await api.sqlFetch(sessionId, cursor, FETCH_ALL);
+        received += page.rows.length;
         setGrid((current) => current?.cursor === cursor
           ? { ...current, rows: [...current.rows, ...page.rows], more: page.more }
           : current);
         more = page.more;
-      } while (more);
+      } while (more && !stopFetchRef.current);
+      if (more) stopped();
     } catch (error) {
       const detail = describeError(error);
+      if (detail.code === CANCELLED) {
+        stopped();
+        return;
+      }
       const message = detail.code && !detail.message.startsWith(detail.code)
         ? `${detail.code} ${detail.message}` : detail.message;
       setGrid((current) => current?.cursor === cursor ? { ...current, more: false } : current);
@@ -414,7 +430,11 @@ export function SqlWindow({
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
     fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
-    cancel: running ? () => void api.sqlCancel(sessionId) : undefined,
+    // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
+    cancel: running || fetching ? () => {
+      if (fetchingRef.current) stopFetchRef.current = true;
+      void api.sqlCancel(sessionId);
+    } : undefined,
     editData: grid ? () => void toggleEdit() : undefined,
     applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
     commit: () => void transaction("commit"),
@@ -486,14 +506,15 @@ export function SqlWindow({
         <button className="btn" onClick={actions.executeScript} disabled={running || fetching || applying}>
           <PlayCircle size={14} aria-hidden /> Ejecutar script <span className="kbd">{key("executeScript")}</span>
         </button>
-        <button className="ib" aria-label={`Cancelar ejecución (${key("cancel")})`} title={`Cancelar ejecución  ${key("cancel")}`}
-          disabled={!running} onClick={actions.cancel}>
-          <Stop size={16} aria-hidden />
+        <button className={`btn sql-stop${actions.cancel ? " active" : ""}`}
+          disabled={!actions.cancel} onClick={actions.cancel}>
+          <Stop size={14} aria-hidden /> Detener <span className="kbd">{key("cancel")}</span>
         </button>
         <button className="ib" aria-label={`Guardar (${key("save")})`} title={`Guardar  ${key("save")}`} onClick={actions.save}>
           <FloppyDisk size={16} aria-hidden />
         </button>
         {running && <span role="status" className="program-muted">Ejecutando…</span>}
+        {!running && notice && <span role="status" className="program-muted">{notice}</span>}
         {alert && <span role="alert" className="sql-alert">{alert}</span>}
       </div>
       <div className="sql-top" style={{ height: editorHeight }}>

@@ -79,8 +79,8 @@ test("indica la carga y conserva las filas si falla la continuación", async () 
   expect(region.getByRole("status")).toHaveTextContent("Trayendo filas");
   fireEvent.click(button);
   expect(fetch).toHaveBeenCalledTimes(1);
-  await act(async () => fail({ Db: { code: "ORA-01013", message: "Consulta cancelada" } }));
-  expect(region.getByRole("alert")).toHaveTextContent("ORA-01013 Consulta cancelada · Reejecuta con F8");
+  await act(async () => fail({ Db: { code: "ORA-03113", message: "fin de archivo en el canal" } }));
+  expect(region.getByRole("alert")).toHaveTextContent("ORA-03113 fin de archivo en el canal · Reejecuta con F8");
   expect(region.getByText("Ana")).toBeInTheDocument();
   expect(region.queryByRole("button", { name: /Traer todas/ })).not.toBeInTheDocument();
 });
@@ -146,10 +146,61 @@ test("Cancelar interrumpe la ejecución en curso", async () => {
   const { ref } = setup("select * from grande");
   act(() => ref.current!.execute!());
   expect(screen.getByText("Ejecutando…")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Cancelar ejecución/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Detener/ }));
   expect(cancel).toHaveBeenCalledWith("w1");
   await act(async () => reject({ Db: { code: "ORA-01013", kind: "Other", message: "ORA-01013: user requested cancel" } }));
   expect(within(screen.getByRole("tabpanel", { name: "Salida" })).getByText("Ejecución cancelada")).toBeInTheDocument();
+});
+
+test("Detener muestra texto y atajo, y queda deshabilitado sin nada en curso", () => {
+  const { ref } = setup("select 1 from dual");
+  const stop = screen.getByRole("button", { name: /^Detener/ });
+  expect(stop).toHaveTextContent("Detener");
+  expect(within(stop).getByText("Shift Esc")).toHaveClass("kbd");
+  expect(stop).toBeDisabled();
+  expect(ref.current!.cancel).toBeUndefined();
+});
+
+describe("Detener durante Traer todas", () => {
+  async function startFetching() {
+    const first = Array.from({ length: 50 }, (_, i) => [String(i + 1), `Cliente ${i + 1}`]);
+    vi.spyOn(api, "sqlExecute").mockResolvedValue(query(first, true, 7));
+    let fail!: (error: unknown) => void;
+    let resolve!: (page: { rows: (string | null)[][]; more: boolean }) => void;
+    const fetch = vi.spyOn(api, "sqlFetch")
+      .mockResolvedValueOnce({ rows: [["51", "Beto"]], more: true })
+      .mockReturnValueOnce(new Promise((ok, no) => { resolve = ok; fail = no; }));
+    const cancel = vi.spyOn(api, "sqlCancel").mockResolvedValue(true);
+    const { ref } = setup("select id, nombre from clientes");
+    await act(async () => ref.current!.execute!());
+    const region = within(screen.getByRole("region", { name: "Grilla de resultados" }));
+    await act(async () => fireEvent.click(region.getByRole("button", { name: /Traer todas/ })));
+    return { ref, region, fetch, cancel, fail: (e: unknown) => fail(e), resolve: (p: Parameters<typeof resolve>[0]) => resolve(p) };
+  }
+
+  test("corta la consulta en Oracle y conserva las filas recibidas", async () => {
+    const { ref, region, cancel, fail } = await startFetching();
+    const stop = screen.getByRole("button", { name: /^Detener/ });
+    expect(stop).toBeEnabled();
+    expect(ref.current!.cancel).toBeDefined();
+    fireEvent.click(stop);
+    expect(cancel).toHaveBeenCalledWith("w1");
+    await act(async () => fail({ Db: { code: "ORA-01013", message: "ORA-01013: user requested cancel" } }));
+    expect(screen.getByRole("status")).toHaveTextContent("Traer todas detenido. Se conservan 51 filas.");
+    expect(region.queryByRole("alert")).not.toBeInTheDocument();
+    expect(region.getByText("Beto")).toBeInTheDocument();
+    expect(region.queryByRole("button", { name: /Traer todas/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Detener/ })).toBeDisabled();
+  });
+
+  test("si el corte llega entre páginas no pide la siguiente", async () => {
+    const { ref, region, fetch, resolve } = await startFetching();
+    act(() => ref.current!.cancel!());
+    await act(async () => resolve({ rows: [["52", "Caro"]], more: true }));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(region.getByText("Caro")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Traer todas detenido. Se conservan 52 filas.");
+  });
 });
 
 test("sin ejecuciones, Resultados indica cómo empezar", () => {
