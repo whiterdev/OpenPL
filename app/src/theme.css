@@ -1,4 +1,4 @@
-/* Tema grafito (v1). Tokens del mockup "v2 · grafito". */
+/* Valores de Grafito para el primer pintado; themes.ts los reemplaza con el tema activo. */
 @import "@fontsource/ibm-plex-sans/400.css";
 @import "@fontsource/ibm-plex-sans/500.css";
 @import "@fontsource/ibm-plex-sans/600.css";
@@ -37,6 +37,8 @@
     --sel: rgba(201, 154, 59, 0.3);
     --selMatch: rgba(141, 178, 203, 0.18);
     --activeLine: rgba(255, 255, 255, 0.03);
+    --backdrop: rgba(12, 13, 15, 0.55);
+    --shadow: rgba(0, 0, 0, 0.5);
     --font-ui: "IBM Plex Sans", system-ui, sans-serif;
     --font-code: "IBM Plex Mono", ui-monospace, monospace;
     color-scheme: dark;
@@ -185,7 +187,7 @@ button:disabled {
     background: var(--s-menu);
     border: 1px solid var(--line2);
     border-radius: 6px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 12px 32px var(--shadow);
 }
 .menu-item {
     display: flex;
