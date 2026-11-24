@@ -183,7 +183,6 @@ export default function App() {
         "objectActions",
         "complete",
         "compareProgram",
-        "execute",
         "goToLine",
         "find",
         "replace",
@@ -203,8 +202,6 @@ export default function App() {
         if (id === "objectActions") return !!editorConnection;
         if (id === "compareProgram")
           return !!program.object && !!editorConnection;
-        if (id === "execute")
-          return !program.readOnly && !!program.object && !!editorConnection;
         if (id === "spec" || id === "body" || id === "sideBySide")
           return program.parts.length === 2;
         return (
@@ -629,9 +626,7 @@ export default function App() {
         run("disconnect"),
         run("reconnect"),
         "sep",
-        program?.object
-          ? { ...run("execute"), label: "Preparar compilación" }
-          : run("execute"),
+        run("execute"),
         run("executeScript"),
         run("cancel"),
         "sep",

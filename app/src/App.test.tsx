@@ -80,15 +80,25 @@ test("permite editar y guardar un archivo local desde el flujo normal", async ()
     const program = within(
       screen.getByRole("region", { name: "Ventana de programa" }),
     );
-    const save = program.getByRole("button", { name: /Guardar/ });
-    fireEvent.click(save);
+    expect(
+      program.queryByRole("button", { name: /Guardar/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await vi.waitFor(() =>
+      expect(api.saveProgramFile).toHaveBeenCalledTimes(1),
+    );
     await screen.findByRole("button", { name: /demo\.pks \*/ });
-    await vi.waitFor(() => expect(save).toBeEnabled());
-    fireEvent.click(save);
+    fireEvent.click(screen.getByRole("button", { name: "Archivo" }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Archivo" })).getByRole(
+        "menuitem",
+        { name: /^Guardar/ },
+      ),
+    );
     await program.findByText("Archivo guardado");
     expect(api.saveProgramFile).toHaveBeenLastCalledWith(
       "PACKAGE demo AS\nEND;\n-- cambio",
-      "pks",
+      "sql",
       "demo.pks",
     );
     fireEvent.keyDown(window, { key: "w", ctrlKey: true });
@@ -170,10 +180,23 @@ test("compara el programa en su sesión aunque el explorador cambie de conexión
 
   expect(await screen.findByText("Cambio en Oracle")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cerrar comparación" }));
-  fireEvent.keyDown(window, { key: "F8" });
+  const f8 = new KeyboardEvent("keydown", { key: "F8", cancelable: true });
+  act(() => {
+    window.dispatchEvent(f8);
+  });
+  expect(f8.defaultPrevented).toBe(true);
   expect(
-    await screen.findByRole("button", { name: "Guardar script" }),
-  ).toBeInTheDocument();
+    screen.queryByRole("region", { name: /^Comparación/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
+  const session = within(screen.getByRole("menu", { name: "Sesión" }));
+  expect(
+    session.queryByRole("menuitem", { name: /Preparar compilación/ }),
+  ).not.toBeInTheDocument();
+  expect(session.getByRole("menuitem", { name: /^Ejecutar(?! script)/ })).toBeDisabled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.keyDown(window, { key: "d", altKey: true, shiftKey: true });
+  expect(await screen.findByText("Sin diferencias de texto")).toBeInTheDocument();
   expect(api.programSource).toHaveBeenCalledTimes(3);
   expect(api.programSource).toHaveBeenLastCalledWith(
     "s1",

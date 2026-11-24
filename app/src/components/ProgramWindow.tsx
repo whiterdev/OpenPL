@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
-import { FileCode, FloppyDisk, GitDiff, SplitVertical } from "@phosphor-icons/react";
+import { GitDiff, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -13,7 +13,7 @@ import { editorReference } from "../editorReference";
 import { positionAt, ProgramEditor } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
 import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
-import { prepareProgramScript, type CompilationTarget } from "../programScript";
+import type { CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
 import type { CompletionCatalog } from "../programCompletion";
 import { ContextMenu } from "./ContextMenu";
@@ -76,8 +76,7 @@ export function ProgramWindow({
   const [values, setValues] = useState(() => parts.map((part) => part.source));
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult; script?: string } | null>(null);
-  const [savingScript, setSavingScript] = useState(false);
+  const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult } | null>(null);
   const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
   const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
@@ -184,14 +183,13 @@ export function ProgramWindow({
   }
 
   async function save() {
-    if (saving || savingScript) return;
+    if (saving) return;
     const index = selected;
     const source = values[index];
-    const extension = part.kind === "PACKAGE" ? "pks" : part.kind === "PACKAGE BODY" ? "pkb" : "sql";
     setSaving(true);
     setMessage("");
     try {
-      const name = await api.saveProgramFile(source, extension, names.current[index] ?? null);
+      const name = await api.saveProgramFile(source, "sql", names.current[index] ?? null);
       if (name) {
         names.current[index] = name;
         saved.current[index] = source;
@@ -213,18 +211,9 @@ export function ProgramWindow({
     };
   }
 
-  async function compare(target?: CompilationTarget) {
+  async function compare() {
     if (!readCurrentProgram || comparison?.result.state === "loading") return;
-    let script: string | undefined;
-    if (target) {
-      try {
-        script = prepareProgramScript(values[selected], part.kind, target);
-      } catch (error) {
-        setComparison({ index: selected, result: { state: "error", message: describeError(error).message } });
-        return;
-      }
-    }
-    const request = { index: selected, result: { state: "loading" }, script } as const;
+    const request = { index: selected, result: { state: "loading" } } as const;
     setComparison(request);
     closeObjectMenu();
     closeDeclarationMenu();
@@ -236,21 +225,6 @@ export function ProgramWindow({
     } catch (error) {
       const detail = describeError(error);
       finish({ state: "error", message: detail.code ? `${detail.code} ${detail.message}` : detail.message });
-    }
-  }
-
-  async function saveScript() {
-    const script = comparison?.script;
-    if (!script || savingScript || saving) return;
-    setSavingScript(true);
-    setMessage("");
-    try {
-      const file = await api.saveProgramFile(script, "sql", "compilar-programa.sql");
-      if (file) setMessage("Script guardado");
-    } catch (error) {
-      setMessage(describeError(error).message);
-    } finally {
-      setSavingScript(false);
     }
   }
 
@@ -278,9 +252,6 @@ export function ProgramWindow({
     goToDeclaration: declaration,
     foldBlock: runInEditor(foldCode),
     unfoldBlock: runInEditor(unfoldCode),
-    execute: !readOnly && readCurrentProgram && compilationTarget
-      ? () => void compare(compilationTarget)
-      : undefined,
     compareProgram: readCurrentProgram ? () => void compare() : undefined,
     objectActions: catalog ? runInEditor((view) => {
       const position = view.state.selection.main.head;
@@ -327,14 +298,6 @@ export function ProgramWindow({
         {canSplit && (
           <button className="ib" aria-label="Lado a lado" title={keyLabel("sideBySide")} aria-pressed={split} onClick={actions.sideBySide}>
             <SplitVertical size={16} aria-hidden />
-          </button>
-        )}
-        <button className="btn" disabled={saving || savingScript} onClick={actions.save}>
-          <FloppyDisk size={14} aria-hidden /> Guardar <span className="kbd">{keyLabel("save")}</span>
-        </button>
-        {actions.execute && (
-          <button className="btn" onClick={actions.execute} disabled={comparison?.result.state === "loading"}>
-            <FileCode size={14} aria-hidden /> Preparar compilación <span className="kbd">{keyLabel("execute")}</span>
           </button>
         )}
         {readCurrentProgram && (
@@ -418,9 +381,7 @@ export function ProgramWindow({
       </div>
       {comparison && (
         <ProgramComparison label={caption(parts[comparison.index].kind)} original={parts[comparison.index]}
-          local={values[comparison.index]} result={comparison.result} onClose={() => focusPart(comparison.index)}
-          onSaveScript={comparison.script && readCurrentProgram ? () => void saveScript() : undefined}
-          savingScript={savingScript || saving} />
+          local={values[comparison.index]} result={comparison.result} onClose={() => focusPart(comparison.index)} />
       )}
       {!comparison && description && (
         <ObjectDescription key={description.id} object={description.object} sessionId={description.sessionId}

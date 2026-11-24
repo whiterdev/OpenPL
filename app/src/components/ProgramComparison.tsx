@@ -19,8 +19,6 @@ interface Props {
   local: string;
   result: ComparisonResult;
   onClose: () => void;
-  onSaveScript?: () => void;
-  savingScript?: boolean;
 }
 
 function SourceDiff({ local, oracle }: { local: string; oracle: string }) {
@@ -55,13 +53,12 @@ function SourceDiff({ local, oracle }: { local: string; oracle: string }) {
   );
 }
 
-export function ProgramComparison({ label, original, local, result, onClose, onSaveScript, savingScript }: Props) {
+export function ProgramComparison({ label, original, local, result, onClose }: Props) {
   const closeButton = useRef<HTMLButtonElement>(null);
   useEffect(() => { closeButton.current?.focus(); }, []);
   const current = result.state === "ready" ? result.current : null;
   const source = current?.source ?? "";
   const changed = original.source !== source || original.last_ddl_time !== (current?.last_ddl_time ?? null);
-  const verified = !!original.last_ddl_time && !!current?.last_ddl_time;
 
   return (
     <section className="program-comparison" aria-label={`Comparación de ${label}`}>
@@ -74,15 +71,9 @@ export function ProgramComparison({ label, original, local, result, onClose, onS
           <span role="status" className="program-comparison-status">
             {changed && <strong>Cambio en Oracle</strong>}
             {!current && <span>Fuente no disponible en Oracle</span>}
-            {onSaveScript && current && !verified && <strong>Marca de DDL no disponible</strong>}
             {current && local === source && <span>Sin diferencias de texto</span>}
             {current && local !== source && !changed && <span>Oracle conserva la versión abierta</span>}
           </span>
-        )}
-        {onSaveScript && verified && (
-          <button className="btn" disabled={savingScript} onClick={onSaveScript}>
-            {changed ? "Guardar pese al cambio" : "Guardar script"}
-          </button>
         )}
       </header>
       {result.state === "ready" && local !== source && <SourceDiff local={local} oracle={source} />}
