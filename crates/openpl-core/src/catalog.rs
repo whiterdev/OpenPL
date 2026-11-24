@@ -513,9 +513,117 @@ pub fn describe_columns(
         .collect()
 }
 
+pub const COMPLETION_LIMIT: usize = 100;
+
+/// Prefijo literal para `LIKE ... ESCAPE '\'`. El nombre llega ya normalizado.
+pub fn completion_pattern(prefix: &str) -> String {
+    let mut out: String = prefix
+        .chars()
+        .flat_map(|c| match c {
+            '\\' | '%' | '_' => vec!['\\', c],
+            _ => vec![c],
+        })
+        .collect();
+    out.push('%');
+    out
+}
+
+const COMPLETE_OBJECTS_SQL: &str = "SELECT owner, object_name, object_type FROM (
+    SELECT o.owner, o.object_name, o.object_type
+    FROM all_objects o
+    WHERE o.object_name LIKE :prefix ESCAPE '\\'
+      AND o.object_name NOT LIKE 'BIN$%'
+      AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PACKAGE',
+                            'PROCEDURE', 'FUNCTION', 'TYPE', 'SYNONYM')
+      AND ((:owner IS NOT NULL AND o.owner = :owner)
+           OR (:owner IS NULL
+               AND (o.owner = COALESCE(:context, SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                    OR (o.owner = 'PUBLIC' AND o.object_type = 'SYNONYM'))))
+    ORDER BY CASE WHEN o.owner = 'PUBLIC' THEN 1 ELSE 0 END, o.object_name,
+             CASE o.object_type WHEN 'MATERIALIZED VIEW' THEN 0 ELSE 1 END
+) WHERE ROWNUM <= 100";
+
+#[derive(Serialize)]
+pub struct CompletionObject {
+    owner: String,
+    name: String,
+    object_type: String,
+}
+
+/// Objetos cuyo nombre empieza por `prefix`, del esquema indicado o del esquema de trabajo
+/// más los sinónimos públicos. Devuelve como mucho `COMPLETION_LIMIT` filas.
+pub fn complete_objects(
+    conn: &DbConn,
+    owner: Option<&str>,
+    prefix: &str,
+    context_owner: Option<&str>,
+) -> Result<Vec<CompletionObject>, DbError> {
+    let pattern = completion_pattern(prefix);
+    let params: [(&str, &dyn oracle::sql_type::ToSql); 3] = [
+        ("prefix", &pattern),
+        ("owner", &owner),
+        ("context", &context_owner),
+    ];
+    conn.raw()
+        .query_named(COMPLETE_OBJECTS_SQL, &params)?
+        .map(|row| {
+            let row = row?;
+            Ok(CompletionObject {
+                owner: row.get(0)?,
+                name: row.get(1)?,
+                object_type: row.get(2)?,
+            })
+        })
+        .collect()
+}
+
+pub fn has_columns(t: ObjectType) -> bool {
+    matches!(
+        t,
+        ObjectType::Table | ObjectType::View | ObjectType::MaterializedView
+    )
+}
+
+/// Columnas del objeto que resuelve el editor (nombre exacto o sinónimo local).
+pub fn object_columns(
+    conn: &DbConn,
+    owner: Option<&str>,
+    name: &str,
+    context_owner: Option<&str>,
+) -> Result<Vec<ObjectColumn>, DbError> {
+    match editor_object(conn, owner, name, context_owner)? {
+        Some(object) if has_columns(object.object_type) => {
+            describe_columns(conn, &object.owner, &object.name)
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn patron_de_completado_es_prefijo_literal() {
+        assert_eq!(completion_pattern("AB_C%"), r"AB\_C\%%");
+        assert_eq!(completion_pattern(""), "%");
+        assert_eq!(completion_pattern("Ventas 2026"), "Ventas 2026%");
+    }
+
+    #[test]
+    fn completado_limita_filas_y_usa_binds() {
+        assert!(COMPLETE_OBJECTS_SQL.contains("LIKE :prefix ESCAPE"));
+        assert!(COMPLETE_OBJECTS_SQL.contains(&format!("ROWNUM <= {COMPLETION_LIMIT}")));
+        assert!(!COMPLETE_OBJECTS_SQL.contains("PACKAGE BODY"));
+    }
+
+    #[test]
+    fn tipos_con_columnas() {
+        assert!(has_columns(ObjectType::Table));
+        assert!(has_columns(ObjectType::View));
+        assert!(has_columns(ObjectType::MaterializedView));
+        assert!(!has_columns(ObjectType::Package));
+    }
 
     fn raw(owner: &str, name: &str, t: &str, status: &str) -> RawRow {
         raw_t(owner, name, t, status, "2024-01-01T00:00:00")

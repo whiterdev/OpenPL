@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { EditorReference } from "./editorReference";
 import type {
   ClientInfo,
+  CompletionObject,
   ConnectParams,
   ConnectResult,
   ConnectionProfile,
@@ -36,6 +37,10 @@ export const api = {
     invoke<ObjectInfo | null>("editor_object", { sessionId, ...reference, contextOwner }),
   describeColumns: (sessionId: string, owner: string, name: string) =>
     invoke<ObjectColumn[]>("describe_columns", { sessionId, owner, name }),
+  completeObjects: (sessionId: string, owner: string | null, prefix: string, contextOwner: string | null) =>
+    invoke<CompletionObject[]>("complete_objects", { sessionId, owner, prefix, contextOwner }),
+  objectColumns: (sessionId: string, owner: string | null, name: string, contextOwner: string | null) =>
+    invoke<ObjectColumn[]>("object_columns", { sessionId, owner, name, contextOwner }),
   openProgramFile: () => invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),

@@ -8,7 +8,7 @@ export interface ProgramDeclaration {
   definition: boolean;
 }
 
-interface Token {
+export interface Token {
   text: string;
   key: string;
   from: number;
@@ -26,7 +26,7 @@ const closingWords = new Set(["IF", "LOOP", "CASE"]);
 type BlockEnds = ReadonlyMap<number, number>;
 type AddFold = (opening: number, closing: number) => void;
 
-function tokenize(source: string) {
+export function tokenize(source: string) {
   const tokens: Token[] = [];
   oracleDialect.language.parser.parse(source).iterate({
     enter(node) {

@@ -125,6 +125,13 @@ export interface ProgramPart {
   diagnostics: { line: number; column: number; text: string; warning: boolean }[];
 }
 
+export interface CompletionObject {
+  owner: string;
+  name: string;
+  /** Tipo tal como lo devuelve ALL_OBJECTS: TABLE, VIEW, SYNONYM... */
+  object_type: string;
+}
+
 export interface ObjectColumn {
   name: string;
   data_type: string;

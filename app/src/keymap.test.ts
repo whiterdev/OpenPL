@@ -11,6 +11,13 @@ describe("keymap", () => {
     expect(commands.palette.keys).toBe("Ctrl+K");
   });
 
+  test("Ctrl Space completa en el editor", () => {
+    expect(commands.complete.keys).toBe("Ctrl+Space");
+    const ev = { key: " ", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
+    expect(matches(ev, "Ctrl+Space")).toBe(true);
+    expect(matches({ ...ev, ctrlKey: false }, "Ctrl+Space")).toBe(false);
+  });
+
   test("formatKeys muestra con espacios", () => {
     expect(formatKeys("Ctrl+Shift+L")).toBe("Ctrl Shift L");
     expect(formatKeys("F10")).toBe("F10");

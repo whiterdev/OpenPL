@@ -127,3 +127,9 @@
 .program-editor .cm-panels, .program-editor .cm-tooltip { background: var(--s1); color: var(--text); border-color: var(--line2); }
 .program-editor .cm-textfield, .program-editor .cm-button { background: var(--s2); color: var(--text); border-color: var(--line2); }
 .workspace .toast { z-index: 1; }
+.program-editor .cm-tooltip.cm-tooltip-autocomplete { border-radius: 4px; padding: 2px 0; }
+.program-editor .cm-tooltip-autocomplete > ul { font-family: var(--font-code); font-size: 12px; max-height: 240px; }
+.program-editor .cm-tooltip-autocomplete > ul > li { line-height: 22px; padding: 0 8px; }
+.program-editor .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accentSoft); color: var(--text); }
+.program-editor .cm-completionMatchedText { color: var(--accent); text-decoration: none; }
+.program-editor .cm-completionDetail { color: var(--faint); font-style: normal; margin-left: 12px; }

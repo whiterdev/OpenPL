@@ -117,6 +117,35 @@ test("clic derecho resuelve y describe una tabla de la sesión del programa", as
   }
 });
 
+test("completa objetos con la sesión del programa y cambia con ella", async () => {
+  const objects = vi.spyOn(api, "completeObjects").mockResolvedValue([{ owner: "HR", name: "VENTAS", object_type: "TABLE" }]);
+  const ref = createRef<ProgramActions>();
+  const source = { kind: "SQL", source: "select * from ven", diagnostics: [], last_ddl_time: null };
+  try {
+    const { rerender } = render(<ProgramWindow ref={ref} parts={[source]} readOnly={false} onDirty={vi.fn()}
+      catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+    const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Fuente" }).closest<HTMLElement>(".cm-editor")!)!;
+    act(() => view.dispatch({ selection: { anchor: view.state.doc.length } }));
+    act(() => ref.current?.complete?.());
+    expect(await screen.findByRole("option", { name: /VENTAS/ })).toBeInTheDocument();
+    expect(objects).toHaveBeenCalledWith("s1", null, "VEN", "HR");
+
+    rerender(<ProgramWindow ref={ref} parts={[source]} readOnly={false} onDirty={vi.fn()}
+      catalog={{ sessionId: "s2", owner: "QA", openProgram: vi.fn() }} />);
+    act(() => ref.current?.complete?.());
+    await waitFor(() => expect(objects).toHaveBeenLastCalledWith("s2", null, "VEN", "QA"));
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+test("en solo lectura no ofrece completar", () => {
+  const ref = createRef<ProgramActions>();
+  render(<ProgramWindow ref={ref} parts={parts} readOnly onDirty={vi.fn()}
+    catalog={{ sessionId: "s1", owner: "HR", openProgram: vi.fn() }} />);
+  expect(ref.current?.complete).toBeUndefined();
+});
+
 test("guarda los borradores por parte y abre ambos editores", async () => {
   render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
   const editor = screen.getByRole("textbox", { name: "Spec" });

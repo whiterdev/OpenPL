@@ -26,6 +26,7 @@ export type CommandId =
   | "foldBlock"
   | "unfoldBlock"
   | "objectActions"
+  | "complete"
   | "compareProgram"
   | "goToLine"
   | "find"
@@ -75,6 +76,7 @@ const list: Command[] = [
   { id: "foldBlock", label: "Plegar bloque", keys: "Alt+Shift+P" },
   { id: "unfoldBlock", label: "Desplegar bloque", keys: "Alt+Shift+A" },
   { id: "objectActions", label: "Acciones del objeto", keys: "Alt+Enter" },
+  { id: "complete", label: "Completar", keys: "Ctrl+Space" },
   { id: "compareProgram", label: "Comparar con Oracle", keys: "Alt+Shift+D" },
   { id: "goToLine", label: "Ir a línea", keys: "Ctrl+G" },
   { id: "find", label: "Buscar", keys: "Ctrl+F" },
@@ -120,7 +122,8 @@ export interface KeyLike {
 /** Coincidencia exacta de modificadores y tecla. */
 export function matches(e: KeyLike, keys: string): boolean {
   const parts = keys.split("+");
-  const key = parts[parts.length - 1];
+  const last = parts[parts.length - 1];
+  const key = last === "Space" ? " " : last;
   const mods = new Set(parts.slice(0, -1));
   if (mods.has("Ctrl") !== (e.ctrlKey || e.metaKey)) return false;
   if (mods.has("Shift") !== e.shiftKey) return false;

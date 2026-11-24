@@ -71,7 +71,7 @@ export default function App() {
     ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
     : active;
   const currentProgramActions = Object.fromEntries(
-    (["save", "spec", "body", "sideBySide", "goToDeclaration", "foldBlock", "unfoldBlock", "objectActions", "compareProgram", "execute", "goToLine", "find", "replace",
+    (["save", "spec", "body", "sideBySide", "goToDeclaration", "foldBlock", "unfoldBlock", "objectActions", "complete", "compareProgram", "execute", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
       .filter((id) => {
         if (!program?.parts) return false;
@@ -257,6 +257,7 @@ export default function App() {
         run("goToLine"),
         run("goToDeclaration"),
         run("objectActions"),
+        run("complete"),
       ],
     },
     {

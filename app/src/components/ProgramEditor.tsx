@@ -5,11 +5,13 @@ import { foldGutter, HighlightStyle, syntaxHighlighting } from "@codemirror/lang
 import { search, highlightSelectionMatches } from "@codemirror/search";
 import { history } from "@codemirror/commands";
 import { linter } from "@codemirror/lint";
+import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
 import { programFolding } from "../programFolding";
+import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -32,6 +34,8 @@ interface Props {
   onChange: (value: string) => void;
   activate: () => void;
   onObjectContext?: (reference: EditorReference, x: number, y: number) => void;
+  /** Catálogo de la sesión del programa; se lee en cada consulta. */
+  completion?: CompletionCatalog | null;
 }
 
 export function ProgramEditor(props: Props) {
@@ -48,6 +52,10 @@ export function ProgramEditor(props: Props) {
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), search(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax),
+        readOnly ? [] : autocompletion({
+          override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
+          icons: false,
+        }),
         EditorState.phrases.of({
           Find: "Buscar", next: "siguiente", previous: "anterior", all: "todas",
           Replace: "Reemplazar", replace: "reemplazar", "replace all": "reemplazar todo",

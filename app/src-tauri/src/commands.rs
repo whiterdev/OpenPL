@@ -257,6 +257,48 @@ pub async fn describe_columns(
 }
 
 #[tauri::command]
+pub async fn complete_objects(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: Option<String>,
+    prefix: String,
+    context_owner: Option<String>,
+) -> Result<Vec<openpl_core::catalog::CompletionObject>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| {
+            openpl_core::catalog::complete_objects(
+                c,
+                owner.as_deref(),
+                &prefix,
+                context_owner.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn object_columns(
+    st: St<'_>,
+    session_id: SessionId,
+    owner: Option<String>,
+    name: String,
+    context_owner: Option<String>,
+) -> Result<Vec<openpl_core::catalog::ObjectColumn>, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(move |c| {
+            openpl_core::catalog::object_columns(
+                c,
+                owner.as_deref(),
+                &name,
+                context_owner.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
 pub async fn program_source(
     st: St<'_>,
     session_id: SessionId,
