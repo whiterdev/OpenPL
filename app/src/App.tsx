@@ -894,6 +894,7 @@ export default function App() {
                       <ProgramWindow
                         parts={tab.parts}
                         readOnly={tab.readOnly}
+                        onReadOnlyChange={(readOnly) => updateProgram(tab.id, { readOnly })}
                         fileName={tab.fileName}
                         active={tab.id === programId}
                         catalog={

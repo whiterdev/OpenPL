@@ -52,6 +52,11 @@
 
 ## Hecho
 
+### Solo lectura en el editor de objetos
+
+- El menú contextual ofrece **Solo lectura** con el estado de la pestaña. Se alterna en el editor abierto y se conservan los cambios, la selección y el historial. La opción también está disponible cuando el clic no apunta a un nombre de objeto.
+- [Auditoría antislop](../anti-slop/audit-solo-lectura-2026-11-24.md). Las pruebas de componentes verifican el estado y la conservación del texto. Queda pendiente el recorrido visual en escritorio.
+
 ### Selector de temas
 
 - En `feat/seleccion-temas`, la fila activa usa fondo de superficie y un tilde. Se quitó la franja lateral y se documentó la regla de selección en `DESIGN.md`.

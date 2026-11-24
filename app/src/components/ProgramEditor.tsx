@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { useCallback, useEffect, useRef } from "react";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type KeyBinding,
 } from "@codemirror/view";
@@ -79,8 +79,23 @@ export function ProgramEditor(props: Props) {
   const host = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
   const viewRef = useRef<EditorView | null>(null);
+  const editing = useRef(new Compartment()).current;
   latest.current = props;
   const { part, label, readOnly } = props;
+
+  const editingExtensions = useCallback((locked: boolean, editorLabel: string) => [
+    EditorState.readOnly.of(locked),
+    EditorView.editable.of(!locked),
+    EditorView.contentAttributes.of({
+      role: "textbox", "aria-label": editorLabel, "aria-multiline": "true", "aria-readonly": String(locked),
+      tabindex: "0",
+    }),
+    locked ? [] : autocompletion({
+      override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
+      icons: false,
+    }),
+    locked ? [] : keymap.of(indentKeys),
+  ], []);
 
   useEffect(() => {
     const view = new EditorView({
@@ -90,11 +105,7 @@ export function ProgramEditor(props: Props) {
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax), indentUnit.of(INDENT),
-        readOnly ? [] : autocompletion({
-          override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
-          icons: false,
-        }),
-        readOnly ? [] : keymap.of(indentKeys),
+        editing.of(editingExtensions(latest.current.readOnly, label)),
         // Los anuncios de búsqueda para lectores de pantalla siguen saliendo de @codemirror/search.
         EditorState.phrases.of({
           "current match": "Coincidencia actual",
@@ -105,12 +116,6 @@ export function ProgramEditor(props: Props) {
           to: "a", "folded code": "Código plegado", unfold: "Desplegar",
         }),
         EditorState.allowMultipleSelections.of(true),
-        EditorState.readOnly.of(readOnly),
-        EditorView.editable.of(!readOnly),
-        EditorView.contentAttributes.of({
-          role: "textbox", "aria-label": label, "aria-multiline": "true", "aria-readonly": String(readOnly),
-          tabindex: "0",
-        }),
         EditorView.domEventHandlers({
           focus: () => { latest.current.activate(); },
           contextmenu: (event, editor) => {
@@ -149,7 +154,14 @@ export function ProgramEditor(props: Props) {
       latest.current.onView(null);
       view.destroy();
     };
-  }, [part, label, readOnly]);
+  }, [part, label, editing, editingExtensions]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && view.state.readOnly !== readOnly) {
+      view.dispatch({ effects: editing.reconfigure(editingExtensions(readOnly, label)) });
+    }
+  }, [readOnly, label, editing, editingExtensions]);
 
   useEffect(() => {
     const editor = viewRef.current;

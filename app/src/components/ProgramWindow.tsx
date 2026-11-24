@@ -41,6 +41,7 @@ const NO_MARKERS: EditorMarker[] = [];
 interface Props {
   parts: ProgramPart[];
   readOnly: boolean;
+  onReadOnlyChange?: (readOnly: boolean) => void;
   onDirty: (dirty: boolean) => void;
   ref?: Ref<ProgramActions>;
   fileName?: string;
@@ -88,7 +89,7 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile,
+  parts, readOnly, onReadOnlyChange, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map((entry) => ({
     text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
@@ -102,6 +103,8 @@ export function ProgramWindow({
   const [saving, setSaving] = useState(false);
   const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult } | null>(null);
   const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
+  const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeEditorMenu = useCallback(() => setEditorMenu(null), []);
   const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
   const [outlineWidth, setOutlineWidthState] = useState(storedOutlineWidth);
@@ -116,7 +119,8 @@ export function ProgramWindow({
   useEffect(() => {
     closeObjectMenu();
     closeDeclarationMenu();
-  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu]);
+    closeEditorMenu();
+  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeEditorMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
@@ -335,6 +339,14 @@ export function ProgramWindow({
   }
 
   const canCompile = !!compile && !!compilationTarget && !readOnly;
+  const readOnlyItem = onReadOnlyChange && {
+    label: "Solo lectura",
+    checked: readOnly,
+    run: () => {
+      onReadOnlyChange(!readOnly);
+      views.current[selected]?.focus();
+    },
+  };
   const actions: ProgramActions = {
     save: () => void save(),
     spec: canSplit ? () => focusPart(0) : undefined,
@@ -462,7 +474,16 @@ export function ProgramWindow({
             window.addEventListener("pointerup", stop);
             window.addEventListener("pointercancel", stop);
           }} />
-        <div className="program-editors">
+        <div className="program-editors" onContextMenu={(event) => {
+          if (!readOnlyItem || event.defaultPrevented || !(event.target instanceof Element)) return;
+          const content = event.target.closest<HTMLElement>(".cm-content");
+          if (!content) return;
+          event.preventDefault();
+          content.focus();
+          closeObjectMenu();
+          closeDeclarationMenu();
+          setEditorMenu({ x: event.clientX, y: event.clientY });
+        }}>
           {parts.map((entry, index) => (
             <div key={entry.kind} className="program-pane" hidden={!split && selected !== index}>
               {split && <span className="program-pane-label">{caption(entry.kind)}</span>}
@@ -474,6 +495,7 @@ export function ProgramWindow({
                 markers={markersFor(index)}
                 activate={() => setSelected(index)}
                 onObjectContext={catalog ? (reference, x, y) => {
+                  closeEditorMenu();
                   closeDeclarationMenu();
                   setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
                 } : undefined}
@@ -502,8 +524,12 @@ export function ProgramWindow({
       )}
       {active && catalog && objectMenu && (
         <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
+          readOnlyItem={readOnlyItem}
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
+      )}
+      {active && editorMenu && readOnlyItem && (
+        <ContextMenu {...editorMenu} label="Editor" items={[readOnlyItem]} onClose={closeEditorMenu} />
       )}
       {active && declarationMenu && !comparison && (
         <ContextMenu x={declarationMenu.x} y={declarationMenu.y}
