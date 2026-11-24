@@ -52,6 +52,12 @@
 
 ## Hecho
 
+### Espacio del editor y formato de Probar
+
+- SQL y **Probar** abren con el 70 % del área dividida para el editor. El divisor se mueve con ratón o teclado.
+- **Probar** genera llamadas alineadas, usa los nombres de los parámetros para los binds y abre las entradas tipadas debajo del código. La acción prepara el bloque para ejecutarlo con F8.
+- [Auditoría antislop](../anti-slop/audit-formato-prueba-2026-11-24.md). Queda pendiente la comprobación en escritorio y la ejecución manual en una base habilitada para pruebas.
+
 ### Diálogo de conexión y selección de resultados
 
 - El diálogo de conexión usa la misma capa que los demás diálogos de la aplicación, por encima del encabezado fijo de resultados.

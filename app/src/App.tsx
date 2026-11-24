@@ -105,6 +105,7 @@ interface ProgramTab {
     initial: string;
     run: boolean;
     edit?: boolean;
+    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"];
     transaction: boolean;
   };
 }
@@ -421,6 +422,7 @@ export default function App() {
     initial = "",
     run = false,
     edit = false,
+    bindKinds?: ReturnType<typeof routineDraft>["bindKinds"],
   ) {
     try {
       const sessionId = await api.sqlOpen(connection.sessionId);
@@ -431,7 +433,7 @@ export default function App() {
         connection,
         readOnly: false,
         dirty: false,
-        sql: { sessionId, initial, run, edit, transaction: false },
+        sql: { sessionId, initial, run, edit, bindKinds, transaction: false },
       });
     } catch (error) {
       const detail = describeError(error);
@@ -454,9 +456,10 @@ export default function App() {
   async function testRoutine(connection: ActiveConnection, object: Pick<ObjectInfo, "owner" | "name" | "object_type">, name: string, x: number, y: number) {
     const packageName = object.object_type === "Package" ? object.name : null;
     const path = packageName ? [object.owner, packageName, name] : [object.owner, object.name];
-    function prepare(signature: RoutineOverload) {
+    function prepare(signature: RoutineOverload, overloaded = false) {
       try {
-        void openSql(connection, routineDraft(path, signature));
+        const draft = routineDraft(path, signature, overloaded);
+        void openSql(connection, draft.source, false, false, draft.bindKinds);
       } catch (error) {
         showNotice(describeError(error).message);
       }
@@ -469,7 +472,7 @@ export default function App() {
         setRoutineOptions({ x, y, name, items: signatures.map((signature) => ({
           label: `${signature.subprogram_id} · (${signature.parameters.map(({ declaration }) =>
             [declaration.name, declaration.direction, declaration.data_type].filter(Boolean).join(" ")).join(", ")})`,
-          run: () => prepare(signature),
+          run: () => prepare(signature, true),
         })) });
       }
     } catch (error) {
@@ -905,6 +908,7 @@ export default function App() {
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
+                        initialBindKinds={tab.sql.bindKinds}
                         runOnOpen={tab.sql.run}
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}

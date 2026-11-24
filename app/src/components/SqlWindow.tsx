@@ -25,6 +25,7 @@ import "./SqlWindow.css";
 interface Props {
   sessionId: string;
   initialSql?: string;
+  initialBindKinds?: Record<string, BindKind>;
   /** Ejecutar `initialSql` al abrir (Consultar datos). */
   runOnOpen?: boolean;
   /** Además, abrir la grilla en edición (Editar datos). */
@@ -64,7 +65,10 @@ interface HistoryEntry {
   ok: boolean;
 }
 
-type Tab = "results" | "output" | "history";
+type Tab = "variables" | "results" | "output" | "history";
+const RESULT_TABS = [["results", "Resultados"], ["output", "Salida"], ["history", "Historial"]] as const;
+const EDITOR_SHARE = { initial: 70, min: 20, max: 85, step: 4 };
+const clampEditorShare = (share: number) => Math.max(EDITOR_SHARE.min, Math.min(EDITOR_SHARE.max, Math.round(share)));
 const FETCH_ALL = 1000;
 const CANCELLED = "ORA-01013";
 const KINDS: { id: BindKind; label: string }[] = [
@@ -77,7 +81,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function SqlWindow({
-  sessionId, initialSql = "", runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, initialSql = "", initialBindKinds, runOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -87,18 +91,23 @@ export function SqlWindow({
   const [source, setSource] = useState(initialSql);
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
-  const [tab, setTab] = useState<Tab>("results");
+  const hasTestVariables = !!initialBindKinds && Object.keys(initialBindKinds).length > 0;
+  const [tab, setTab] = useState<Tab>(hasTestVariables ? "variables" : "results");
+  const tabs: readonly (readonly [Tab, string])[] = hasTestVariables
+    ? [["variables", "Variables"], ...RESULT_TABS] : RESULT_TABS;
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
-  const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>({});
+  const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>(
+    () => Object.fromEntries(Object.entries(initialBindKinds ?? {}).map(([name, kind]) => [name, { value: "", kind }])),
+  );
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [editorHeight, setEditorHeight] = useState(220);
+  const [editorShare, setEditorShare] = useState(EDITOR_SHARE.initial);
   const lineId = useRef(0);
   const fetchingRef = useRef(false);
   const gridScroll = useRef<HTMLDivElement>(null);
@@ -514,6 +523,29 @@ export function SqlWindow({
       ? `${rowCount === 1 ? "1 fila" : `${rowCount} filas`} · ${grid.elapsed} ms${grid.more ? " · hay más" : ""}`
       : summary;
 
+  const variableFields = variables.map((v) => {
+    const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
+    const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
+    const update = (change: Partial<typeof entry>) =>
+      setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
+    return (
+      <div key={`${v.kind}-${v.key}`} className="sql-variable">
+        <label>
+          <span className="mono">{label}</span>
+          <input className="fld mono" aria-label={`Valor de ${label}`} value={entry.value}
+            placeholder={v.kind === "bind" ? "NULL" : ""}
+            onChange={(e) => update({ value: e.target.value })} />
+        </label>
+        {v.kind === "bind" && (
+          <select className="fld" aria-label={`Tipo de ${label}`} value={entry.kind}
+            onChange={(e) => update({ kind: e.target.value as BindKind })}>
+            {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+          </select>
+        )}
+      </div>
+    );
+  });
+
   return (
     <section className="sql-window" aria-label="Ventana SQL">
       <div className="program-toolbar">
@@ -531,7 +563,7 @@ export function SqlWindow({
         {!running && notice && <span role="status" className="program-muted">{notice}</span>}
         {alert && <span role="alert" className="sql-alert">{alert}</span>}
       </div>
-      <div className="sql-top" style={{ height: editorHeight }}>
+      <div className="sql-top" style={{ flexGrow: editorShare }}>
         <div className="sql-editor">
           <ProgramEditor part={part} label="SQL" readOnly={false} completion={completion} markers={markers}
             activate={() => {}}
@@ -543,67 +575,52 @@ export function SqlWindow({
               onDirty(value !== saved.current);
             }} />
         </div>
-        {variables.length > 0 && (
+        {!hasTestVariables && variables.length > 0 && (
           <aside className="sql-variables" aria-label="Variables">
             <div>Variables</div>
-            {variables.map((v) => {
-              const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
-              const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
-              const update = (change: Partial<typeof entry>) =>
-                setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
-              return (
-                <div key={`${v.kind}-${v.key}`} className="sql-variable">
-                  <label>
-                    <span className="mono">{label}</span>
-                    <input className="fld mono" aria-label={`Valor de ${label}`} value={entry.value}
-                      placeholder={v.kind === "bind" ? "NULL" : ""}
-                      onChange={(e) => update({ value: e.target.value })} />
-                  </label>
-                  {v.kind === "bind" && (
-                    <select className="fld" aria-label={`Tipo de ${label}`} value={entry.kind}
-                      onChange={(e) => update({ kind: e.target.value as BindKind })}>
-                      {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
-                    </select>
-                  )}
-                </div>
-              );
-            })}
+            {variableFields}
           </aside>
         )}
       </div>
       <div role="separator" aria-orientation="horizontal" aria-label="Alto del editor" tabIndex={0}
-        className="sql-resizer" aria-valuemin={80} aria-valuemax={800} aria-valuenow={editorHeight}
+        className="sql-resizer" aria-valuemin={EDITOR_SHARE.min} aria-valuemax={EDITOR_SHARE.max}
+        aria-valuenow={editorShare} aria-valuetext={`${editorShare}%`}
         onKeyDown={(event) => {
-          const next = { ArrowUp: editorHeight - 24, ArrowDown: editorHeight + 24 }[event.key];
+          const next = { ArrowUp: editorShare - EDITOR_SHARE.step, ArrowDown: editorShare + EDITOR_SHARE.step }[event.key];
           if (next === undefined) return;
           event.preventDefault();
-          setEditorHeight(Math.min(800, Math.max(80, next)));
+          setEditorShare(clampEditorShare(next));
         }}
         onPointerDown={(event) => {
           event.preventDefault();
           const startY = event.clientY;
-          const startHeight = editorHeight;
+          const startShare = editorShare;
+          const availableHeight = Math.max(1,
+            (event.currentTarget.previousElementSibling?.clientHeight ?? 0) +
+            (event.currentTarget.nextElementSibling?.clientHeight ?? 0));
           document.body.classList.add("resizing-rows");
-          const move = (e: PointerEvent) => setEditorHeight(Math.min(800, Math.max(80, startHeight + e.clientY - startY)));
+          const move = (e: PointerEvent) => setEditorShare(clampEditorShare(startShare + 100 * (e.clientY - startY) / availableHeight));
           const stop = () => {
             document.body.classList.remove("resizing-rows");
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", stop);
+            window.removeEventListener("pointercancel", stop);
           };
           window.addEventListener("pointermove", move);
           window.addEventListener("pointerup", stop);
+          window.addEventListener("pointercancel", stop);
         }} />
-      <div className="sql-results">
+      <div className="sql-results" style={{ flexGrow: 100 - editorShare }}>
         <div className="sql-tabs">
           <div role="tablist" aria-label="Resultado" onKeyDown={(event) => {
-            const order: Tab[] = ["results", "output", "history"];
+            const order = tabs.map(([id]) => id);
             const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
             if (!step) return;
             const next = order[(order.indexOf(tab) + step + order.length) % order.length];
             setTab(next);
-            document.getElementById(`sql-tab-${next}`)?.focus();
+            event.currentTarget.querySelector<HTMLElement>(`#sql-tab-${next}`)?.focus();
           }}>
-            {([["results", "Resultados"], ["output", "Salida"], ["history", "Historial"]] as const).map(([id, label]) => (
+            {tabs.map(([id, label]) => (
               <button key={id} role="tab" id={`sql-tab-${id}`} aria-selected={tab === id} aria-controls={`sql-panel-${id}`}
                 tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}>
@@ -653,6 +670,11 @@ export function SqlWindow({
             </button>
           )}
         </div>
+        {hasTestVariables && (
+          <div role="tabpanel" id="sql-panel-variables" aria-label="Variables" hidden={tab !== "variables"} className="sql-panel">
+            <div className="sql-test-variables">{variableFields}</div>
+          </div>
+        )}
         <div role="tabpanel" id="sql-panel-results" aria-label="Resultados" hidden={tab !== "results"} className="sql-panel">
           {running && !grid ? null
             : !grid ? <p className="sql-empty">Sin resultados. Ejecuta con F8.</p>

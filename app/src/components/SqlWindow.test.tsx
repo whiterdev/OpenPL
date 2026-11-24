@@ -28,6 +28,30 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   return { ref, view, onTransaction };
 }
 
+test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {
+  setup("select 1 from dual");
+  const divider = screen.getByRole("separator", { name: "Alto del editor" });
+  expect(divider).toHaveAttribute("aria-valuenow", "70");
+  fireEvent.keyDown(divider, { key: "ArrowUp" });
+  expect(divider).toHaveAttribute("aria-valuenow", "66");
+  fireEvent.keyDown(divider, { key: "ArrowDown" });
+  expect(divider).toHaveAttribute("aria-valuenow", "70");
+});
+
+test("una prueba abre las variables tipadas debajo del editor y espera F8", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+  const source = 'BEGIN\n  "HR"."PKG"."RUN"("FECHA" => :FECHA);\nEND;\n/';
+  const { ref } = setup(source, { initialBindKinds: { FECHA: "Date" } });
+  const panel = within(screen.getByRole("tabpanel", { name: "Variables" }));
+  expect(panel.getByRole("combobox", { name: "Tipo de :FECHA" })).toHaveValue("Date");
+  expect(execute).not.toHaveBeenCalled();
+  fireEvent.change(panel.getByRole("textbox", { name: "Valor de :FECHA" }), { target: { value: "2026-11-24" } });
+  await act(async () => ref.current!.execute!());
+  expect(execute).toHaveBeenCalledWith("w1", source.slice(0, -2), [
+    { name: "FECHA", kind: "Date", value: "2026-11-24" },
+  ]);
+});
+
 test("F8 ejecuta la sentencia bajo el cursor y muestra la grilla", async () => {
   const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"], ["2", null]]));
   const source = "select 1 from dual;\nselect id, nombre from clientes;";
