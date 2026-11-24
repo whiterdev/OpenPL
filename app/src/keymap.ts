@@ -48,19 +48,22 @@ export interface Command {
   id: CommandId;
   label: string;
   keys?: string;
+  /** La ventana o función todavía no existe: se muestra deshabilitado con "Próximamente". */
+  pending?: true;
 }
 
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
-  { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
-  { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
-  { id: "commit", label: "Commit", keys: "F10" },
-  { id: "rollback", label: "Rollback", keys: "Shift+F10" },
-  { id: "explainPlan", label: "Plan de ejecución", keys: "F5" },
-  { id: "palette", label: "Buscar comando", keys: "Ctrl+K" },
-  { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
-  { id: "test", label: "Probar", keys: "Ctrl+T" },
-  { id: "newCommand", label: "Nueva ventana de comando", keys: "Ctrl+Shift+N" },
+  // TODO(plan 3): ventana SQL, transacciones y edición en grilla. TODO(plan 4): ventana de prueba.
+  { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8", pending: true },
+  { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape", pending: true },
+  { id: "commit", label: "Commit", keys: "F10", pending: true },
+  { id: "rollback", label: "Rollback", keys: "Shift+F10", pending: true },
+  { id: "explainPlan", label: "Plan de ejecución", keys: "F5", pending: true },
+  { id: "palette", label: "Buscar comando", keys: "Ctrl+K", pending: true },
+  { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N", pending: true },
+  { id: "test", label: "Probar", keys: "Ctrl+T", pending: true },
+  { id: "newCommand", label: "Nueva ventana de comando", keys: "Ctrl+Shift+N", pending: true },
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },
   { id: "openProgram", label: "Abrir programa", keys: "Ctrl+O" },
   { id: "undo", label: "Deshacer", keys: "Ctrl+Z" },
@@ -86,8 +89,8 @@ const list: Command[] = [
   { id: "deleteLine", label: "Borrar línea", keys: "Ctrl+Shift+K" },
   { id: "upperCase", label: "Mayúsculas", keys: "Ctrl+Shift+U" },
   { id: "lowerCase", label: "Minúsculas", keys: "Ctrl+Alt+U" },
-  { id: "editData", label: "Editar datos", keys: "Ctrl+E" },
-  { id: "applyChanges", label: "Aplicar cambios", keys: "Ctrl+Shift+Enter" },
+  { id: "editData", label: "Editar datos", keys: "Ctrl+E", pending: true },
+  { id: "applyChanges", label: "Aplicar cambios", keys: "Ctrl+Shift+Enter", pending: true },
   { id: "connect", label: "Conectar", keys: "Ctrl+Shift+L" },
   { id: "disconnect", label: "Desconectar" },
   { id: "reconnect", label: "Reconectar" },

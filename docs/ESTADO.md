@@ -9,7 +9,7 @@
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 73 pruebas de Rust sin base y 119 de interfaz,
+- Verificación local en Windows: `cargo fmt`, Clippy, 73 pruebas de Rust sin base y 125 de interfaz,
   más el chequeo de TypeScript. Las seis pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
@@ -107,6 +107,15 @@
   (deshabilitadas hasta sus planes) y plantillas de programa en blanco, paquete, procedimiento,
   función, trigger, tipo y vista (`app/src/newWindows.ts`).
 - El clic derecho fuera de campos de texto ya no abre el menú del navegador (WebView).
+
+### Auditoría antislop 001
+
+- Se instaló antislop (skills en `~/.claude/skills/antislop*`) y se auditó la interfaz:
+  [anti-slop/audit-001-2026-11-24.md](../anti-slop/audit-001-2026-11-24.md). Los 14 hallazgos
+  están corregidos (contraste medido, bordes de campos, foco, estados de carga/vacío/error en el
+  explorador, "Próximamente" en lo pendiente, sin menú Ayuda vacío, estado inicial con acciones).
+- [DESIGN.md](../DESIGN.md) es la dirección de diseño con sus motivos. Desde ahora toda interfaz
+  nueva aplica antislop mientras se construye y cierra con su informe PASS/FAIL (`AGENTS.md`).
 
 - **Punto de continuación:** cerrar el plan 2 con la validación manual contra Oracle (lectura de
   fuentes, menú de objeto, comparación, autocompletado) y pasar al plan 3 (ventana SQL).

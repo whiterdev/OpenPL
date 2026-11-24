@@ -162,10 +162,10 @@ describe("ObjectBrowser", () => {
       .mockResolvedValueOnce([obj("PKG_A")]);
     renderBrowser();
     await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
-    expect(await screen.findByText("error")).toBeInTheDocument();
+    expect(await screen.findByText("ORA-00942 x")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Refrescar/ }));
     expect(await screen.findByText("PKG_A")).toBeInTheDocument();
-    expect(screen.queryByText("error")).toBeNull();
+    expect(screen.queryByText("ORA-00942 x")).toBeNull();
   });
 
   test("clic derecho en un objeto abre el menú contextual con atajos", async () => {
@@ -222,6 +222,38 @@ describe("ObjectBrowser", () => {
     await userEvent.click(screen.getByRole("treeitem", { name: "Usuarios" }));
     expect(m.listObjects).toHaveBeenLastCalledWith("s1", "All", "User", null);
     expect(await screen.findByRole("treeitem", { name: "HR" })).toBeInTheDocument();
+  });
+
+  test("una carpeta con error muestra el motivo y permite reintentar solo ese tipo", async () => {
+    m.listObjects
+      .mockRejectedValueOnce({ Db: { code: "ORA-00942", kind: "Other", message: "la tabla o vista no existe" } })
+      .mockResolvedValueOnce([obj("PKG_A")]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    expect(await screen.findByText("ORA-00942 la tabla o vista no existe")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar Paquetes" }));
+    expect(await screen.findByText("PKG_A")).toBeInTheDocument();
+    expect(screen.queryByText(/ORA-00942/)).toBeNull();
+  });
+
+  test("una carpeta muestra carga y vacío", async () => {
+    let resolve!: (value: ObjectInfo[]) => void;
+    m.listObjects.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Paquetes" }));
+    expect(screen.getByText("Cargando…")).toBeInTheDocument();
+    await act(async () => resolve([]));
+    expect(screen.getByText("Sin objetos")).toBeInTheDocument();
+  });
+
+  test("las opciones pendientes se marcan como próximamente", async () => {
+    m.listObjects.mockResolvedValue([obj("CLIENTES", { object_type: "Table" })]);
+    renderBrowser();
+    await userEvent.click(screen.getByRole("treeitem", { name: "Tablas" }));
+    fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /CLIENTES/ }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Consultar datos.*Próximamente/ })).toBeDisabled();
+    expect(within(menu).getByRole("menuitem", { name: /Copiar DDL/ })).not.toHaveTextContent("Próximamente");
   });
 
   test("menú de una tabla: consultar y editar datos, y DDL", async () => {

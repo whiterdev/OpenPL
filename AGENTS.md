@@ -31,6 +31,10 @@ Si el diseño y `docs/ESTADO.md` se contradicen, manda `docs/ESTADO.md` (registr
    la suite completa en verde. Un arreglo sin un test que falló antes no está verificado.
 6. **Interfaz:** textos cortos en español, sin frases explicativas en pantalla. Tema grafito,
    íconos Phosphor, IBM Plex Sans/Mono, componentes rectos estilo Zed (ver "Interfaz" abajo).
+   Toda interfaz nueva lee primero [DESIGN.md](DESIGN.md) (dirección) y aplica antislop como
+   filtro mientras se construye (skills `antislop`, `antislop-ui`, `antislop-human` y
+   `antislop-code`): contraste medido, estados de carga/vacío/error, foco visible, nada sin acción.
+   Cada entrega con interfaz cierra con el informe PASS/FAIL de antislop. Auditorías en `anti-slop/`.
 7. **Todo comando importante tiene atajo visible**, registrado en `app/src/keymap.ts`. Nunca
    definir un atajo en otro lado.
 8. Oracle **12.1** o superior; Instant Client **19 o 21** recomendado. Nada que dependa de 12.2+
@@ -124,6 +128,7 @@ design/logo/            logo maestro, variantes y guía
 
 ## Interfaz
 
+- Dirección y motivos de cada decisión: [DESIGN.md](DESIGN.md).
 - Tokens en `app/src/theme.css` (`--s0..--s3`, `--line`, `--text`, `--muted`, `--accent` ocre
   `#C99A3B`, `--env-dev/qa/prod`, colores de sintaxis). No usar colores sueltos.
 - Componentes rectos: paneles y pestañas separados por líneas de 1 px, botones con radio 4 px,

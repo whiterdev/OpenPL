@@ -302,7 +302,6 @@ export default function App() {
       ],
     },
     { label: "Herramientas", items: [run("test"), run("editData")] },
-    { label: "Ayuda", items: [] },
   ];
 
   if (!client)
@@ -334,7 +333,7 @@ export default function App() {
             items={[
               ...([["newSql", "Ventana SQL"], ["test", "Ventana de prueba"], ["newCommand", "Ventana de comando"]] as const)
                 .map(([id, label]): ContextItem => ({
-                  label, keys: commands[id].keys, run: actions[id] && pick(actions[id]),
+                  label, keys: commands[id].keys, run: actions[id] && pick(actions[id]), pending: commands[id].pending,
                 })),
               "sep",
               ...newWindowTemplates.map((template, index): ContextItem => ({
@@ -354,7 +353,7 @@ export default function App() {
           onNew={() => setShowLogin(true)}
         />
         <div className="titlebar-center">
-          <button className="search" disabled>
+          <button className="search" disabled title="Buscar comando · Próximamente">
             <MagnifyingGlass size={14} aria-hidden />
             <span>Buscar</span>
             <span className="kbd">{formatKeys(commands.palette.keys!)}</span>
@@ -364,11 +363,11 @@ export default function App() {
           <CheckCircle size={14} color="var(--env-dev)" aria-hidden />
           Sin transacción
         </span>
-        <button className="btn" disabled>
+        <button className="btn" disabled title="Commit · Próximamente">
           Commit{" "}
           <span className="kbd">{formatKeys(commands.commit.keys!)}</span>
         </button>
-        <button className="btn" disabled>
+        <button className="btn" disabled title="Rollback · Próximamente">
           Rollback{" "}
           <span className="kbd">{formatKeys(commands.rollback.keys!)}</span>
         </button>
@@ -386,7 +385,19 @@ export default function App() {
           />
         )}
         <main className="workspace">
-          {!active && !program && <p className="empty">Sin conexión</p>}
+          {!active && !program && (
+            <div className="empty">
+              <p>Sin conexión</p>
+              <div className="empty-actions">
+                <button className="btn primary" onClick={() => setShowLogin(true)}>
+                  Conectar <span className="kbd">{formatKeys(commands.connect.keys!)}</span>
+                </button>
+                <button className="btn" onClick={() => newProgram()}>
+                  Nuevo programa <span className="kbd">{formatKeys(commands.newProgram.keys!)}</span>
+                </button>
+              </div>
+            </div>
+          )}
           {!!programs.length && (
             <div className="program-workspace">
               <div className="program-tabs" aria-label="Programas abiertos">

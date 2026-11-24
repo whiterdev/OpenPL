@@ -58,7 +58,16 @@
     justify-content: center;
 }
 .empty {
-    color: var(--faint);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+}
+.empty p { margin: 0; }
+.empty-actions {
+    display: flex;
+    gap: 8px;
 }
 .toast {
     position: absolute;

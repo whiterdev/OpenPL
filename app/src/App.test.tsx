@@ -116,7 +116,7 @@ test("Nuevo despliega los tipos de ventana y crea un paquete con Spec y Body", a
   windowEvents.close.mockResolvedValue(() => {});
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
-  fireEvent.click(screen.getByRole("button", { name: /^Nuevo/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
   const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
   expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).toBeDisabled();
   expect(menu.getByRole("menuitem", { name: /Ventana de prueba/ })).toBeDisabled();
@@ -135,4 +135,33 @@ test("bloquea el menú del navegador salvo en campos de texto", async () => {
   expect(fireEvent.contextMenu(input)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
   expect(fireEvent.contextMenu(document.querySelector(".titlebar")!)).toBe(false);
+});
+
+test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  const workspace = within(screen.getByRole("main"));
+  expect(workspace.getByText("Sin conexión")).toBeInTheDocument();
+  fireEvent.click(workspace.getByRole("button", { name: /Nuevo programa/ }));
+  expect(await screen.findByRole("textbox", { name: "Fuente" })).toBeInTheDocument();
+
+  expect(screen.queryByRole("button", { name: "Ayuda" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Commit/ })).toHaveAttribute("title", expect.stringMatching(/Próximamente/));
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
+  expect(menu.getByRole("menuitem", { name: /Ventana SQL.*Próximamente/ })).toBeDisabled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
+  const session = within(screen.getByRole("menu", { name: "Sesión" }));
+  expect(session.getByRole("menuitem", { name: /Commit.*Próximamente/ })).toBeDisabled();
+  expect(session.getByRole("menuitem", { name: /^Desconectar$/ })).toBeDisabled();
+});
+
+test("Conectar desde el área vacía abre el login", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: /Conectar/ }));
+  expect(await screen.findByRole("button", { name: "Cancelar" })).toBeInTheDocument();
 });

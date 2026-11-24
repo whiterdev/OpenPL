@@ -139,7 +139,7 @@ pub async fn list_objects_impl(
         .await
 }
 
-// ---- Comandos Tauri ----
+// Comandos Tauri.
 
 type St<'a> = tauri::State<'a, AppState>;
 

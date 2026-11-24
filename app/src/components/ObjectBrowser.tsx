@@ -105,7 +105,10 @@ const ROW = 24;
 /** jsdom y listas cortas: sin virtualizar. Con más filas, solo se dibujan las visibles. */
 const VIRTUALIZE_ABOVE = 200;
 
-type Row = { kind: "type"; i: number } | { kind: "obj"; i: number; o: ObjectInfo };
+type Row =
+  | { kind: "type"; i: number }
+  | { kind: "obj"; i: number; o: ObjectInfo }
+  | { kind: "note"; i: number; state: "loading" | "empty" | "error"; text: string };
 
 interface Props {
   connection: ActiveConnection;
@@ -145,25 +148,25 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       { label: "Ver", run: () => onOpenObject(o, "view") },
       { label: "Editar", run: () => onOpenObject(o, "edit") },
     );
-    else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver" }, { label: "Editar" });
-    if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys });
+    else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver", pending: true }, { label: "Editar", pending: true });
+    if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys, pending: true });
     if (DATA_TYPES.has(t)) {
-      items.push("sep", { label: "Consultar datos" });
-      if (t !== "MaterializedView") items.push({ label: "Editar datos", keys: commands.editData.keys });
-      if (t === "Table") items.push({ label: "Exportar datos" });
+      items.push("sep", { label: "Consultar datos", pending: true });
+      if (t !== "MaterializedView") items.push({ label: "Editar datos", keys: commands.editData.keys, pending: true });
+      if (t === "Table") items.push({ label: "Exportar datos", pending: true });
     }
-    items.push("sep", { label: "Describir" }, { label: "Propiedades" });
+    items.push("sep", { label: "Describir", pending: true }, { label: "Propiedades", pending: true });
     if (RECOMPILABLE.has(t)) items.push({ label: "Recompilar", run: () => void recompile(o) });
     if (DDL_TYPES.has(t)) items.push({ label: "Copiar DDL", run: () => void copyDdl(o) });
-    if (code || DATA_TYPES.has(t)) items.push({ label: "Comparar con…" });
+    if (code || DATA_TYPES.has(t)) items.push({ label: "Comparar con…", pending: true });
     items.push(
       "sep",
       { label: "Copiar nombre", keys: "Ctrl+C", run: () => copy(o.name) },
       { label: "Copiar nombre con esquema", run: () => copy(full) },
       "sep",
     );
-    if (RENAMEABLE.has(t)) items.push({ label: "Renombrar" });
-    items.push({ label: "Eliminar" }, "sep", { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh });
+    if (RENAMEABLE.has(t)) items.push({ label: "Renombrar", pending: true });
+    items.push({ label: "Eliminar", pending: true }, "sep", { label: "Refrescar", keys: commands.refreshExplorer.keys, run: refresh });
     setMenu({ x: e.clientX, y: e.clientY, label: full, items });
   }
 
@@ -202,7 +205,7 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       label,
       items: [
         { label: open ? "Contraer" : "Expandir", run: () => toggle(t) },
-        { label: "Nuevo…" },
+        { label: "Nuevo…", pending: true },
         "sep",
         {
           label: "Copiar nombres separados por coma",
@@ -265,11 +268,17 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
     const out: Row[] = [];
     TYPES.forEach((ty, i) => {
       out.push({ kind: "type", i });
-      if (expanded.has(ty.t)) for (const o of cache[keyOf(ty.t)] ?? []) out.push({ kind: "obj", i, o });
+      if (!expanded.has(ty.t)) return;
+      const key = keyOf(ty.t);
+      const list = cache[key];
+      if (errors[key]) out.push({ kind: "note", i, state: "error", text: errors[key] });
+      else if (!list) out.push({ kind: "note", i, state: "loading", text: "Cargando…" });
+      else if (!list.length) out.push({ kind: "note", i, state: "empty", text: query ? `Sin coincidencias para «${query}»` : "Sin objetos" });
+      else for (const o of list) out.push({ kind: "obj", i, o });
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded, cache, scope, query]);
+  }, [expanded, cache, errors, scope, query]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtual = rows.length > VIRTUALIZE_ABOVE;
@@ -287,6 +296,12 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
       else n.add(t);
       return n;
     });
+  }
+
+  function retry(t: ObjectType) {
+    const key = keyOf(t);
+    setErrors(({ [key]: _failed, ...rest }) => rest);
+    setCache((c) => ({ ...c }));
   }
 
   function onObjKey(e: KeyboardEvent, o: ObjectInfo) {
@@ -316,8 +331,20 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
           {open ? <CaretDown size={10} className="ob-caret" aria-hidden /> : <CaretRight size={10} className="ob-caret" aria-hidden />}
           <ty.Icon size={15} color={ty.tint} aria-hidden />
           <span className="ob-label">{ty.label}</span>
-          {errors[keyOf(ty.t)] && <span className="ob-err" title={errors[keyOf(ty.t)]}>error</span>}
           {open && list && <span className="ob-count">{list.length}</span>}
+        </div>
+      );
+    }
+    if (r.kind === "note") {
+      return (
+        <div key={`n-${ty.t}`} role="treeitem" aria-level={2} aria-label={r.text} tabIndex={-1}
+          className={`ob-row ob-note ob-note-${r.state}`} style={style}>
+          <span className="ob-label" title={r.text}>{r.text}</span>
+          {r.state === "error" && (
+            <button className="btn ghost ob-retry" aria-label={`Reintentar ${ty.label}`} onClick={() => retry(ty.t)}>
+              Reintentar
+            </button>
+          )}
         </div>
       );
     }

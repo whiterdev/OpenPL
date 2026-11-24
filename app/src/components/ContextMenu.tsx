@@ -6,6 +6,8 @@ export interface ContextItem {
   keys?: string;
   /** Sin `run` el ítem aparece deshabilitado. */
   run?: () => void;
+  /** Función que todavía no existe: deshabilitada con la marca "Próximamente". */
+  pending?: boolean;
 }
 
 interface Props {
@@ -75,6 +77,7 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
             }}
           >
             <span className="menu-label">{it.label}</span>
+            {it.pending && !it.run && <span className="menu-soon">Próximamente</span>}
             {it.keys && <span className="menu-kbd">{formatKeys(it.keys)}</span>}
           </button>
         ),

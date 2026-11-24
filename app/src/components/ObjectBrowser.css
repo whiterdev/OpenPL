@@ -5,17 +5,21 @@
 .ob-scope button { height: 22px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font-size: 12px; }
 .ob-scope button[aria-checked="true"] { background: var(--s1); color: var(--text); box-shadow: 0 0 0 1px var(--line2); }
 .ob-filter { margin: 8px 8px 6px; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 4px;
-  background: var(--s1); border: 1px solid var(--line2); color: var(--muted); }
+  background: var(--s1); border: 1px solid var(--field-line); color: var(--muted); }
 .ob-filter:focus-within { border-color: var(--accent); }
 .ob-filter input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); outline: none; font-size: 12.5px; }
 .ob-tree { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 8px; font-size: 12.5px; }
-.ob-row { height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 6px; border-radius: 3px; cursor: default;
+.ob-row { height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 6px; border-radius: 3px; cursor: pointer;
   user-select: none; white-space: nowrap; }
 .ob-row:hover { background: var(--s2); }
 .ob-row:focus-visible { outline-offset: -2px; }
 .ob-type .ob-label { font-weight: 500; }
 .ob-obj { padding-left: 22px; }
-.ob-caret { color: var(--faint); flex-shrink: 0; }
+.ob-caret { color: var(--muted); flex-shrink: 0; }
 .ob-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .ob-count { color: var(--muted); font-size: 11.5px; }
-.ob-invalid, .ob-err { font-size: 11px; color: var(--err); }
+.ob-invalid { font-size: 11px; color: var(--err); }
+.ob-note { padding-left: 22px; cursor: default; color: var(--muted); }
+.ob-note:hover { background: transparent; }
+.ob-note-error { color: var(--err); }
+.ob-retry { height: 20px; padding: 0 6px; font-size: 11.5px; color: var(--text); }

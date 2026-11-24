@@ -63,6 +63,7 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
                     }}
                   >
                     <span className="menu-label">{it.label ?? commands[it.command].label}</span>
+                    {!it.run && commands[it.command].pending && <span className="menu-soon">Próximamente</span>}
                     {commands[it.command].keys && <span className="menu-kbd">{formatKeys(commands[it.command].keys!)}</span>}
                   </button>
                 ),
