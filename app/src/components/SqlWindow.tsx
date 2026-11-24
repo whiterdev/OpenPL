@@ -1,5 +1,5 @@
 import { useCallback, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
-import { FloppyDisk, Lock, LockOpen, Minus, Play, PlayCircle, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
+import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { gotoLine } from "@codemirror/search";
@@ -101,6 +101,7 @@ export function SqlWindow({
   const [editorHeight, setEditorHeight] = useState(220);
   const lineId = useRef(0);
   const fetchingRef = useRef(false);
+  const gridScroll = useRef<HTMLDivElement>(null);
   const stopFetchRef = useRef(false);
   const saved = useRef(initialSql);
   const fileName = useRef<string | null>(null);
@@ -504,9 +505,6 @@ export function SqlWindow({
         <button className="btn primary" onClick={actions.execute} disabled={running || fetching || applying}>
           <Play size={14} aria-hidden /> Ejecutar <span className="kbd">{key("execute")}</span>
         </button>
-        <button className="btn" onClick={actions.executeScript} disabled={running || fetching || applying}>
-          <PlayCircle size={14} aria-hidden /> Ejecutar script <span className="kbd">{key("executeScript")}</span>
-        </button>
         <button className={`btn sql-stop${actions.cancel ? " active" : ""}`}
           disabled={!actions.cancel} onClick={actions.cancel}>
           <Stop size={14} aria-hidden /> Detener <span className="kbd">{key("cancel")}</span>
@@ -600,6 +598,14 @@ export function SqlWindow({
               </button>
             ))}
           </div>
+          {tab === "results" && (grid?.more || fetching) && (
+            <button className="btn sql-fetch-all" disabled={!actions.fetchAllRows} onClick={() => {
+              gridScroll.current?.focus();
+              actions.fetchAllRows?.();
+            }}>
+              {commands.fetchAllRows.label} <span className="kbd">{key("fetchAllRows")}</span>
+            </button>
+          )}
           {tab === "results" && grid && (
             <button className="btn" aria-pressed={!!editSession} onClick={actions.editData} disabled={running || fetching || applying}>
               {editSession ? <LockOpen size={14} aria-hidden /> : <Lock size={14} aria-hidden />}
@@ -665,7 +671,7 @@ export function SqlWindow({
                   <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
                     selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
-                    more={grid.more} fetching={fetching} fetchError={fetchError} onFetchAll={actions.fetchAllRows} />
+                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} />
                 </>
               )}
         </div>

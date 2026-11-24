@@ -52,6 +52,12 @@
 
 ## Hecho
 
+### Barra SQL
+
+- La barra muestra un solo botón **Ejecutar** y conserva **Detener**. **Ejecutar script** sigue disponible desde el menú y con Shift+F8.
+- **Traer todas** queda junto a **Resultados**, **Salida** e **Historial**. Al activarlo, el foco vuelve a la grilla.
+- [Auditoría antislop de las barras SQL](../anti-slop/audit-barra-sql-2026-11-24.md). Queda pendiente el recorrido visual en escritorio.
+
 ### Solo lectura en el editor de objetos
 
 - El menú contextual ofrece **Solo lectura** con el estado de la pestaña. Se alterna en el editor abierto y se conservan los cambios, la selección y el historial. La opción también está disponible cuando el clic no apunta a un nombre de objeto.

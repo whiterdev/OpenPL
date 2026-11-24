@@ -19,6 +19,8 @@ body.resizing-rows { cursor: row-resize; user-select: none; }
 .sql-results { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--s0); }
 .sql-tabs { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--s1); }
 .sql-tabs [role="tablist"] { display: flex; height: 100%; margin-right: auto; }
+.sql-tabs [role="tablist"]:has(+ .sql-fetch-all) { margin-right: 0; }
+.sql-fetch-all { margin-right: auto; flex-shrink: 0; }
 .sql-tabs [role="tab"] { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent;
   background: transparent; color: var(--muted); }
 .sql-tabs [role="tab"]:hover { color: var(--text); }

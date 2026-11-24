@@ -13,8 +13,8 @@ const rows: Cell[][] = [["1", "Ana"], ["2", "Luis"]];
 function grid(queryKey = 1, onSelect = vi.fn()) {
   return (
     <ResultGrid queryKey={queryKey} columns={columns} rows={rows} status={[null, null]} isModified={() => false}
-      editable={null} selected={null} onSelect={onSelect} onEdit={vi.fn()} more={false} fetching={false}
-      fetchError={null} onFetchAll={undefined} />
+      editable={null} selected={null} onSelect={onSelect} onEdit={vi.fn()} fetching={false}
+      fetchError={null} />
   );
 }
 
