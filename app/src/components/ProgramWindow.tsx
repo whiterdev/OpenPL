@@ -104,8 +104,6 @@ export function ProgramWindow({
   const [saving, setSaving] = useState(false);
   const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult } | null>(null);
   const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
-  const [editorMenu, setEditorMenu] = useState<{ x: number; y: number } | null>(null);
-  const closeEditorMenu = useCallback(() => setEditorMenu(null), []);
   const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
   const [routineMenu, setRoutineMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   const closeRoutineMenu = useCallback(() => setRoutineMenu(null), []);
@@ -122,9 +120,8 @@ export function ProgramWindow({
   useEffect(() => {
     closeObjectMenu();
     closeDeclarationMenu();
-    closeEditorMenu();
     closeRoutineMenu();
-  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeEditorMenu, closeRoutineMenu]);
+  }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeRoutineMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
@@ -143,7 +140,6 @@ export function ProgramWindow({
   function openRoutineMenu(entry: ProgramDeclaration, x: number, y: number) {
     closeObjectMenu();
     closeDeclarationMenu();
-    closeEditorMenu();
     setRoutineMenu({ name: entry.name, x, y });
   }
   function routineAt(index: number, position: number) {
@@ -508,17 +504,7 @@ export function ProgramWindow({
             window.addEventListener("pointerup", stop);
             window.addEventListener("pointercancel", stop);
           }} />
-        <div className="program-editors" onContextMenu={(event) => {
-          if (!readOnlyItem || event.defaultPrevented || !(event.target instanceof Element)) return;
-          const content = event.target.closest<HTMLElement>(".cm-content");
-          if (!content) return;
-          event.preventDefault();
-          content.focus();
-          closeObjectMenu();
-          closeDeclarationMenu();
-          closeRoutineMenu();
-          setEditorMenu({ x: event.clientX, y: event.clientY });
-        }}>
+        <div className="program-editors">
           {parts.map((entry, index) => (
             <div key={entry.kind} className="program-pane" hidden={!split && selected !== index}>
               {split && <span className="program-pane-label">{caption(entry.kind)}</span>}
@@ -528,9 +514,9 @@ export function ProgramWindow({
                 readOnly={readOnly}
                 completion={completion}
                 markers={markersFor(index)}
+                menuExtra={readOnlyItem ? [readOnlyItem] : undefined}
                 activate={() => setSelected(index)}
                 onObjectContext={catalog ? (reference, x, y, position) => {
-                  closeEditorMenu();
                   const entry = routineAt(index, position);
                   if (entry) {
                     openRoutineMenu(entry, x, y);
@@ -568,9 +554,6 @@ export function ProgramWindow({
           readOnlyItem={readOnlyItem}
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
-      )}
-      {active && editorMenu && readOnlyItem && (
-        <ContextMenu {...editorMenu} label="Editor" items={[readOnlyItem]} onClose={closeEditorMenu} />
       )}
       {active && routineMenu && onTestRoutine && (
         <ContextMenu x={routineMenu.x} y={routineMenu.y} label={routineMenu.name} onClose={closeRoutineMenu}

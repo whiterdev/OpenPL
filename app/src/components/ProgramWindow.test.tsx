@@ -508,3 +508,26 @@ test("el clic derecho en la fuente ofrece Probar sin buscar un objeto homonimo",
     lookup.mockRestore();
   }
 });
+
+test("el menú del editor suma Solo lectura a las acciones de edición en un único menú", () => {
+  const onReadOnlyChange = vi.fn();
+  render(<ProgramWindow parts={parts} readOnly onReadOnlyChange={onReadOnlyChange} onDirty={vi.fn()} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  fireEvent.contextMenu(editor, { clientX: 40, clientY: 50 });
+  const menus = screen.getAllByRole("menu", { name: "Editor" });
+  expect(menus).toHaveLength(1);
+  expect(within(menus[0]).getByRole("menuitemcheckbox", { name: "Solo lectura", checked: true })).toHaveFocus();
+  expect(within(menus[0]).getByRole("menuitem", { name: /^Seleccionar todo/ })).toBeEnabled();
+  expect(within(menus[0]).getByRole("menuitem", { name: /^Pegar/ })).toBeDisabled();
+  fireEvent.click(within(menus[0]).getByRole("menuitemcheckbox", { name: "Solo lectura" }));
+  expect(onReadOnlyChange).toHaveBeenCalledWith(false);
+  expect(editor).toHaveFocus();
+});
+
+test("sin Solo lectura el editor igual ofrece sus acciones", () => {
+  render(<ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} />);
+  fireEvent.contextMenu(screen.getByRole("textbox", { name: "Spec" }), { clientX: 40, clientY: 50 });
+  const menu = screen.getByRole("menu", { name: "Editor" });
+  expect(within(menu).queryByRole("menuitemcheckbox", { name: "Solo lectura" })).not.toBeInTheDocument();
+  expect(within(menu).getByRole("menuitem", { name: /^Pegar/ })).toHaveFocus();
+});

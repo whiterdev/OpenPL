@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type Command, type KeyBinding,
@@ -19,6 +19,8 @@ import { editorReference, oracleDialect, type EditorReference } from "../editorR
 import { programFolding } from "../programFolding";
 import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
 import { editorSearch } from "./EditorSearch";
+import { editorMenuItems } from "../editorMenu";
+import { ContextMenu, type ContextItem } from "./ContextMenu";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -70,6 +72,8 @@ interface Props {
   onChange: (value: string) => void;
   activate: () => void;
   onObjectContext?: (reference: EditorReference, x: number, y: number, position: number) => void;
+  /** Ítems de la ventana que se suman al menú contextual del editor. */
+  menuExtra?: (ContextItem | "sep")[];
   /** Catálogo de la sesión del programa; se lee en cada consulta. */
   completion?: CompletionCatalog | null;
   onSelection?: (head: number) => void;
@@ -95,6 +99,8 @@ export function ProgramEditor(props: Props) {
   const latest = useRef(props);
   const viewRef = useRef<EditorView | null>(null);
   const editing = useRef(new Compartment()).current;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   latest.current = props;
   const { part, label, readOnly } = props;
 
@@ -115,6 +121,7 @@ export function ProgramEditor(props: Props) {
   ], []);
 
   useEffect(() => {
+    let keyboardMenu = false;
     const view = new EditorView({
       parent: host.current!,
       doc: part.source,
@@ -135,16 +142,35 @@ export function ProgramEditor(props: Props) {
         EditorState.allowMultipleSelections.of(true),
         EditorView.domEventHandlers({
           focus: () => { latest.current.activate(); },
+          keydown: (event) => {
+            keyboardMenu = event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
+            return false;
+          },
+          mousedown: () => { keyboardMenu = false; return false; },
           contextmenu: (event, editor) => {
-            const open = latest.current.onObjectContext;
-            if (!open || !(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
-            const point = editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY });
-            if (!point) return false;
-            const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
-            const reference = editorReference(editor.state, position);
-            if (!reference) return false;
+            if (!(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
+            // La tecla Menú y Shift+F10 llegan como contextmenu; Chromium a veces manda coordenadas 0.
+            const keyboard = keyboardMenu || (event.clientX === 0 && event.clientY === 0);
+            keyboardMenu = false;
+            event.preventDefault();
             latest.current.activate();
-            open(reference, event.clientX, event.clientY, position);
+            const open = latest.current.onObjectContext;
+            const point = open && !keyboard ? editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY }) : null;
+            if (open && point) {
+              const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
+              const reference = editorReference(editor.state, position);
+              if (reference) {
+                setMenu(null);
+                open(reference, event.clientX, event.clientY, position);
+                return true;
+              }
+            }
+            if (keyboard) {
+              const coords = editor.coordsAtPos(editor.state.selection.main.head) ?? editor.contentDOM.getBoundingClientRect();
+              setMenu({ x: coords.left, y: coords.bottom });
+            } else {
+              setMenu({ x: event.clientX, y: event.clientY });
+            }
             return true;
           },
         }),
@@ -189,5 +215,14 @@ export function ProgramEditor(props: Props) {
     }
   }, [props.markers]);
 
-  return <div className="program-editor" ref={host} />;
+  const view = viewRef.current;
+  return (
+    <>
+      <div className="program-editor" ref={host} />
+      {menu && view && (
+        <ContextMenu x={menu.x} y={menu.y} label="Editor" onClose={closeMenu}
+          items={editorMenuItems(view, { readOnly, extra: props.menuExtra })} />
+      )}
+    </>
+  );
 }

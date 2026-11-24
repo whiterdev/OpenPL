@@ -1,14 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { completionStatus, selectedCompletion, startCompletion } from "@codemirror/autocomplete";
 import { redo, undo } from "@codemirror/commands";
 import { sql } from "@codemirror/lang-sql";
 import { syntaxTree } from "@codemirror/language";
 import { oracleDialect } from "../editorReference";
 import { EditorSelection, EditorState, type Transaction } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { highlightTree, tags } from "@lezer/highlight";
 import { indentKeys, ProgramEditor, programSyntax } from "./ProgramEditor";
+import { clipboard } from "../api";
 
 // Vitest vacía los imports ?raw de CSS; el proyecto no tiene @types/node.
 type Fs = { readFileSync(path: string, encoding: "utf8"): string };
@@ -248,5 +249,100 @@ describe("autocompletado", () => {
     act(() => { startCompletion(view); });
     await pause(150);
     expect(completionStatus(view.state)).toBeNull();
+  });
+});
+
+describe("menú contextual", () => {
+  function open(props: Partial<Parameters<typeof ProgramEditor>[0]> = {}, source = "select 1 from dual") {
+    let view: EditorView | null = null;
+    render(
+      <ProgramEditor
+        part={{ kind: "SQL", source, last_ddl_time: null, diagnostics: [] }}
+        label="Fuente" readOnly={false} onView={(v) => { if (v) view = v; }} onChange={() => {}} activate={() => {}}
+        {...props}
+      />,
+    );
+    return view!;
+  }
+  const menu = () => screen.getByRole("menu", { name: "Editor" });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("el clic derecho muestra las acciones del editor y los ítems extra", () => {
+    const view = open({ menuExtra: [{ label: "Solo lectura", checked: false, run: vi.fn() }] });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    const items = Array.from(menu().querySelectorAll(".menu-label"), (label) => label.textContent);
+    expect(items).toEqual(["Solo lectura", "Cortar", "Copiar", "Pegar", "Seleccionar todo", "Deshacer", "Rehacer"]);
+    expect(menu()).toHaveStyle({ top: "120px" });
+    expect(screen.getByRole("menuitemcheckbox", { name: "Solo lectura" })).toHaveFocus();
+  });
+
+  it("sobre un objeto conserva el menú del objeto", () => {
+    const onObjectContext = vi.fn();
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 15, assoc: 1 });
+    const view = open({ onObjectContext });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    expect(onObjectContext).toHaveBeenCalledWith({ owner: null, name: "DUAL" }, 100, 120, 15);
+    expect(screen.queryByRole("menu", { name: "Editor" })).not.toBeInTheDocument();
+  });
+
+  it("fuera de un objeto muestra el menú base aunque haya menú de objetos", () => {
+    const onObjectContext = vi.fn();
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 6, assoc: 1 });
+    const view = open({ onObjectContext });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    expect(onObjectContext).not.toHaveBeenCalled();
+    expect(menu()).toBeInTheDocument();
+  });
+
+  it("Copiar desde el menú usa el portapapeles y devuelve el foco al editor", async () => {
+    const write = vi.spyOn(clipboard, "writeText").mockResolvedValue();
+    const view = open();
+    act(() => { view.dispatch({ selection: { anchor: 0, head: 8 } }); });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Copiar/ }));
+    await waitFor(() => expect(view.contentDOM).toHaveFocus());
+    expect(write).toHaveBeenCalledWith("select 1");
+    expect(screen.queryByRole("menu", { name: "Editor" })).not.toBeInTheDocument();
+  });
+
+  it("Pegar desde el menú inserta el texto leído", async () => {
+    vi.spyOn(clipboard, "readText").mockResolvedValue("PKG_VENTAS.");
+    const view = open();
+    act(() => { view.dispatch({ selection: { anchor: 14 } }); });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Pegar/ }));
+    await waitFor(() => expect(view.state.doc.toString()).toBe("select 1 from PKG_VENTAS.dual"));
+  });
+
+  it("en solo lectura deshabilita Cortar y Pegar", () => {
+    const view = open({ readOnly: true });
+    act(() => { view.dispatch({ selection: { anchor: 0, head: 6 } }); });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    expect(screen.getByRole("menuitem", { name: /^Cortar/ })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: /^Pegar/ })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: /^Copiar/ })).toBeEnabled();
+  });
+
+  it("abierto por teclado se ancla en el cursor", () => {
+    const view = open();
+    const coords = vi.spyOn(view, "coordsAtPos").mockReturnValue({ left: 40, right: 40, top: 50, bottom: 62 });
+    act(() => { view.dispatch({ selection: { anchor: 7 } }); });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 0, clientY: 0 });
+    expect(coords).toHaveBeenCalledWith(7);
+    expect(menu()).toHaveStyle({ left: "40px", top: "62px" });
+  });
+
+  it.each([
+    ["la tecla Menú", { key: "ContextMenu" }],
+    ["Shift+F10", { key: "F10", shiftKey: true }],
+  ])("%s ancla el menú en el cursor", (_name, keys) => {
+    const posAt = vi.spyOn(EditorView.prototype, "posAndSideAtCoords");
+    const view = open();
+    vi.spyOn(view, "coordsAtPos").mockReturnValue({ left: 40, right: 40, top: 50, bottom: 62 });
+    fireEvent.keyDown(view.contentDOM, keys);
+    fireEvent.contextMenu(view.contentDOM, { clientX: 300, clientY: 200 });
+    expect(menu()).toHaveStyle({ left: "40px", top: "62px" });
+    expect(posAt).not.toHaveBeenCalled();
   });
 });
