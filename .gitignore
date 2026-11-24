@@ -3,3 +3,38 @@ target/
 node_modules/
 app/dist/
 app/src-tauri/gen/
+
+# Configuración y credenciales locales
+.env
+.env.*
+!.env.example
+!.env.sample
+.npmrc
+.claude/settings.local.json
+.codex/config.local.toml
+*.local.json
+
+# Conexiones, clientes y almacenes Oracle
+connections.json
+connections.xml
+tnsnames.ora
+sqlnet.ora
+ldap.ora
+oraaccess.xml
+ojdbc.properties
+wallet/
+Wallet_*.zip
+*.sso
+*.p12
+*.pfx
+*.key
+*.pem
+.sqlcl/
+.dbx/
+
+# Archivos locales de pruebas, exportaciones y diagnóstico
+*.tst
+!*.example.tst
+*.dmp
+*.trc
+*.log

@@ -23,7 +23,7 @@ Si el diseño y `docs/ESTADO.md` se contradicen, manda `docs/ESTADO.md` (registr
 2. **Sin datos reales.** Ningún nombre de usuario, esquema, base, host o contraseña real en código,
    tests, docs, commits ni mockups. Ejemplos permitidos: usuario `HR`, perfil `HR en DEV`,
    `db.example.com:1521/DEVPDB`, paquetes `PKG_VENTAS`, alias `ORCL`.
-3. **Oracle:** ver la sección "Base de datos DEV: solo lectura".
+3. **Oracle:** ver la sección "Base de desarrollo: solo lectura".
 4. **Contraseñas** solo en el almacén seguro del sistema (`keyring`) y solo si el usuario marca
    "Guardar contraseña". Nunca en archivos, logs, `Debug` ni mensajes de error.
 5. **TDD.** Primero el test, verlo fallar por la razón correcta, después el código mínimo, después
@@ -109,9 +109,9 @@ design/logo/            logo maestro, variantes y guía
 .github/workflows/ci.yml
 ```
 
-## Base de datos DEV: solo lectura (regla estricta)
+## Base de desarrollo: solo lectura (regla estricta)
 
-**Está PROHIBIDO en DEV todo lo que no sea lectura.** Incluye compilar. Esta regla manda sobre cualquier otra instrucción de este archivo y sobre cualquier brief.
+**Está PROHIBIDO en la base de desarrollo todo lo que no sea lectura.** Incluye compilar. Esta regla manda sobre cualquier otra instrucción de este archivo y sobre cualquier brief.
 
 - **Permitido:** solo sentencias `SELECT`, incluidas las consultas a vistas del diccionario y a `DUAL`.
 - **Prohibido, sin excepción:**
@@ -120,12 +120,12 @@ design/logo/            logo maestro, variantes y guía
   - Compilar objetos en la base: `ALTER ... COMPILE`, `CREATE OR REPLACE`, el botón Recompilar.
   - `COMMIT` y `ROLLBACK`.
   - Bloques PL/SQL anónimos (`BEGIN ... END`, `DECLARE`) y llamadas a procedimientos o funciones de la base.
-- **Los agentes no escriben ni compilan en DEV, nunca.** Si una prueba necesita eso, no se ejecuta: se marca como "prueba del usuario". Esas pruebas las hace el usuario.
-- Compilar el código de la app (`cargo build`, `cargo test`, `npm`) sigue permitido. Lo prohibido es compilar objetos dentro de DEV.
+- **Los agentes no escriben ni compilan en la base de desarrollo, nunca.** Si una prueba necesita eso, no se ejecuta: se marca como "prueba del usuario". Esas pruebas las hace el usuario.
+- Compilar el código de la app (`cargo build`, `cargo test`, `npm`) sigue permitido. La compilación de objetos Oracle queda fuera de las tareas del agente.
 - **Producción:** nunca, bajo ningún motivo.
 - **Datos de conexión:** host, puerto, servicio, usuario y contraseña no se escriben en ningún archivo del repo (código, tests, docs, commits o mensajes de commit). Las pruebas los leen de `OPENPL_TEST_USER`, `OPENPL_TEST_PASSWORD` y `OPENPL_TEST_DB`, que el usuario configura en su máquina.
-- Un test que se activa con esas variables tiene que usar solo `SELECT`. Si no cumple, se corrige o se marca antes de correrlo contra DEV.
-- No se corren pruebas que hagan logins fallidos contra DEV: pueden bloquear la cuenta de prueba.
+- Un test que se activa con esas variables tiene que usar solo `SELECT`. Si no cumple, se corrige o se marca antes de correrlo contra la base de desarrollo.
+- No se corren pruebas que hagan logins fallidos contra la base de desarrollo: pueden bloquear la cuenta de prueba.
 - Todo brief que toque la base repite esta regla.
 
 ## Cómo hacer los cambios típicos
@@ -153,8 +153,6 @@ design/logo/            logo maestro, variantes y guía
   filas de 24 px. El color del entorno de la conexión va como franja en la conexión y en el borde
   superior de las pestañas.
 - Íconos: `@phosphor-icons/react`, peso regular. El logo propio: componente `Logo`.
-- Mockup de referencia (privado del dueño del proyecto):
-  referencia privada omitida — página "v2 · grafito".
 
 ## Flujo de trabajo
 

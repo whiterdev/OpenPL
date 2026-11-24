@@ -9,7 +9,7 @@
 ## Restricciones globales
 
 - Oracle 12.1+, Instant Client 19/21. Nada exclusivo de 12.2+.
-- Pruebas `live` solo `SELECT`, según la sección DEV de [AGENTS.md](../../../AGENTS.md). Lo que necesita un bloque PL/SQL o escribir lo prueba el usuario. Nunca contra producción.
+- Pruebas `live` solo `SELECT`, según la sección la base de desarrollo de [AGENTS.md](../../../AGENTS.md). Lo que necesita un bloque PL/SQL o escribir lo prueba el usuario. Nunca contra producción.
 - Sin datos reales en código, pruebas ni documentación: esquema `HR`, paquete `PKG_VENTAS`, `db.example.com:1521/DEVPDB`, alias `ORCL`.
 - Atajos solo en `app/src/keymap.ts`. Textos cortos en español.
 - Clean-room: no copiar código, textos, íconos ni marca de PL/SQL Developer. El formato `.tst` es propio.
@@ -97,7 +97,7 @@
 ## Bloqueos y decisiones abiertas
 
 - Credenciales: variables `OPENPL_TEST_*` configuradas localmente; la contraseña la aporta el usuario; sin datos reales en el repo. Sin ellas, las pruebas `live` quedan en SKIP.
-- Escrituras y compilaciones en DEV: las prueba el usuario.
+- Escrituras y compilaciones en la base de desarrollo: las prueba el usuario.
 - Mockup "3 · Ventana de prueba": el enlace es privado; T9 a T12 esperan acceso.
 - Columnas de la grilla: usar, variable, tipo y valor (decisión 7), o también dirección (§7.6).
 - Qué significa "usar". Propuesta: omitir solo parámetros con `DEFAULTED = Y`.
@@ -112,7 +112,7 @@
 
 - `ALL_ARGUMENTS` no lista de forma uniforme los procedimientos sin parámetros. Se confirma con `ALL_PROCEDURES` (T1).
 - Los binds IN OUT y REF CURSOR con rust-oracle 0.6 son un spike (T3, T4). Si REF CURSOR no se puede, queda como limitación documentada.
-- Una prueba real puede escribir datos. La sesión es propia, Commit y Rollback son explícitos. Las pruebas automáticas contra DEV solo hacen `SELECT`; las que ejecutan bloques son del usuario.
+- Una prueba real puede escribir datos. La sesión es propia, Commit y Rollback son explícitos. Las pruebas automáticas contra la base de desarrollo solo hacen `SELECT`; las que ejecutan bloques son del usuario.
 
 ## Pruebas
 

@@ -1,39 +1,37 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (grilla con 50 filas iniciales y lectura de firmas del plan 4). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (preparación del historial para publicar). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
 - Rama de trabajo: `feat/plan-4-ventana-prueba`, creada desde `feat/plan-3-sql` (que sale de
-  `feat/plan-2-programa` y esta de `feat/plan-1-base`). Hay un remoto `origin` configurado, pero
-  ninguna rama local tiene upstream y no existe `main` local.
+  `feat/plan-2-programa` y esta de `feat/plan-1-base`). El remoto se configura como `origin`.
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 (ventana de programa) **implementado, pendiente de validar contra Oracle**.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
 - Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
   validación contra Oracle: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos ORA-12704;
-  corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
+  corrección de los binds de texto, pendiente de verificación. Las escrituras las prueba el usuario.
 - Plan 4 (ventana de prueba) **en curso**: lectura de firmas y sobrecargas implementada. La
   interfaz espera las decisiones abiertas y el mockup "3 · Ventana de prueba".
 - Verificación local en Windows (2026-11-24): `cargo fmt --check`, Clippy con `-D warnings`
   y `tsc --noEmit` pasan. Se ejecutaron 81 pruebas Rust sin base y 171 de interfaz. Las 9 pruebas
   Rust `live` terminan sin conectarse (imprimen `SKIP`).
-- Pruebas `live` de lectura contra DEV (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
+- Pruebas `live` de lectura contra la base de desarrollo (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
   Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
-  `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99); corrección en 42c4c36,
-  pendiente de re-corrida contra DEV.
+  `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Corrección de los binds de texto
+  pendiente de re-corrida contra la base de desarrollo.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
 - **No verificado todavía:** uso contra una base Oracle real (login, explorador, DDL, recompilar),
   el resto de la validación contra base real (la corrida de lectura con `OPENPL_TEST_*` ya se hizo:
-  `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección) y el CI (no hay constancia local de que haya corrido:
-  ninguna rama tiene upstream).
+  `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección) y el CI remoto.
 
 ## Siguiente paso
 
-1. Pruebas de lectura contra DEV, solo `SELECT`: en `crates/openpl-oracle/tests/live.rs`,
+1. Pruebas de lectura contra la base de desarrollo, solo `SELECT`: en `crates/openpl-oracle/tests/live.rs`,
    `conecta_y_lee_version` y `servicio_inexistente_da_unknown_service`; en
    `crates/openpl-core/tests/live_catalog.rs`, `lista_tablas_propias_sin_error`,
    `todos_los_tipos_consultan_sin_error`, `completa_objetos_y_columnas_sin_error` y
@@ -41,13 +39,13 @@
    `SELECT`, sin escrituras): 4 de 6 OK. `live.rs` 2 de 2. `live_catalog.rs` 2 de 4: fallan con
    ORA-12704 (character set mismatch) `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`,
    offset 500) y `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99).
-   Corrección en 42c4c36, pendiente de re-corrida contra DEV (ver "Pendiente inmediato").
+   Corrección de los binds de texto pendiente de verificación en desarrollo (ver "Pendiente inmediato").
 2. Excluidas de las corridas de agentes: `clave_erronea_da_invalid_credentials` (login fallido en cada
    corrida, puede bloquear la cuenta de prueba) y `ventana_sql_pagina_salida_y_errores` (ejecuta
    bloques PL/SQL de `DBMS_OUTPUT`). Las decide el usuario.
 3. Escrituras y compilaciones (grilla del plan 3, Recompilar, DDL): las prueba el usuario.
 4. Decisión pendiente del usuario: la ventana SQL de la app ejecuta bloques PL/SQL de `DBMS_OUTPUT`
-   (`ENABLE` y `GET_LINE`) en cada consulta, aun en un `SELECT`. ¿Se acepta contra DEV o se cambia?
+   (`ENABLE` y `GET_LINE`) en cada consulta, aun en un `SELECT`. ¿Se acepta contra la base de desarrollo o se cambia?
 5. Mockup "3 · Ventana de prueba" y respuestas a las decisiones abiertas del plan 4.
 
 ## Hecho
@@ -267,7 +265,7 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 ## Pendiente inmediato
 
-1. **Validar contra DEV** (ver "Siguiente paso"), en dos partes:
+1. **Validar contra la base de desarrollo** (ver "Siguiente paso"), en dos partes:
    - Lectura (agentes, solo `SELECT`): fechas, timestamp, decimales, CLOB, paginación y posición del
      error.
    - Del usuario: edición en grilla, `RETURNING ROWID`, `DBMS_OUTPUT` y revisión manual de la ventana.
@@ -275,17 +273,17 @@ producto; estas decisiones son posteriores y mandan sobre él:
      perfiles y contraseña guardada, explorador con los 35 tipos, Copiar DDL, Recompilar,
      reconexión, lectura de fuentes, menú de objeto, comparación, preparación de compilación,
      autocompletado y selector nativo de archivos).
-2. **ORA-12704 contra DEV** (corrección en 42c4c36, pendiente de re-corrida contra DEV): fallaban
+2. **ORA-12704 en desarrollo** (corrección pendiente de verificación): fallaban
    `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
    `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Son consultas de
-   lectura, no es un fallo de escritura. Impacto: contra DEV fallaban `complete_objects`
+   lectura, no es un fallo de escritura. Impacto: contra la base de desarrollo fallaban `complete_objects`
    (autocompletado de objetos) y `edit_target` (edición en grilla); la corrección cubre a los dos.
    - Causa probable: binds NULL dentro de `COALESCE(..., SYS_CONTEXT('USERENV','CURRENT_SCHEMA'))`,
      la única diferencia con las pruebas que pasan.
    - Corrección (`crates/openpl-core/src/catalog.rs`): los binds de texto que van en `COALESCE` o
      `UNION ALL` pasan a `CAST(... AS VARCHAR2(4000))`. Verificada sin conexión: `cargo test`, fmt y
      Clippy en verde.
-   - Si la re-corrida sigue dando ORA-12704: revisar el NLS de DEV (`NLS_NCHAR_CHARACTERSET`) con un
+   - Si la re-corrida sigue dando ORA-12704: revisar el NLS de la base de desarrollo (`NLS_NCHAR_CHARACTERSET`) con un
      `SELECT` de solo lectura sobre `NLS_DATABASE_PARAMETERS`.
 3. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
 4. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
@@ -317,7 +315,7 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 ### Plan 3 — Ventana SQL (en curso: solo validación contra Oracle)
 - Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la
   validación contra Oracle real: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos
-  ORA-12704; corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
+  ORA-12704. La corrección de los binds de texto está pendiente de verificación. Las escrituras las prueba el usuario.
 
 ### Plan 4 — Ventana de prueba (en curso)
 - [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
@@ -345,4 +343,4 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 | Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md`, `programa.md`, `sql.md`, `prueba.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |
-| Mockup (privado del dueño) | referencia privada omitida |
+| Mockup (privado del dueño) | referencia privada |
