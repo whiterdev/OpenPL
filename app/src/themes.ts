@@ -42,7 +42,7 @@ export const PRESETS: readonly Theme[] = [
     text: "#202833", muted: "#4c5869", faint: "#818b99",
     accent: "#385880", accentText: "#f4f6fa", accentSoft: "#d5e0f1",
     err: "#963d36", errSoft: "#ecd6d0", ok: "#35613f", okSoft: "#d6dfcd",
-    kw: "#315572", ty: "#265f4c", st: "#3d5485", nu: "#824a36", cm: "#8b4b43", fn: "#634674",
+    kw: "#0b8e4a", ty: "#265f4c", st: "#3d5485", nu: "#824a36", cm: "#f2280d", fn: "#634674",
   }),
   preset("medianoche", "Medianoche", "dark", {
     s0: "#161a22", s1: "#1c212b", s2: "#262c38", s3: "#2f3644",

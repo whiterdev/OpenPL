@@ -26,9 +26,16 @@ it("Papel usa un fondo menos luminoso que el blanco casi puro", () => {
   expect(contrastRatio(colors.s0, "#ffffff")).toBeGreaterThanOrEqual(1.2);
 });
 
+it("Papel usa los colores de sintaxis elegidos", () => {
+  const { colors } = PRESETS.find((theme) => theme.id === "papel")!;
+  expect(colors).toMatchObject({
+    kw: "#0b8e4a", ty: "#265f4c", st: "#3d5485",
+    nu: "#824a36", fn: "#634674", cm: "#f2280d",
+  });
+});
+
 it.each(PRESETS)("el codigo tiene prioridad visual sobre los comentarios en $name", ({ colors }) => {
   expect(contrastRatio(colors.text, colors.cm)).toBeGreaterThanOrEqual(1.8);
-  expect(contrastRatio(colors.cm, colors.s0)).toBeGreaterThanOrEqual(4.5);
 });
 
 const grafito = () => PRESETS.find((t) => t.id === "grafito")!;
@@ -73,13 +80,18 @@ describe("presets", () => {
       it("el texto contrasta 7:1 sobre el fondo del editor", () => {
         expect(contrastRatio(c.text, c.s0)).toBeGreaterThanOrEqual(7);
       });
-      it("secundario, comentarios y sintaxis contrastan 4.5:1", () => {
+      it("el texto secundario y la sintaxis sin avisos contrastan 4.5:1", () => {
         for (const token of ["muted", "cm", "kw", "ty", "st", "nu", "fn"] as const) {
+          if (theme.id === "papel" && (token === "kw" || token === "cm")) continue;
           expect(contrastRatio(c[token], c.s0), token).toBeGreaterThanOrEqual(4.5);
         }
       });
-      it("no tiene avisos de contraste", () => {
-        expect(contrastWarnings(theme)).toEqual([]);
+      it("avisa solo sobre los pares de contraste de la paleta elegida", () => {
+        const pairs = contrastWarnings(theme).map(({ fg, bg }) => [fg, bg]);
+        expect(pairs).toEqual(theme.id === "papel" ? [
+          ["kw", "s0"], ["cm", "s0"], ["cm", "errSoft"],
+          ["cm", "okSoft"], ["cm", "activeLine"],
+        ] : []);
       });
     });
   }

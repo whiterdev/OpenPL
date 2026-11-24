@@ -52,6 +52,21 @@
 
 ## Hecho
 
+### Listado de perfiles con permisos limitados
+
+- En Oracle XE el fallback de **Perfiles** consultaba una columna que no existe en `USER_USERS`. Si la cuenta carece de acceso al catálogo de perfiles, OpenPL muestra una lista vacía. Los demás errores siguen visibles y **Roles** conserva su consulta alternativa.
+- La prueba de regresión simula la misma secuencia de errores detectada en CI. El test de catálogo contra Oracle XE sigue activo en GitHub Actions.
+
+### Espacio del editor y formato de Probar
+
+- SQL y **Probar** abren con el 70 % del área dividida para el editor. El divisor se mueve con ratón o teclado.
+- **Probar** genera llamadas alineadas, usa los nombres de los parámetros para los binds y abre las entradas tipadas debajo del código. La acción prepara el bloque para ejecutarlo con F8.
+- [Auditoría antislop](../anti-slop/audit-formato-prueba-2026-11-24.md). Queda pendiente la comprobación en escritorio y la ejecución manual en una base habilitada para pruebas.
+
+### Sintaxis de Papel
+
+- Se aplicaron los valores de la captura del usuario al tema claro incluido. Las palabras clave y los comentarios conservan el aviso de contraste. [Auditoría](../anti-slop/audit-papel-sintaxis-2026-11-24.md).
+
 ### Diálogo de conexión y selección de resultados
 
 - El diálogo de conexión usa la misma capa que los demás diálogos de la aplicación, por encima del encabezado fijo de resultados.
