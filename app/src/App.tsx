@@ -126,6 +126,12 @@ const supportsProgram = new Set([
   "Function",
   "Trigger",
 ]);
+const commandObjectTypes = {
+  TABLE: "Table", VIEW: "View", "MATERIALIZED VIEW": "MaterializedView",
+  PACKAGE: "Package", PROCEDURE: "Procedure", FUNCTION: "Function", TRIGGER: "Trigger",
+  TYPE: "Type", SEQUENCE: "Sequence", SYNONYM: "Synonym", INDEX: "Index",
+  "JAVA SOURCE": "JavaSource", LIBRARY: "Library", CLUSTER: "Cluster",
+} satisfies Record<string, ObjectInfo["object_type"]>;
 const editorEdits = [
   "comment",
   "duplicateLine",
@@ -987,6 +993,10 @@ export default function App() {
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
                         command={tab.sql.command}
+                        onEditObject={(object) => {
+                          const type = commandObjectTypes[object.object_type as keyof typeof commandObjectTypes];
+                          if (type) void onOpenObject({ ...object, object_type: type, status: "Valid", last_ddl_time: "" }, "edit", tab.connection);
+                        }}
                         testSettings={tab.sql.test}
                         runOnOpen={tab.sql.run}
                         exportOnOpen={tab.sql.exportOnOpen}

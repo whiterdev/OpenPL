@@ -124,8 +124,9 @@ test("permite editar y guardar un archivo local desde el flujo normal", async ()
       "sql",
       "demo.pks",
     );
-    fireEvent.keyDown(window, { key: "w", ctrlKey: true });
-    expect(editor).not.toBeInTheDocument();
+    await screen.findByRole("button", { name: /^demo\.pks$/ });
+    await act(async () => { fireEvent.keyDown(window, { key: "w", ctrlKey: true }); });
+    await vi.waitFor(() => expect(editor).not.toBeInTheDocument());
     expect(confirm).toHaveBeenCalledTimes(2);
   } finally {
     confirm.mockRestore();

@@ -214,7 +214,7 @@ export interface ProgramPart {
 }
 
 /** "relations" limita el completado a tablas, vistas, vistas materializadas y sinónimos. */
-export type CompletionScope = "any" | "relations";
+export type CompletionScope = "any" | "relations" | "edit";
 
 export interface CompletionObject {
   owner: string;

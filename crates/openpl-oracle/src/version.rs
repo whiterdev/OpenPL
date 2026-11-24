@@ -48,7 +48,7 @@ pub fn check_compat(client: DbVersion, server: DbVersion) -> Compat {
             client.major
         ));
     }
-    if (19..=21).contains(&client.major) {
+    if (client.major == 12 && client >= MIN_SERVER) || (19..=21).contains(&client.major) {
         return Compat::Supported;
     }
     Compat::Warn(format!(
@@ -105,11 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn cliente_12_1_advertencia() {
-        assert!(matches!(
+    fn cliente_12_1_soportado() {
+        assert_eq!(
             check_compat(DbVersion::new(12, 1, 0), DbVersion::new(12, 1, 0)),
-            Compat::Warn(_)
-        ));
+            Compat::Supported
+        );
     }
 
     #[test]

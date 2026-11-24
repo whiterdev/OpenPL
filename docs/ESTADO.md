@@ -4,6 +4,13 @@
 
 ## Resumen
 
+- La auditoría con `emil-design-eng` unificó el feedback de pulsación y corrigió navegación, foco y ancho del menú principal. [Auditoría](../anti-slop/audit-emil-design-eng-2026-11-24.md).
+
+- La consola admite entrada multilínea y resultados alineados. Los menús ajustan su ancho al contenido y el cliente Oracle 12c desde 12.1 figura como compatible.
+
+- La consola ofrece `EDIT [esquema.]objeto` con sugerencias del catálogo y apertura en pestaña. [Comandos](behavior/comandos.md).
+- Compilar Spec o Body actualiza la marca de guardado de esa parte. El asterisco permanece si otra parte tiene cambios pendientes.
+
 - Plan 5 implementado para la 1.0.0: consola, paleta, plan estimado, CSV, inspector y borradores SQL desde el explorador. [Plan 5](superpowers/plans/2026-11-24-openpl-05-acciones-v1.md), [consola](behavior/comandos.md), [explorador](behavior/acciones-explorador.md) y [auditoría](../anti-slop/audit-acciones-v1-2026-11-24.md).
 - El plan requiere acceso a `PLAN_TABLE` y los privilegios requieren las vistas administrativas del diccionario. Se verificaron sus columnas con DBX en solo lectura. Pendiente la validación manual de escritorio contra Oracle.
 

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MenuBar, type MenuDef } from "./MenuBar";
 
@@ -44,4 +44,22 @@ describe("MenuBar", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
   });
+});
+
+test("el menú principal se recorre con flechas y Escape devuelve el foco", () => {
+  render(<MenuBar menus={[{ label: "Archivo", items: [
+    { command: "newSql", label: "SQL", run: vi.fn() },
+    { command: "newTest", label: "Prueba" },
+    { command: "newCommand", label: "Consola", run: vi.fn() },
+  ] }]} />);
+  const trigger = screen.getByRole("button", { name: "Archivo" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const first = screen.getByRole("menuitem", { name: /^SQL/ });
+  expect(first).toHaveFocus();
+  fireEvent.keyDown(first, { key: "ArrowDown" });
+  const last = screen.getByRole("menuitem", { name: /^Consola/ });
+  expect(last).toHaveFocus();
+  fireEvent.keyDown(last, { key: "Escape" });
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
 });

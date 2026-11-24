@@ -18,13 +18,20 @@ export interface MenuDef {
 export function MenuBar({ menus }: { menus: MenuDef[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const ref = useRef<HTMLElement>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(null);
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(null);
+      trigger.current?.focus();
+    };
+    const menu = ref.current?.querySelector('[role="menu"]');
+    menu?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
     return () => {
@@ -41,13 +48,35 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
             className={`menubar-btn ${open === m.label ? "open" : ""}`}
             aria-haspopup="menu"
             aria-expanded={open === m.label}
-            onClick={() => setOpen(open === m.label ? null : m.label)}
-            onMouseEnter={() => open && open !== m.label && setOpen(m.label)}
+            onClick={(event) => {
+              trigger.current = event.currentTarget;
+              setOpen(open === m.label ? null : m.label);
+            }}
+            onMouseEnter={(event) => {
+              if (!open || open === m.label) return;
+              trigger.current = event.currentTarget;
+              setOpen(m.label);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown") return;
+              event.preventDefault();
+              trigger.current = event.currentTarget;
+              setOpen(m.label);
+            }}
           >
             {m.label}
           </button>
           {open === m.label && (
-            <div role="menu" aria-label={m.label} className="menu menubar-menu">
+            <div role="menu" aria-label={m.label} className="menu menubar-menu"
+              onKeyDown={(event) => {
+                const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+                if (!step) return;
+                const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+                if (!buttons.length) return;
+                event.preventDefault();
+                const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                buttons[(index + step + buttons.length) % buttons.length].focus();
+              }}>
               {m.items.map((it, i) =>
                 it === "sep" ? (
                   <div key={`sep${i}`} className="menu-sep" role="separator" />
