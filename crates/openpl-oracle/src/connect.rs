@@ -31,7 +31,7 @@ impl std::fmt::Debug for ConnectParams {
 
 /// Conexión abierta con la versión del servidor ya leída.
 pub struct DbConn {
-    conn: oracle::Connection,
+    conn: std::sync::Arc<oracle::Connection>,
     server_version: DbVersion,
 }
 
@@ -60,7 +60,7 @@ impl DbConn {
         let (v, _) = conn.server_version()?;
         let server_version = DbVersion::new(v.major() as u32, v.minor() as u32, v.update() as u32);
         Ok(DbConn {
-            conn,
+            conn: std::sync::Arc::new(conn),
             server_version,
         })
     }
@@ -71,6 +71,11 @@ impl DbConn {
 
     pub fn raw(&self) -> &oracle::Connection {
         &self.conn
+    }
+
+    /// Referencia compartida para operaciones permitidas desde otro hilo (`break_execution`).
+    pub fn shared(&self) -> std::sync::Arc<oracle::Connection> {
+        self.conn.clone()
     }
 
     pub fn ping(&self) -> Result<(), DbError> {

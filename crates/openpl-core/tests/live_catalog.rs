@@ -48,3 +48,36 @@ fn completa_objetos_y_columnas_sin_error() {
     assert!(objects.len() <= openpl_core::catalog::COMPLETION_LIMIT);
     openpl_core::catalog::object_columns(&c, None, "DUAL", None).unwrap();
 }
+
+#[test]
+fn ventana_sql_pagina_salida_y_errores() {
+    use openpl_core::sql::{execute, fetch, ExecResult};
+    let Some(c) = conn() else { return };
+    let r = execute(&c, "SELECT LEVEL n FROM dual CONNECT BY LEVEL <= 5", &[], 2).unwrap();
+    let ExecResult::Query {
+        cursor,
+        columns,
+        page,
+    } = r.result
+    else {
+        panic!("se esperaba consulta")
+    };
+    assert_eq!(columns[0].name, "N");
+    assert!(columns[0].numeric);
+    assert_eq!(page.rows.len(), 2);
+    assert!(page.more);
+    let rest = fetch(cursor, 10).unwrap();
+    assert_eq!(rest.rows.len(), 3);
+    assert!(!rest.more);
+
+    openpl_core::sql::enable_output(&c).unwrap();
+    let r = execute(&c, "BEGIN DBMS_OUTPUT.PUT_LINE('hola'); END;", &[], 10).unwrap();
+    assert_eq!(r.output, vec!["hola".to_string()]);
+    assert!(!r.transaction);
+
+    let e = execute(&c, "SELECT * FROM tabla_que_no_existe_openpl", &[], 10)
+        .err()
+        .unwrap();
+    assert_eq!(e.code.as_deref(), Some("ORA-00942"));
+    assert_eq!(e.offset, Some(14));
+}

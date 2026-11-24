@@ -99,6 +99,7 @@ pub async fn connect_impl<C: Connector>(
             code: None,
             kind: openpl_oracle::ErrorKind::Other,
             message: reason.clone(),
+            offset: None,
         }));
     }
     Ok(ConnectResult {
@@ -295,6 +296,80 @@ pub async fn object_columns(
                 context_owner.as_deref(),
             )
         })
+        .await
+}
+
+/// Sesión propia de una Ventana SQL, hermana de `session_id`, con DBMS_OUTPUT activo.
+pub async fn sql_open_impl<C: Connector>(
+    st: &AppState<C>,
+    session_id: SessionId,
+) -> Result<SessionId, CoreError> {
+    st.sessions.open_sibling(session_id).await
+}
+
+#[tauri::command]
+pub async fn sql_open(st: St<'_>, session_id: SessionId) -> Result<SessionId, CoreError> {
+    let id = sql_open_impl(&st, session_id).await?;
+    let session = st.sessions.get(id)?;
+    if let Err(e) = session.run(openpl_core::sql::enable_output).await {
+        st.sessions.close(id);
+        return Err(e);
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn sql_close(st: St<'_>, session_id: SessionId) {
+    st.sessions.close(session_id);
+}
+
+#[tauri::command]
+pub async fn sql_execute(
+    st: St<'_>,
+    session_id: SessionId,
+    sql: String,
+    binds: Vec<openpl_core::sql::BindValue>,
+    page_size: Option<usize>,
+) -> Result<openpl_core::sql::ExecOutcome, CoreError> {
+    let size = page_size.unwrap_or(openpl_core::sql::PAGE_SIZE);
+    st.sessions
+        .get(session_id)?
+        .run(move |c| openpl_core::sql::execute(c, &sql, &binds, size))
+        .await
+}
+
+#[tauri::command]
+pub async fn sql_fetch(
+    st: St<'_>,
+    session_id: SessionId,
+    cursor: u64,
+    size: Option<usize>,
+) -> Result<openpl_core::sql::QueryPage, CoreError> {
+    let size = size.unwrap_or(openpl_core::sql::PAGE_SIZE);
+    st.sessions
+        .get(session_id)?
+        .run(move |_| openpl_core::sql::fetch(cursor, size))
+        .await
+}
+
+#[tauri::command]
+pub fn sql_cancel(st: St<'_>, session_id: SessionId) -> Result<bool, CoreError> {
+    Ok(st.sessions.get(session_id)?.interrupt())
+}
+
+#[tauri::command]
+pub async fn sql_commit(st: St<'_>, session_id: SessionId) -> Result<bool, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(openpl_core::sql::commit)
+        .await
+}
+
+#[tauri::command]
+pub async fn sql_rollback(st: St<'_>, session_id: SessionId) -> Result<bool, CoreError> {
+    st.sessions
+        .get(session_id)?
+        .run(openpl_core::sql::rollback)
         .await
 }
 
@@ -497,6 +572,16 @@ mod tests {
         let e = connect_impl(&st, params()).await.unwrap_err();
         assert!(matches!(e, CoreError::Db(_)));
         assert!(st.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ventana_sql_abre_una_sesion_hermana() {
+        let (_d, st) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
+        let main = connect_impl(&st, params()).await.unwrap().session_id;
+        let sql = sql_open_impl(&st, main).await.unwrap();
+        assert_ne!(main, sql);
+        st.sessions.close(sql);
+        assert!(st.sessions.get(main).is_ok());
     }
 
     #[test]

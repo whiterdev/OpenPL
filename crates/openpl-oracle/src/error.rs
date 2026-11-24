@@ -19,6 +19,8 @@ pub struct DbError {
     pub code: Option<String>,
     pub kind: ErrorKind,
     pub message: String,
+    /// Posición del error dentro de la sentencia (base 0), si Oracle la informa.
+    pub offset: Option<u32>,
 }
 
 /// Categoriza un código Oracle/ODPI.
@@ -80,6 +82,7 @@ impl DbError {
             code,
             kind,
             message,
+            offset: None,
         }
     }
 }
@@ -87,11 +90,17 @@ impl DbError {
 impl From<oracle::Error> for DbError {
     fn from(e: oracle::Error) -> Self {
         let text = e.to_string();
-        let (is_oci, number) = match e.db_error() {
-            Some(db) => (e.kind() == oracle::ErrorKind::OciError, db.code()),
-            None => (false, 0),
+        let (is_oci, number, offset) = match e.db_error() {
+            Some(db) => (
+                e.kind() == oracle::ErrorKind::OciError,
+                db.code(),
+                Some(db.offset()).filter(|&o| o > 0),
+            ),
+            None => (false, 0, None),
         };
-        Self::from_code(error_code(is_oci, number, &text), &text)
+        let mut error = Self::from_code(error_code(is_oci, number, &text), &text);
+        error.offset = offset;
+        error
     }
 }
 

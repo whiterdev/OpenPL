@@ -18,11 +18,17 @@ pub enum SessionState {
     Disconnected,
 }
 
+/// Interrumpe la llamada en curso de una conexión; se invoca desde otro hilo.
+pub type Interrupter = Arc<dyn Fn() + Send + Sync>;
+
 /// Abstrae cómo se abre una conexión (Oracle real o falsa en pruebas).
 pub trait Connector: Send + Sync + 'static {
     type Conn: Send + 'static;
     fn connect(&self, p: &ConnectParams) -> Result<Self::Conn, DbError>;
     fn server_version(conn: &Self::Conn) -> DbVersion;
+    fn interrupter(_conn: &Self::Conn) -> Option<Interrupter> {
+        None
+    }
 }
 
 pub struct OracleConnector;
@@ -34,6 +40,12 @@ impl Connector for OracleConnector {
     }
     fn server_version(conn: &DbConn) -> DbVersion {
         conn.server_version()
+    }
+    fn interrupter(conn: &DbConn) -> Option<Interrupter> {
+        let raw = conn.shared();
+        Some(Arc::new(move || {
+            let _ = raw.break_execution();
+        }))
     }
 }
 
@@ -48,6 +60,7 @@ pub struct Session<C: Connector> {
     state: Arc<AtomicU8>,
     connector: Arc<C>,
     params: ConnectParams,
+    interrupter: Arc<Mutex<Option<Interrupter>>>,
 }
 
 impl<C: Connector> Session<C> {
@@ -57,11 +70,14 @@ impl<C: Connector> Session<C> {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), DbError>>();
         let c = connector.clone();
         let p = params.clone();
+        let interrupter: Arc<Mutex<Option<Interrupter>>> = Arc::default();
+        let slot = interrupter.clone();
         std::thread::Builder::new()
             .name("openpl-session".into())
             .spawn(move || {
                 let mut conn = match c.connect(&p) {
                     Ok(conn) => {
+                        *slot.lock().unwrap() = C::interrupter(&conn);
                         let _ = ready_tx.send(Ok(()));
                         Some(conn)
                     }
@@ -83,7 +99,24 @@ impl<C: Connector> Session<C> {
             state: Arc::new(AtomicU8::new(CONNECTED)),
             connector,
             params,
+            interrupter,
         })
+    }
+
+    pub fn params(&self) -> &ConnectParams {
+        &self.params
+    }
+
+    /// Interrumpe la sentencia en curso sin esperar al hilo de la sesión. `false` si no se puede.
+    pub fn interrupt(&self) -> bool {
+        let handle = self.interrupter.lock().unwrap().clone();
+        match handle {
+            Some(interrupt) => {
+                interrupt();
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn state(&self) -> SessionState {
@@ -137,9 +170,11 @@ impl<C: Connector> Session<C> {
         let (otx, orx) = oneshot::channel();
         let connector = self.connector.clone();
         let params = self.params.clone();
+        let interrupter = self.interrupter.clone();
         self.send(Box::new(move |slot: &mut Option<C::Conn>| {
             *slot = None;
             let r = connector.connect(&params).map(|c| {
+                *interrupter.lock().unwrap() = C::interrupter(&c);
                 *slot = Some(c);
             });
             let _ = otx.send(r);
@@ -174,6 +209,12 @@ impl<C: Connector> SessionManager<C> {
         Ok(id)
     }
 
+    /// Abre otra sesión con los parámetros de `id` (ventanas con transacción propia).
+    pub async fn open_sibling(&self, id: SessionId) -> Result<SessionId, CoreError> {
+        let params = self.get(id)?.params().clone();
+        self.open(params).await
+    }
+
     pub fn get(&self, id: SessionId) -> Result<Arc<Session<C>>, CoreError> {
         self.sessions
             .read()
@@ -200,11 +241,13 @@ pub mod fake {
 
     pub struct FakeConn {
         pub server: DbVersion,
+        interrupts: Arc<AtomicUsize>,
     }
 
     pub struct FakeConnector {
         pub server: DbVersion,
         pub connects: AtomicUsize,
+        pub interrupts: Arc<AtomicUsize>,
     }
 
     impl FakeConnector {
@@ -212,6 +255,7 @@ pub mod fake {
             Self {
                 server,
                 connects: AtomicUsize::new(0),
+                interrupts: Arc::default(),
             }
         }
     }
@@ -222,10 +266,17 @@ pub mod fake {
             self.connects.fetch_add(1, Ordering::SeqCst);
             Ok(FakeConn {
                 server: self.server,
+                interrupts: self.interrupts.clone(),
             })
         }
         fn server_version(conn: &FakeConn) -> DbVersion {
             conn.server
+        }
+        fn interrupter(conn: &FakeConn) -> Option<Interrupter> {
+            let count = conn.interrupts.clone();
+            Some(Arc::new(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            }))
         }
     }
 }
@@ -315,6 +366,35 @@ mod tests {
         assert!(mgr.get(id).is_ok());
         mgr.close(id);
         assert!(matches!(mgr.get(id), Err(CoreError::SessionNotFound)));
+    }
+
+    #[tokio::test]
+    async fn sesion_hermana_usa_los_mismos_datos_y_es_otra() {
+        let connector = Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0)));
+        let mgr = SessionManager::new(connector.clone());
+        let id = mgr.open(params()).await.unwrap();
+        let sibling = mgr.open_sibling(id).await.unwrap();
+        assert_ne!(id, sibling);
+        assert_eq!(
+            connector.connects.load(std::sync::atomic::Ordering::SeqCst),
+            2
+        );
+        assert_eq!(mgr.get(sibling).unwrap().params().user, "u");
+        mgr.close(id);
+        assert!(mgr.get(sibling).is_ok());
+    }
+
+    #[tokio::test]
+    async fn interrumpir_llama_al_manejador_desde_otro_hilo() {
+        let connector = Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0)));
+        let s = Session::open(connector.clone(), params()).unwrap();
+        assert!(s.interrupt());
+        assert_eq!(
+            connector
+                .interrupts
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
     }
 
     #[tokio::test]

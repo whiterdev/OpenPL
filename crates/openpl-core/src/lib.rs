@@ -7,6 +7,7 @@ pub mod profiles;
 pub mod program;
 pub mod secrets;
 pub mod session;
+pub mod sql;
 
 pub use error::CoreError;
 pub use profiles::{ConnectionProfile, Environment, ProfileStore};
