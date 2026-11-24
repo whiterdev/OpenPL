@@ -96,6 +96,14 @@ button:disabled {
 .btn:hover:not(:disabled) {
     background: var(--s3);
 }
+.btn:active:not(:disabled), .ib:active:not(:disabled), .menu-item:active:not(:disabled) {
+    transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+    .btn:active:not(:disabled), .ib:active:not(:disabled), .menu-item:active:not(:disabled) {
+        transform: none;
+    }
+}
 .btn.primary {
     background: var(--accent);
     border-color: var(--accent);

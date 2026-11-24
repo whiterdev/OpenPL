@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- La auditoría con `emil-design-eng` unificó el feedback de pulsación y corrigió navegación, foco y ancho del menú principal. [Auditoría](../anti-slop/audit-emil-design-eng-2026-11-24.md).
+
 - La consola admite entrada multilínea y resultados alineados. Los menús ajustan su ancho al contenido y el cliente Oracle 12c desde 12.1 figura como compatible.
 
 - La consola ofrece `EDIT [esquema.]objeto` con sugerencias del catálogo y apertura en pestaña. [Comandos](behavior/comandos.md).

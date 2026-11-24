@@ -2,5 +2,5 @@
 .menubar-slot { position: relative; }
 .menubar-btn { height: 26px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font-size: 13px; }
 .menubar-btn:hover, .menubar-btn.open { background: var(--s2); }
-.menubar-menu { left: 0; top: 30px; width: 280px; }
+.menubar-menu { left: 0; top: 30px; min-width: min(280px, 100vw); }
 .menubar-menu .menu-item { gap: 16px; }
