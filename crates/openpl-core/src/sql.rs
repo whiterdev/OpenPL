@@ -5,10 +5,11 @@ use oracle::sql_type::{OracleType, Timestamp, ToSql};
 use oracle::{ResultSet, Row, StatementType};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::iter::Peekable;
 use std::time::Instant;
 
 /// Filas por página cuando la interfaz no indica otra cantidad.
-pub const PAGE_SIZE: usize = 200;
+pub const PAGE_SIZE: usize = 50;
 /// Tope de líneas de DBMS_OUTPUT leídas por ejecución.
 pub const OUTPUT_LIMIT: usize = 10_000;
 
@@ -63,7 +64,7 @@ pub struct ExecOutcome {
 
 struct OpenCursor {
     id: u64,
-    rows: ResultSet<'static, Row>,
+    rows: Peekable<ResultSet<'static, Row>>,
 }
 
 thread_local! {
@@ -183,20 +184,22 @@ pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
     Ok(cells)
 }
 
-fn read_page(rows: &mut ResultSet<'static, Row>, size: usize) -> Result<QueryPage, DbError> {
-    let mut out = Vec::new();
-    while out.len() < size {
-        let Some(row) = rows.next() else {
-            return Ok(QueryPage {
-                rows: out,
-                more: false,
-            });
-        };
-        out.push(row_cells(&row?)?);
-    }
+fn read_page<T, E>(
+    rows: &mut Peekable<impl Iterator<Item = Result<T, E>>>,
+    size: usize,
+    cells: impl Fn(T) -> Result<Vec<Option<String>>, DbError>,
+) -> Result<QueryPage, DbError>
+where
+    DbError: From<E>,
+{
+    let page = rows
+        .by_ref()
+        .take(size)
+        .map(|row| cells(row?))
+        .collect::<Result<_, _>>()?;
     Ok(QueryPage {
-        rows: out,
-        more: true,
+        rows: page,
+        more: rows.peek().is_some(),
     })
 }
 
@@ -256,7 +259,7 @@ pub fn execute(
         .fetch_array_size(page_size as u32)
         .build()?;
     let result = if stmt.is_query() {
-        let mut rows = stmt.into_result_set_named::<Row>(&named)?;
+        let rows = stmt.into_result_set_named::<Row>(&named)?;
         let columns = rows
             .column_info()
             .iter()
@@ -266,7 +269,8 @@ pub fn execute(
                 numeric: is_numeric(c.oracle_type()),
             })
             .collect();
-        let page = read_page(&mut rows, page_size)?;
+        let mut rows = rows.peekable();
+        let page = read_page(&mut rows, page_size, |row| row_cells(&row))?;
         let id = NEXT_CURSOR.with(|n| {
             let mut n = n.borrow_mut();
             *n += 1;
@@ -307,11 +311,11 @@ pub fn fetch(cursor: u64, size: usize) -> Result<QueryPage, DbError> {
                 more: false,
             });
         };
-        let page = read_page(&mut open.rows, size)?;
-        if !page.more {
+        let page = read_page(&mut open.rows, size, |row| row_cells(&row));
+        if !matches!(&page, Ok(page) if page.more) {
             *slot = None;
         }
-        Ok(page)
+        page
     })
 }
 
@@ -329,6 +333,23 @@ pub fn rollback(conn: &DbConn) -> Result<bool, DbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vista_inicial_de_50_y_continuacion_sin_omitir_filas() {
+        let mut source = (1..=51)
+            .map(|n| Ok::<_, DbError>(vec![Some(n.to_string())]))
+            .peekable();
+        assert_eq!(PAGE_SIZE, 50);
+        let first = read_page(&mut source, PAGE_SIZE, Ok).unwrap();
+        assert_eq!(first.rows.len(), 50);
+        assert!(first.more);
+        let rest = read_page(&mut source, PAGE_SIZE, Ok).unwrap();
+        assert_eq!(rest.rows, vec![vec![Some("51".into())]]);
+        assert!(!rest.more);
+
+        let mut exact = (1..=50).map(|_| Ok::<_, DbError>(vec![None])).peekable();
+        assert!(!read_page(&mut exact, PAGE_SIZE, Ok).unwrap().more);
+    }
 
     fn bind(kind: BindKind, value: Option<&str>) -> BindValue {
         BindValue {

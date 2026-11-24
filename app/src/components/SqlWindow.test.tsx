@@ -42,19 +42,47 @@ test("F8 ejecuta la sentencia bajo el cursor y muestra la grilla", async () => {
   expect(screen.getByText("2 filas · 40 ms")).toBeInTheDocument();
 });
 
-test("trae más filas y Traer todas completa la consulta", async () => {
-  vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"]], true, 7));
+test("muestra 50 filas alternadas y solo amplía al pulsar Traer todas en la grilla", async () => {
+  const first = Array.from({ length: 50 }, (_, i) => [String(i + 1), `Cliente ${i + 1}`]);
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query(first, true, 7));
   const fetch = vi.spyOn(api, "sqlFetch")
-    .mockResolvedValueOnce({ rows: [["2", "Beto"]], more: true })
-    .mockResolvedValueOnce({ rows: [["3", "Caro"]], more: false });
+    .mockResolvedValueOnce({ rows: [["51", "Beto"]], more: true })
+    .mockResolvedValueOnce({ rows: [["52", "Caro"]], more: false });
   const { ref } = setup("select id, nombre from clientes");
   await act(async () => ref.current!.execute!());
-  expect(screen.getByText("1 fila · 40 ms · hay más")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Traer todas" }));
+  expect(screen.getByText("50 filas · 40 ms · hay más")).toBeInTheDocument();
+  const region = within(screen.getByRole("region", { name: "Grilla de resultados" }));
+  expect(region.getAllByRole("row")[1]).not.toHaveClass("sql-row-alt");
+  expect(region.getAllByRole("row")[2]).toHaveClass("sql-row-alt");
+  fireEvent.scroll(region.getByRole("grid").parentElement!);
+  expect(fetch).not.toHaveBeenCalled();
+  fireEvent.click(region.getByRole("button", { name: /Traer todas/ }));
+  expect(region.getByRole("grid").parentElement).toHaveFocus();
   expect(await screen.findByText("Caro")).toBeInTheDocument();
   expect(fetch).toHaveBeenNthCalledWith(1, "w1", 7, 1000);
-  expect(screen.getByText("3 filas · 40 ms")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Traer todas" })).not.toBeInTheDocument();
+  expect(fetch).toHaveBeenNthCalledWith(2, "w1", 7, 1000);
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("52 filas · 40 ms")).toBeInTheDocument();
+  expect(region.queryByRole("button", { name: /Traer todas/ })).not.toBeInTheDocument();
+});
+
+test("indica la carga y conserva las filas si falla la continuación", async () => {
+  vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"]], true, 7));
+  let fail!: (error: unknown) => void;
+  const fetch = vi.spyOn(api, "sqlFetch").mockReturnValue(new Promise((_, reject) => { fail = reject; }));
+  const { ref } = setup("select id, nombre from clientes");
+  await act(async () => ref.current!.execute!());
+  const region = within(screen.getByRole("region", { name: "Grilla de resultados" }));
+  const button = region.getByRole("button", { name: /Traer todas/ });
+  fireEvent.click(button);
+  expect(button).toBeDisabled();
+  expect(region.getByRole("status")).toHaveTextContent("Trayendo filas");
+  fireEvent.click(button);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => fail({ Db: { code: "ORA-01013", message: "Consulta cancelada" } }));
+  expect(region.getByRole("alert")).toHaveTextContent("ORA-01013 Consulta cancelada · Reejecuta con F8");
+  expect(region.getByText("Ana")).toBeInTheDocument();
+  expect(region.queryByRole("button", { name: /Traer todas/ })).not.toBeInTheDocument();
 });
 
 test("un error marca la posición, va a Salida y detiene el script", async () => {

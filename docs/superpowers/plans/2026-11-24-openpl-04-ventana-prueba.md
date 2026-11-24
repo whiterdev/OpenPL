@@ -32,6 +32,7 @@
 - [ ] **T1. Firma de rutinas.** `crates/openpl-core/src/routine.rs`.
   - `group_overloads(rows) -> Vec<Overload>`, pura: agrupa filas de `ALL_ARGUMENTS` por `OVERLOAD`, ordena por `POSITION`, separa el retorno (`POSITION = 0`) y marca `DATA_LEVEL > 0` como parte de un tipo compuesto, no como parámetro.
   - `list_overloads(conn, owner, package, name)`, Oracle, solo lectura: lee `ALL_ARGUMENTS` y confirma con `ALL_PROCEDURES` para cubrir las rutinas sin parámetros. Si la rutina no está en `ALL_PROCEDURES` (privada del cuerpo o inexistente), devuelve un error claro.
+  - Metadatos verificados por DBX en desarrollo: ambas vistas exponen `SUBPROGRAM_ID` y `OVERLOAD`. Están disponibles `POSITION`, `SEQUENCE`, `DATA_LEVEL`, `DATA_TYPE`, `IN_OUT` y `DEFAULTED` en `ALL_ARGUMENTS`.
   - Pruebas: `group_overloads` con filas armadas a mano (función con retorno, procedimiento sin parámetros, dos sobrecargas, parámetro registro con campos); `live` de `list_overloads` solo con `SELECT` sobre `ALL_ARGUMENTS` y `ALL_PROCEDURES`, leyendo la firma de una rutina del sistema sin ejecutarla.
   - Commit: `feat(core): firma y sobrecargas de rutinas`.
 

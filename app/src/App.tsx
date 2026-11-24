@@ -61,6 +61,7 @@ const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const sqlTabActions = [
   "execute",
   "executeScript",
+  "fetchAllRows",
   "cancel",
   "commit",
   "rollback",

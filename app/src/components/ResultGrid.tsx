@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Minus, PencilSimple, Plus, WarningCircle } from "@phosphor-icons/react";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
+import { commands, formatKeys, matches } from "../keymap";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
 export interface CellPosition { row: number; col: number }
@@ -20,7 +21,9 @@ interface Props {
   onSelect: (position: CellPosition) => void;
   onEdit: (position: CellPosition, value: Cell) => void;
   more: boolean;
-  onNearEnd: () => void;
+  fetching: boolean;
+  fetchError: string | null;
+  onFetchAll: (() => void) | undefined;
 }
 
 const ROW = 24;
@@ -38,7 +41,7 @@ const columnWidth = (column: SqlColumn, rows: Cell[][], index: number) => {
 };
 
 export function ResultGrid(props: Props) {
-  const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, more, onNearEnd } = props;
+  const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, more, fetching, fetchError, onFetchAll } = props;
   const scroll = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
   const widths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
@@ -60,7 +63,7 @@ export function ResultGrid(props: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.row]);
 
-  const canEdit = (p: CellPosition) => !!editable?.[p.col] && status[p.row] !== "delete";
+  const canEdit = (p: CellPosition) => !fetching && !!editable?.[p.col] && status[p.row] !== "delete";
   const startEdit = (p: CellPosition, initial?: string) => {
     if (!canEdit(p)) return;
     setEditing({ position: p, value: initial ?? rows[p.row][p.col] ?? "" });
@@ -76,7 +79,7 @@ export function ResultGrid(props: Props) {
   };
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (editing || !rows.length) return;
+    if (editing || fetching || !rows.length) return;
     const at = selected ?? { row: 0, col: 0 };
     const steps: Record<string, [number, number]> = {
       ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
@@ -84,7 +87,7 @@ export function ResultGrid(props: Props) {
     if (steps[event.key]) {
       event.preventDefault();
       move(at.row + steps[event.key][0], at.col + steps[event.key][1]);
-    } else if (event.key === "Home" || event.key === "End") {
+    } else if ((event.key === "Home" || event.key === "End") && !matches(event, commands.fetchAllRows.keys!)) {
       event.preventDefault();
       move(event.ctrlKey ? (event.key === "Home" ? 0 : rows.length - 1) : at.row, event.key === "Home" ? 0 : columns.length - 1);
     } else if (event.key === "Enter" || event.key === "F2") {
@@ -104,12 +107,8 @@ export function ResultGrid(props: Props) {
 
   if (!rows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
   const activeId = selected ? `sql-cell-${selected.row}-${selected.col}` : undefined;
-  return (
-    <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}
-      onScroll={(event) => {
-        const box = event.currentTarget;
-        if (more && box.scrollTop + box.clientHeight >= box.scrollHeight - ROW * 20) onNearEnd();
-      }}>
+  const table = (
+    <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}>
       <div role="grid" aria-label="Resultados" aria-rowcount={rows.length + 1} aria-readonly={!editable}
         aria-activedescendant={activeId} className={`sql-grid${editable ? " editing" : ""}`}
         style={{ width: 64 + widths.reduce((a, b) => a + b, 0) }}>
@@ -126,7 +125,7 @@ export function ResultGrid(props: Props) {
             const state = status[row];
             const Icon = state ? STATUS_ICON[state] : null;
             return (
-              <div key={row} role="row" aria-rowindex={row + 2} className={`sql-row${state ? ` row-${state}` : ""}`}
+              <div key={row} role="row" aria-rowindex={row + 2} className={`sql-row${row % 2 ? " sql-row-alt" : ""}${state ? ` row-${state}` : ""}`}
                 style={{ gridTemplateColumns: template, transform: `translateY(${item.start}px)` }}>
                 <div role="rowheader" className="sql-cell sql-rownum"
                   aria-label={state ? `${row + 1}, ${STATUS_LABEL[state]}` : String(row + 1)}>
@@ -148,7 +147,8 @@ export function ResultGrid(props: Props) {
                           onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                           onBlur={commit}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") { e.preventDefault(); commit(); move(row + 1, col); }
+                            if (matches(e, commands.fetchAllRows.keys!)) { e.stopPropagation(); }
+                            else if (e.key === "Enter") { e.preventDefault(); commit(); move(row + 1, col); }
                             else if (e.key === "Tab") { e.preventDefault(); commit(); move(row, col + (e.shiftKey ? -1 : 1)); }
                             else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); scroll.current?.focus(); }
                           }} />
@@ -162,5 +162,24 @@ export function ResultGrid(props: Props) {
         </div>
       </div>
     </div>
+  );
+  return (
+    <section className="sql-grid-region" aria-label="Grilla de resultados">
+      {(more || fetching || fetchError) && (
+        <header className="sql-grid-header">
+          {fetchError && <span role="alert">{fetchError}</span>}
+          {(more || fetching) && (
+            <button className="btn" disabled={!onFetchAll || fetching} onClick={() => {
+              scroll.current?.focus();
+              onFetchAll?.();
+            }}>
+              {commands.fetchAllRows.label} <span className="kbd">{formatKeys(commands.fetchAllRows.keys!)}</span>
+            </button>
+          )}
+          {fetching && <span role="status">Trayendo filas…</span>}
+        </header>
+      )}
+      {table}
+    </section>
   );
 }

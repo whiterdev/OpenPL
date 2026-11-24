@@ -34,7 +34,8 @@
 
 - [x] **Script.** `app/src/sqlScript.ts`: `splitScript(text)` separa por `;` y por `/` en línea sola; los bloques PL/SQL (`DECLARE`, `BEGIN`, `CREATE ... PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE`) terminan solo en `/`. Respeta comentarios, literales, `q'[...]'` e identificadores entre comillas. Marca comandos SQL*Plus. `statementAt(list, pos)`.
 - [x] **Variables.** `app/src/sqlBinds.ts`: binds `:x` (no `:=`, no dentro de literales) y sustituciones `&x`/`&&x`. Panel Variables con valor y tipo (Texto, Número, Fecha); se recuerdan por ventana.
-- [x] **Ventana.** `SqlWindow.tsx`: editor, Ejecutar (F8) la sentencia bajo el cursor o la selección, Ejecutar script (Shift F8), Cancelar (Shift Esc). Pestañas Resultados, Salida y Historial. Grilla virtualizada con número de fila, `NULL` distinguible, más filas al bajar y **Traer todas**. Estado: filas, tiempo, transacción.
+- [x] **Ventana.** `SqlWindow.tsx`: editor, Ejecutar (F8) la sentencia bajo el cursor o la selección, Ejecutar script (Shift F8), Cancelar (Shift Esc). Pestañas Resultados, Salida y Historial. Grilla virtualizada con número de fila, `NULL` distinguible, 50 filas iniciales y **Traer todas** en el encabezado. Estado: filas, tiempo, transacción.
+- [x] **Carga explícita y franjas.** `sql.rs::read_page` conserva la primera fila no entregada. `ResultGrid.tsx` mantiene la alternancia al virtualizar. `SqlWindow.test.tsx` cubre el recorrido de 50 filas a todas y la conservación de resultados tras un fallo.
 - [x] **Aplicación.** Pestañas comunes para programas y ventanas SQL. Nueva ventana SQL (Ctrl N, menú Nuevo). Commit (F10) y Rollback (Shift F10) en la barra superior para la ventana activa con indicador de transacción. Cierre con transacción abierta. Explorador: **Consultar datos** abre una ventana con `SELECT * FROM esquema.objeto`.
 
 ### Pruebas

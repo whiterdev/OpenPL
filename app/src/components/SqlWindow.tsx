@@ -95,6 +95,7 @@ export function SqlWindow({
   const [alert, setAlert] = useState("");
   const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>({});
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [editorHeight, setEditorHeight] = useState(220);
   const lineId = useRef(0);
   const fetchingRef = useRef(false);
@@ -132,7 +133,7 @@ export function SqlWindow({
   }
 
   async function run(list: ScriptStatement[]) {
-    if (running || !list.length) return;
+    if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setMarkers([]);
     for (const statement of list) {
@@ -165,6 +166,8 @@ export function SqlWindow({
         }));
         let outcome: ExecOutcome;
         try {
+          setFetchError(null);
+          setGrid((current) => current?.more ? { ...current, more: false } : current);
           outcome = await api.sqlExecute(sessionId, sql, binds);
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
         } catch (error) {
@@ -201,20 +204,28 @@ export function SqlWindow({
     }
   }
 
-  async function fetchMore(all = false) {
-    if (!grid || !grid.more || fetchingRef.current) return;
+  async function fetchAll() {
+    if (tab !== "results" || !grid?.more || running || applying || fetchingRef.current) return;
     fetchingRef.current = true;
     setFetching(true);
-    let state = grid;
+    setSelected(null);
+    const cursor = grid.cursor;
     try {
+      let more: boolean;
       do {
-        const page = await api.sqlFetch(sessionId, state.cursor, all ? FETCH_ALL : undefined);
-        state = { ...state, rows: [...state.rows, ...page.rows], more: page.more };
-        setGrid(state);
-      } while (all && state.more);
+        const page = await api.sqlFetch(sessionId, cursor, FETCH_ALL);
+        setGrid((current) => current?.cursor === cursor
+          ? { ...current, rows: [...current.rows, ...page.rows], more: page.more }
+          : current);
+        more = page.more;
+      } while (more);
     } catch (error) {
-      log("error", describeError(error).message);
-      setTab("output");
+      const detail = describeError(error);
+      const message = detail.code && !detail.message.startsWith(detail.code)
+        ? `${detail.code} ${detail.message}` : detail.message;
+      setGrid((current) => current?.cursor === cursor ? { ...current, more: false } : current);
+      setFetchError(`${message} · Reejecuta con F8`);
+      log("error", message);
     } finally {
       fetchingRef.current = false;
       setFetching(false);
@@ -222,8 +233,10 @@ export function SqlWindow({
   }
 
   async function transaction(action: "commit" | "rollback") {
+    if (fetchingRef.current) return;
     try {
       const open = action === "commit" ? await api.sqlCommit(sessionId) : await api.sqlRollback(sessionId);
+      if (action === "rollback") setGrid((current) => current?.more ? { ...current, more: false } : current);
       onTransaction(open);
       log("info", action === "commit" ? "Commit hecho" : "Rollback hecho");
     } catch (error) {
@@ -233,6 +246,7 @@ export function SqlWindow({
   }
 
   async function toggleEdit() {
+    if (running || applying || fetchingRef.current) return;
     if (editSession) {
       const count = pendingCount(pending);
       if (count && !window.confirm(`¿Descartar ${plural(count, "cambio pendiente", "cambios pendientes")}?`)) return;
@@ -252,6 +266,7 @@ export function SqlWindow({
       return;
     }
     setAlert("");
+    setRunning(true);
     try {
       const target = await api.sqlEditTarget(sessionId, editable.table.owner, editable.table.name);
       if (!target) {
@@ -263,6 +278,7 @@ export function SqlWindow({
       const { cursor: id, columns, page } = outcome.result;
       const visible = columns.slice(1);
       setGrid({ cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: columns[0]?.name === ROWID_COLUMN });
+      setFetchError(null);
       setEditSession({
         target,
         names: visible.map((c) => target.columns.find((t) => t.name === c.name && t.editable)?.name ?? null),
@@ -274,6 +290,8 @@ export function SqlWindow({
       const detail = describeError(error);
       log("error", detail.code && !detail.message.startsWith(detail.code) ? `${detail.code} ${detail.message}` : detail.message);
       setTab("output");
+    } finally {
+      setRunning(false);
     }
   }
 
@@ -322,7 +340,7 @@ export function SqlWindow({
   }
 
   async function applyChanges(rows = grid?.rows) {
-    if (!grid || !rows || !editSession || applying) return;
+    if (!grid || !rows || !editSession || applying || fetchingRef.current) return;
     const { changes, rowsOf } = buildChanges(rows, editSession.names, pending);
     if (!changes.length) return;
     setApplying(true);
@@ -395,6 +413,7 @@ export function SqlWindow({
   const actions: ProgramActions = {
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
     cancel: running ? () => void api.sqlCancel(sessionId) : undefined,
     editData: grid ? () => void toggleEdit() : undefined,
     applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
@@ -461,10 +480,10 @@ export function SqlWindow({
   return (
     <section className="sql-window" aria-label="Ventana SQL">
       <div className="program-toolbar">
-        <button className="btn primary" onClick={actions.execute} disabled={running}>
+        <button className="btn primary" onClick={actions.execute} disabled={running || fetching || applying}>
           <Play size={14} aria-hidden /> Ejecutar <span className="kbd">{key("execute")}</span>
         </button>
-        <button className="btn" onClick={actions.executeScript} disabled={running}>
+        <button className="btn" onClick={actions.executeScript} disabled={running || fetching || applying}>
           <PlayCircle size={14} aria-hidden /> Ejecutar script <span className="kbd">{key("executeScript")}</span>
         </button>
         <button className="ib" aria-label={`Cancelar ejecución (${key("cancel")})`} title={`Cancelar ejecución  ${key("cancel")}`}
@@ -559,18 +578,15 @@ export function SqlWindow({
               </button>
             ))}
           </div>
-          {tab === "results" && grid?.more && (
-            <button className="btn" disabled={fetching} onClick={() => void fetchMore(true)}>Traer todas</button>
-          )}
           {tab === "results" && grid && (
-            <button className="btn" aria-pressed={!!editSession} onClick={actions.editData} disabled={running}>
+            <button className="btn" aria-pressed={!!editSession} onClick={actions.editData} disabled={running || fetching || applying}>
               {editSession ? <LockOpen size={14} aria-hidden /> : <Lock size={14} aria-hidden />}
               {editSession ? "Editando" : "Editar"} <span className="kbd">{key("editData")}</span>
             </button>
           )}
           {tab === "results" && editSession && (
             <>
-              <button className="ib" aria-label="Agregar fila" title="Agregar fila" onClick={addRow}>
+              <button className="ib" aria-label="Agregar fila" title="Agregar fila" onClick={addRow} disabled={fetching}>
                 <Plus size={15} aria-hidden />
               </button>
               <button className="ib" aria-label="Borrar fila" title="Borrar fila (o recuperarla)" onClick={deleteRow} disabled={!selected}>
@@ -581,7 +597,7 @@ export function SqlWindow({
                 setPending(emptyPending());
                 setConflicts(null);
               }}>Descartar</button>
-              <button className="btn primary" disabled={!count || applying} onClick={actions.applyChanges}>
+              <button className="btn primary" disabled={!count || applying || fetching} onClick={actions.applyChanges}>
                 Aplicar cambios <span className="kbd">{key("applyChanges")}</span>
               </button>
             </>
@@ -619,15 +635,15 @@ export function SqlWindow({
                         );
                       })}
                       <div>
-                        <button className="btn primary" onClick={retryConflicts} disabled={applying}>Reintentar con valores actuales</button>
-                        <button className="btn" onClick={discardConflicts} disabled={applying}>Descartar cambios en conflicto</button>
+                        <button className="btn primary" onClick={retryConflicts} disabled={applying || fetching}>Reintentar con valores actuales</button>
+                        <button className="btn" onClick={discardConflicts} disabled={applying || fetching}>Descartar cambios en conflicto</button>
                       </div>
                     </section>
                   )}
                   <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
-                    selected={selected} onSelect={setSelected} onEdit={editCell}
-                    more={grid.more} onNearEnd={() => void fetchMore()} />
+                    selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
+                    more={grid.more} fetching={fetching} fetchError={fetchError} onFetchAll={actions.fetchAllRows} />
                 </>
               )}
         </div>

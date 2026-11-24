@@ -1,6 +1,7 @@
 // Registro central de comandos y atajos (diseño §7.7). Menús, tooltips y teclado leen de aquí.
 
 export type CommandId =
+  | "fetchAllRows"
   | "execute"
   | "executeScript"
   | "cancel"
@@ -54,6 +55,7 @@ export interface Command {
 
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
+  { id: "fetchAllRows", label: "Traer todas", keys: "Ctrl+Shift+End" },
   // TODO(plan 4): ventana de prueba. TODO(fases posteriores): plan de ejecución, paleta, ventana de comando.
   { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
   { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },

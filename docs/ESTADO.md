@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (plan 4 con plan, nota y regla de DEV; corrección de ORA-12704 en 42c4c36, pendiente de re-corrida contra DEV). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (carga inicial de 50 filas y colores alternados en la grilla). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -16,9 +16,9 @@
   corrección en 42c4c36, pendiente de re-corrida. Las escrituras las prueba el usuario.
 - Plan 4 (ventana de prueba) **planificado**: plan y nota de comportamiento escritos. El código espera
   las respuestas del dueño a las decisiones abiertas y al mockup "3 · Ventana de prueba".
-- Verificación local en Windows (2026-11-24): `cargo fmt --check` y Clippy con `-D warnings` sin
-  avisos; 86 pruebas de Rust pasan, de las cuales 8 son `live` y, sin `OPENPL_TEST_*`, terminan sin
-  conectarse (imprimen `SKIP`); 170 pruebas de interfaz en 18 archivos; `tsc --noEmit` sin errores.
+- Verificación local en Windows (2026-11-24): `cargo fmt --check`, Clippy con `-D warnings`
+  y `tsc --noEmit` pasan. Se ejecutaron 80 pruebas Rust sin base y 171 de interfaz. Las 8 pruebas
+  Rust `live` terminan sin conectarse (imprimen `SKIP`).
 - Pruebas `live` de lectura contra DEV (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
   Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
   `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99); corrección en 42c4c36,
@@ -145,12 +145,12 @@
 
 - [Plan 3](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md) y [nota de comportamiento](behavior/sql.md).
 - **Núcleo:** `crates/openpl-core/src/sql.rs` ejecuta una sentencia con binds tipados, entrega la primera
-  página (200 filas) y guarda el cursor en el hilo de la sesión para `fetch`; lee `DBMS_OUTPUT` y el estado
+  página (50 filas) y guarda el cursor en el hilo de la sesión para `fetch`; lee `DBMS_OUTPUT` y el estado
   de la transacción tras cada ejecución. `SessionManager::open_sibling` da a cada ventana su sesión;
   `Session::interrupt` cancela con `break_execution` desde otro hilo. `DbError.offset` lleva la posición.
 - **Interfaz:** `app/src/sqlScript.ts` separa el script (`;`, `/`, bloques PL/SQL, SQL*Plus omitido),
   `app/src/sqlBinds.ts` detecta `:x` y `&x`, `SqlWindow.tsx` ejecuta (F8, Shift F8), cancela (Shift Esc),
-  muestra Resultados (grilla, más filas al bajar, Traer todas), Salida e Historial, y el panel Variables.
+  muestra Resultados (grilla y Traer todas), Salida e Historial, y el panel Variables.
   Pestañas comunes con los programas; Ctrl N; Commit/Rollback de la ventana activa con indicador;
   diálogo al cerrar con transacción abierta; **Consultar datos** desde el explorador.
 - **Sin verificar contra Oracle real:** la prueba `live` nueva (paginación, `DBMS_OUTPUT`, posición de
@@ -168,6 +168,24 @@
   `live` son de solo lectura). Validar en desarrollo: tipos DATE y TIMESTAMP al comparar y al guardar,
   números con decimales, CLOB, `RETURNING ROWID` en inserciones y el aviso de producción.
 - **Siguiente:** ver "Siguiente paso" más abajo.
+
+### Plan 3 — Carga inicial y legibilidad de resultados
+
+- `PAGE_SIZE` es 50. El núcleo comprueba si hay una fila adicional en el cursor y la conserva para
+  la página siguiente. La grilla no solicita filas al desplazarse. **Traer todas** (Ctrl+Shift+End)
+  está en el encabezado y agota el mismo cursor por lotes de hasta 1.000 filas.
+- Las franjas usan `--s0` y `--s1` y siguen el índice de la fila al virtualizar. Las marcas de
+  edición tienen prioridad. Si falla la continuación, la grilla conserva las filas recibidas y
+  muestra el error junto al atajo para reejecutar. [Comportamiento](behavior/sql.md)
+- La carga de 50, la fila 51, la ausencia de carga al desplazarse y los estados del botón se probaron
+  localmente. Falta el recorrido en la app nativa con Oracle. La ventana SQL existente llama a
+  `DBMS_OUTPUT` incluso en consultas. Esa ruta no se usó contra una base en la verificación.
+  [Auditoría de la grilla](../anti-slop/audit-002-2026-11-24.md)
+
+### Plan 4 — Verificación previa de metadatos
+
+- Se confirmaron por DBX de solo lectura las columnas de `ALL_ARGUMENTS` y `ALL_PROCEDURES` para
+  T1 (firmas y sobrecargas). Queda pendiente implementarlo según el [plan 4](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md).
 
 ### Auditoría antislop 001
 
