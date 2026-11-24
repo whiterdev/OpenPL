@@ -18,6 +18,9 @@
 - Verificación local en Windows (2026-11-24): `cargo fmt --check` y Clippy con `-D warnings` sin
   avisos; 86 pruebas de Rust pasan, de las cuales 8 son `live` y, sin `OPENPL_TEST_*`, terminan sin
   conectarse (imprimen `SKIP`); 170 pruebas de interfaz en 18 archivos; `tsc --noEmit` sin errores.
+- Pruebas `live` de lectura contra DEV (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
+  Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
+  `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99); causa en análisis.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
@@ -31,8 +34,11 @@
    `conecta_y_lee_version` y `servicio_inexistente_da_unknown_service`; en
    `crates/openpl-core/tests/live_catalog.rs`, `lista_tablas_propias_sin_error`,
    `todos_los_tipos_consultan_sin_error`, `completa_objetos_y_columnas_sin_error` y
-   `edicion_en_grilla_solo_resuelve_tablas`. Resultado: pendiente de la corrida que se haga con la
-   contraseña aportada por el usuario.
+   `edicion_en_grilla_solo_resuelve_tablas`. Resultado (2026-11-24, corrida del usuario, solo
+   `SELECT`, sin escrituras): 4 de 6 OK. `live.rs` 2 de 2. `live_catalog.rs` 2 de 4: fallan con
+   ORA-12704 (character set mismatch) `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`,
+   offset 500) y `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Causa en
+   análisis (ver "Pendiente inmediato").
 2. Excluidas de las corridas de agentes: `clave_erronea_da_invalid_credentials` (login fallido en cada
    corrida, puede bloquear la cuenta de prueba) y `ventana_sql_pagina_salida_y_errores` (ejecuta
    bloques PL/SQL de `DBMS_OUTPUT`). Las decide el usuario.
@@ -243,11 +249,15 @@ producto; estas decisiones son posteriores y mandan sobre él:
      perfiles y contraseña guardada, explorador con los 35 tipos, Copiar DDL, Recompilar,
      reconexión, lectura de fuentes, menú de objeto, comparación, preparación de compilación,
      autocompletado y selector nativo de archivos).
-2. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
-3. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
+2. **ORA-12704 contra DEV** (causa en análisis): fallan `completa_objetos_y_columnas_sin_error`
+   (`live_catalog.rs:47`, offset 500) y `edicion_en_grilla_solo_resuelve_tablas`
+   (`live_catalog.rs:89`, offset 99). Son consultas de lectura, no es un fallo de escritura. Impacto:
+   contra DEV no funcionan completar objetos y columnas ni resolver la edición en grilla.
+3. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
+4. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
    falle (el YAML no se validó).
-4. Decidir cómo y cuándo integrar las ramas `feat/plan-*` a `main`.
-5. Problemas menores conocidos (no bloquean):
+5. Decidir cómo y cuándo integrar las ramas `feat/plan-*` a `main`.
+6. Problemas menores conocidos (no bloquean):
    - Un pánico dentro de un trabajo de sesión deja esa sesión inutilizable, y en release
      (`panic = "abort"`) cierra la app (`crates/openpl-core/src/session.rs`).
    - Una reconexión simultánea con una consulta que falla puede volver a marcar como
