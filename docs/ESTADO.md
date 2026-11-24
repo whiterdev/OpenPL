@@ -52,6 +52,11 @@
 
 ## Hecho
 
+### Selector de temas
+
+- En `feat/seleccion-temas`, la fila activa usa fondo de superficie y un tilde. Se quitó la franja lateral y se documentó la regla de selección en `DESIGN.md`.
+- [Auditoría antislop del selector](../anti-slop/audit-003-2026-11-24.md). Pasaron 340 pruebas de frontend, TypeScript, formato, Clippy y las pruebas de Rust sin conexión a Oracle. Sigue pendiente el recorrido visual de escritorio.
+
 ### Tanda B1 a B13 (2026-11-24)
 
 Cambios pedidos tras usar la app. Commits en `feat/plan-4-ventana-prueba`, en orden:

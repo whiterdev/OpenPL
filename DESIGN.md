@@ -63,6 +63,7 @@ Todo par nuevo de texto y fondo se mide con `contrast-check.py` de antislop-huma
 
 - Toda vista con datos tiene carga, vacío y error. El vacío dice qué falta y ofrece la acción siguiente. El error muestra el código Oracle y el mensaje en pantalla, con una acción para reintentar.
 - Una función que todavía no existe aparece deshabilitada con la marca **Próximamente** (en menús) o en el tooltip (botones de la barra), y lleva `// TODO(plan N)` en el código. No se dejan menús vacíos ni botones sin acción.
+- En listas y selectores, evitar franjas de acento laterales y marcos decorativos para marcar selección. Usar un fondo de superficie y, cuando haga falta distinguirla del hover, una marca de verificación. Conservar el estado accesible de selección.
 - Foco visible con contorno ocre de 2 px en todo control. Ningún `outline: none` sin reemplazo.
 - Cursor de mano en controles habilitados, `not-allowed` en deshabilitados, `col-resize` en divisores.
 - Todo comando con atajo, registrado en `app/src/keymap.ts` y visible en menú, botón o tooltip.
@@ -73,4 +74,4 @@ Todo par nuevo de texto y fondo se mide con `contrast-check.py` de antislop-huma
 
 ## Cierre de cada entrega con interfaz
 
-Correr el Delivery Gate de antislop y dejar el informe PASS/FAIL en la respuesta, con el recorrido de clics de lo que cambió.
+Correr el Delivery Gate de antislop y dejar el informe PASS/FAIL en la respuesta, con el recorrido de clics de lo que cambió. Revisar selección, hover y foco por separado en cada control afectado y registrar si la comprobación fue visual o automatizada.

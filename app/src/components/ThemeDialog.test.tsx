@@ -19,6 +19,17 @@ afterEach(() => {
 });
 
 describe("ThemeDialog", () => {
+  test("la marca visual sigue al tema seleccionado", async () => {
+    render(<ThemeDialog onClose={vi.fn()} />);
+    const grafito = screen.getByRole("radio", { name: /Grafito/, checked: true });
+    const papel = screen.getByRole("radio", { name: /Papel/, checked: false });
+    expect(grafito.querySelector(".td-selected")).toBeInTheDocument();
+    await userEvent.click(papel);
+    expect(papel).toHaveAttribute("aria-checked", "true");
+    expect(papel.querySelector(".td-selected")).toBeInTheDocument();
+    expect(grafito.querySelector(".td-selected")).toBeNull();
+  });
+
   test("elegir un preset aplica sus variables", async () => {
     render(<ThemeDialog onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole("radio", { name: /Papel/ }));

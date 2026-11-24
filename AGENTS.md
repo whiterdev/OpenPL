@@ -181,12 +181,12 @@ design/logo/            logo maestro, variantes y guía
 
 - Cada feature nueva va en una rama nueva creada desde `main` actualizado (`git pull` antes),
   con nombre `feat/<tema>`.
-- Al terminar, se integra a `main` con merge (sin reescribir historia) y se hace push.
+- Al terminar, la feature queda en su rama. Solo se integra a `main` con merge y se hace push cuando el usuario lo pide expresamente para esa entrega, sin reescribir historia.
 - No se trabaja directo en `main`.
 
 ## No hacer
 
-- No hacer `push`, merge a `main` ni publicar nada sin pedido explícito.
+- No publicar releases ni artefactos sin pedido explícito.
 - No subir versiones mayores de dependencias sin motivo.
 - No bajar el nivel de los tests (no saltear, no `.skip`, no borrar asserts para que pasen).
 - No agregar textos explicativos en la interfaz.
