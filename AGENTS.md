@@ -177,6 +177,13 @@ design/logo/            logo maestro, variantes y guía
    qué se hizo, decisiones, verificaciones ejecutadas, limitaciones y la siguiente tarea concreta.
    Enlazar las notas de comportamiento y el plan desde el estado para que otro agente pueda continuar.
 
+## Flujo de ramas
+
+- Cada feature nueva va en una rama nueva creada desde `main` actualizado (`git pull` antes),
+  con nombre `feat/<tema>`.
+- Al terminar, se integra a `main` con merge (sin reescribir historia) y se hace push.
+- No se trabaja directo en `main`.
+
 ## No hacer
 
 - No hacer `push`, merge a `main` ni publicar nada sin pedido explícito.
