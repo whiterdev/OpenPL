@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Minus, PencilSimple, Plus, WarningCircle } from "@phosphor-icons/react";
+import { Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phosphor-icons/react";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
+import { copyGridCells, sumGridNumbers } from "../gridSelection";
+import { ContextMenu } from "./ContextMenu";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
-export interface CellPosition { row: number; col: number }
+export interface CellPosition { row: number; col: number; scope?: "row" | "all" }
 
 interface Props {
   /** Identifica la consulta; los anchos se recalculan solo cuando cambia. */
@@ -46,6 +48,10 @@ export function ResultGrid(props: Props) {
   const localScroll = useRef<HTMLDivElement>(null);
   const scroll = props.scrollRef ?? localScroll;
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [totalsFor, setTotalsFor] = useState<{ queryKey: number; selected: CellPosition | null } | null>(null);
+  const [copyError, setCopyError] = useState(false);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const autoWidths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [queryKey, columns]);
@@ -84,6 +90,18 @@ export function ResultGrid(props: Props) {
   const move = (row: number, col: number) => {
     onSelect({ row: Math.max(0, Math.min(rows.length - 1, row)), col: Math.max(0, Math.min(columns.length - 1, col)) });
   };
+  const cursor = selected ?? { row: 0, col: 0 };
+  const selectedRows = () => selected?.scope === "all" ? rows : rows.slice(cursor.row, cursor.row + 1);
+  const selectAll = () => onSelect({ ...cursor, scope: "all" });
+  async function copy(csv: boolean) {
+    const cells = selected?.scope ? selectedRows() : [[rows[cursor.row]?.[cursor.col] ?? null]];
+    try {
+      await navigator.clipboard.writeText(copyGridCells(cells, csv));
+      setCopyError(false);
+    } catch {
+      setCopyError(true);
+    }
+  }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // Las teclas sobre un borde de columna no mueven ni editan la celda.
@@ -104,9 +122,12 @@ export function ResultGrid(props: Props) {
     } else if (event.key === "Delete" && canEdit(at)) {
       event.preventDefault();
       onEdit(at, null);
-    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+    } else if (matches(event, commands.selectGridRows.keys!)) {
       event.preventDefault();
-      void navigator.clipboard?.writeText(rows[at.row]?.[at.col] ?? "");
+      selectAll();
+    } else if (matches(event, commands.copyGrid.keys!) || (event.metaKey && event.key.toLowerCase() === "c")) {
+      event.preventDefault();
+      void copy(false);
     } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && canEdit(at)) {
       event.preventDefault();
       startEdit(at, event.key);
@@ -116,12 +137,24 @@ export function ResultGrid(props: Props) {
   if (!rows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
   const activeId = selected ? `sql-cell-${selected.row}-${selected.col}` : undefined;
   const table = (
-    <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}>
+    <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}
+      onContextMenu={(event) => {
+        if (editing || fetching) return;
+        event.preventDefault();
+        scroll.current?.focus();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}>
       <div role="grid" aria-label="Resultados" aria-rowcount={rows.length + 1} aria-readonly={!editable}
-        aria-activedescendant={activeId} className={`sql-grid${editable ? " editing" : ""}`}
+        aria-activedescendant={activeId} aria-multiselectable="true"
+        className={`sql-grid${editable ? " editing" : ""}${selected?.scope ? " selecting-rows" : ""}`}
         style={{ width: 64 + widths.reduce((a, b) => a + b, 0) }}>
         <div role="row" className="sql-row sql-head" style={{ gridTemplateColumns: template }}>
-          <div role="columnheader" aria-label="Fila" className="sql-cell sql-rownum" />
+          <div role="columnheader" aria-label="Fila" className="sql-cell sql-rownum sql-selector">
+            <button type="button" aria-label={commands.selectGridRows.label} aria-pressed={selected?.scope === "all"}
+              title={commands.selectGridRows.label} disabled={fetching} onClick={() => { selectAll(); scroll.current?.focus(); }}>
+              <SelectionAll size={14} aria-hidden="true" />
+            </button>
+          </div>
           {columns.map((c, i) => (
             <div key={`${c.name}-${i}`} role="columnheader" aria-label={c.name} className={`sql-cell${c.numeric ? " num" : ""}`}
               title={editable && !editable[i] ? `${c.type_name} · solo lectura` : c.type_name}>
@@ -163,20 +196,28 @@ export function ResultGrid(props: Props) {
             return (
               <div key={row} role="row" aria-rowindex={row + 2} className={`sql-row${row % 2 ? " sql-row-alt" : ""}${state ? ` row-${state}` : ""}`}
                 style={{ gridTemplateColumns: template, transform: `translateY(${item.start}px)` }}>
-                <div role="rowheader" className="sql-cell sql-rownum"
+                <div role="rowheader" className="sql-cell sql-rownum sql-selector"
                   aria-label={state ? `${row + 1}, ${STATUS_LABEL[state]}` : String(row + 1)}>
-                  {Icon && <Icon size={12} aria-hidden />}{row + 1}
+                  <button type="button" aria-label={`Seleccionar fila ${row + 1}`}
+                    aria-pressed={selected?.scope === "all" || (selected?.scope === "row" && selected.row === row)}
+                    disabled={fetching} onClick={() => { onSelect({ row, col: 0, scope: "row" }); scroll.current?.focus(); }}>
+                    {Icon && <Icon size={12} aria-hidden />}{row + 1}
+                  </button>
                 </div>
                 {columns.map((column, col) => {
                   const value = rows[row][col];
-                  const isSelected = selected?.row === row && selected.col === col;
+                  const isSelected = selected?.scope === "all" ||
+                    (selected?.row === row && (selected.scope === "row" || selected.col === col));
                   const isEditing = editing?.position.row === row && editing.position.col === col;
                   return (
                     <div key={col} id={`sql-cell-${row}-${col}`} role="gridcell" aria-selected={isSelected}
                       aria-label={`${column.name} ${value ?? "NULL"}`}
                       className={`sql-cell${column.numeric ? " num" : ""}${isSelected ? " selected" : ""}${isModified(row, col) ? " modified" : ""}`}
-                      onMouseDown={() => onSelect({ row, col })}
+                      onMouseDown={(event) => { if (event.button === 0) onSelect({ row, col }); }}
                       onClick={() => onSelect({ row, col })}
+                      onContextMenu={() => {
+                        if (!fetching && !editing && !isSelected) onSelect({ row, col });
+                      }}
                       onDoubleClick={() => startEdit({ row, col })}>
                       {isEditing ? (
                         <input className="sql-cell-input" aria-label={`Editar ${column.name}`} autoFocus value={editing.value}
@@ -207,7 +248,25 @@ export function ResultGrid(props: Props) {
           {fetching && <span role="status">Trayendo filas…</span>}
         </header>
       )}
+      {copyError && <div className="sql-grid-header"><span role="alert">No se pudo copiar</span></div>}
+      {totalsFor?.queryKey === queryKey && totalsFor.selected === selected && (
+        <div className="sql-grid-header" role="status">
+          {columns.map((column, index) => column.numeric ? (
+            <span key={index}>{column.name}: {sumGridNumbers(selectedRows().map((row) => row[index])) ?? "—"}</span>
+          ) : null)}
+          <button className="btn" onClick={() => { setTotalsFor(null); scroll.current?.focus(); }}>Cerrar totales</button>
+        </div>
+      )}
       {table}
+      {menu && <ContextMenu {...menu} label="Grilla de resultados" onClose={closeMenu} items={[
+        { ...commands.selectGridRows, run: () => { selectAll(); scroll.current?.focus(); } },
+        { ...commands.copyGrid, run: () => { void copy(false); scroll.current?.focus(); } },
+        { label: "Copiar entre comas", run: () => { void copy(true); scroll.current?.focus(); } },
+        { label: "Sumar columnas numéricas", run: columns.some((column) => column.numeric) ? () => {
+          setTotalsFor({ queryKey, selected });
+          scroll.current?.focus();
+        } : undefined },
+      ]} />}
     </section>
   );
 }

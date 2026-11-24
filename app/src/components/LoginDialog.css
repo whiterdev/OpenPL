@@ -1,4 +1,4 @@
-.login-backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--backdrop); }
+.login-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: var(--backdrop); }
 .login { width: 860px; height: 600px; max-height: calc(100% - 32px); display: flex; background: var(--s0); border: 1px solid var(--line2);
   border-radius: 6px; overflow: hidden; box-shadow: 0 24px 60px var(--shadow); }
 .login-profiles { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }

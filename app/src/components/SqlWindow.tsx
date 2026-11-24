@@ -343,7 +343,19 @@ export function SqlWindow({
   }
 
   function deleteRow() {
-    if (!grid || !selected) return;
+    if (!grid || !editSession || !selected || applying || fetchingRef.current) return;
+    if (selected.scope === "all") {
+      setConflicts(null);
+      setPending((p) => {
+        const restore = !p.inserts.length && grid.rows.every((_, row) => p.edits[row]?.kind === "delete");
+        return {
+          edits: restore ? {} : Object.fromEntries(grid.rows.map((_, row) => [row, { kind: "delete" }])),
+          inserts: [],
+        };
+      });
+      setSelected({ row: Math.min(selected.row, Math.max(0, grid.rows.length - 1)), col: selected.col, scope: "all" });
+      return;
+    }
     const row = selected.row;
     setConflicts(null);
     setPending((p) => {
@@ -355,6 +367,9 @@ export function SqlWindow({
       else edits[row] = { kind: "delete" };
       return { ...p, edits };
     });
+    if (row >= grid.rows.length && row === grid.rows.length + pending.inserts.length - 1) {
+      setSelected(row > 0 ? { row: row - 1, col: selected.col } : null);
+    }
   }
 
   async function applyChanges(rows = grid?.rows) {
@@ -614,10 +629,12 @@ export function SqlWindow({
           )}
           {tab === "results" && editSession && (
             <>
-              <button className="ib" aria-label="Agregar fila" title="Agregar fila" onClick={addRow} disabled={fetching}>
+              <button className="ib" aria-label="Agregar fila" title="Agregar fila vacía" onClick={addRow} disabled={fetching || applying}>
                 <Plus size={15} aria-hidden />
               </button>
-              <button className="ib" aria-label="Borrar fila" title="Borrar fila (o recuperarla)" onClick={deleteRow} disabled={!selected}>
+              <button className="ib" aria-label={selected?.scope === "all" ? "Borrar selección" : "Borrar fila"}
+                title={selected?.scope === "all" ? "Borrar selección (o recuperarla)" : "Borrar fila (o recuperarla)"}
+                onClick={deleteRow} disabled={!selected || fetching || applying}>
                 <Minus size={15} aria-hidden />
               </button>
               {count > 0 && <span className="program-muted">{plural(count, "pendiente", "pendientes")}</span>}
