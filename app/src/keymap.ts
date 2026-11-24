@@ -43,7 +43,8 @@ export type CommandId =
   | "disconnect"
   | "reconnect"
   | "toggleExplorer"
-  | "refreshExplorer";
+  | "refreshExplorer"
+  | "customizeUi";
 
 export interface Command {
   id: CommandId;
@@ -107,6 +108,7 @@ const list: Command[] = [
     keys: "Ctrl+B",
   },
   { id: "refreshExplorer", label: "Refrescar explorador", keys: "Ctrl+R" },
+  { id: "customizeUi", label: "Personalizar interfaz", keys: "Ctrl+," },
 ];
 
 export const commands = Object.fromEntries(

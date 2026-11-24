@@ -115,6 +115,22 @@ describe("keymap", () => {
     expect(ev.preventDefault).not.toHaveBeenCalled();
   });
 
+  test("Ctrl , abre Personalizar interfaz", () => {
+    expect(commands.customizeUi.label).toBe("Personalizar interfaz");
+    expect(commands.customizeUi.keys).toBe("Ctrl+,");
+    const run = vi.fn();
+    const ev = {
+      key: ",",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+    };
+    expect(handleShortcut(ev, { customizeUi: run })).toBe(true);
+    expect(run).toHaveBeenCalled();
+  });
+
   test("ningún atajo está repetido", () => {
     const keys = Object.values(commands)
       .map((c) => c.keys)

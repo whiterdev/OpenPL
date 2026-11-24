@@ -560,3 +560,32 @@ test("F8 compila el programa en una sesión hermana y Detener la cancela", async
   expect(order(api.sqlExecute)).toBeLessThan(order(api.sqlClose));
   expect(api.sqlExecute).not.toHaveBeenCalledWith("s1", expect.anything(), expect.anything());
 });
+
+test("Ver > Personalizar interfaz y Ctrl , abren el diálogo de temas", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ver" }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: "Ver" })).getByRole("menuitem", {
+      name: /Personalizar interfaz/,
+    }),
+  );
+  const dialog = screen.getByRole("dialog", { name: "Personalizar interfaz" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+  expect(screen.queryByRole("dialog", { name: "Personalizar interfaz" })).toBeNull();
+  fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  expect(screen.getByRole("dialog", { name: "Personalizar interfaz" })).toBeInTheDocument();
+});
+
+test("el botón Sol/Luna alterna entre tema oscuro y claro", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  localStorage.clear();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tema claro" }));
+  expect(document.documentElement.dataset.theme).toBe("papel");
+  fireEvent.click(screen.getByRole("button", { name: "Tema oscuro" }));
+  expect(document.documentElement.dataset.theme).toBe("grafito");
+  localStorage.clear();
+});

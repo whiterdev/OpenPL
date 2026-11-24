@@ -11,8 +11,10 @@ import {
   CheckCircle,
   WarningCircle,
   MagnifyingGlass,
+  Moon,
   Plus,
   SidebarSimple,
+  Sun,
   X,
 } from "@phosphor-icons/react";
 import { isTauri } from "@tauri-apps/api/core";
@@ -28,6 +30,8 @@ import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
+import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
+import { activeTheme } from "./themes";
 import {
   commands,
   formatKeys,
@@ -129,6 +133,8 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, SessionState>>({});
   const [showLogin, setShowLogin] = useState(false);
+  const [showTheme, setShowTheme] = useState(false);
+  const [themeMode, setThemeMode] = useState(() => activeTheme().mode);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const closeNewMenu = useCallback(() => setNewMenu(null), []);
   const pick = (run: () => void) => () => {
@@ -236,12 +242,13 @@ export default function App() {
     refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnect(active.sessionId) : undefined,
+    customizeUi: () => setShowTheme(true),
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (showLogin) {
+      if (showLogin || showTheme) {
         if (
           matches(e, commands.explainPlan.keys!) ||
           matches(e, commands.refreshExplorer.keys!)
@@ -642,6 +649,8 @@ export default function App() {
         run("foldBlock"),
         run("unfoldBlock"),
         run("compareProgram"),
+        "sep",
+        run("customizeUi"),
       ],
     },
     {
@@ -773,6 +782,18 @@ export default function App() {
         >
           Rollback{" "}
           <span className="kbd">{formatKeys(commands.rollback.keys!)}</span>
+        </button>
+        <button
+          className="ib"
+          aria-label={themeMode === "dark" ? "Tema claro" : "Tema oscuro"}
+          title={themeMode === "dark" ? "Tema claro" : "Tema oscuro"}
+          onClick={() => setThemeMode(toggleThemeMode().mode)}
+        >
+          {themeMode === "dark" ? (
+            <Sun size={16} aria-hidden />
+          ) : (
+            <Moon size={16} aria-hidden />
+          )}
         </button>
       </header>
 
@@ -982,6 +1003,14 @@ export default function App() {
             setActiveId(c.sessionId);
             setStates((s) => ({ ...s, [c.sessionId]: "Connected" }));
             setShowLogin(false);
+          }}
+        />
+      )}
+      {showTheme && (
+        <ThemeDialog
+          onClose={() => {
+            setShowTheme(false);
+            setThemeMode(activeTheme().mode);
           }}
         />
       )}
