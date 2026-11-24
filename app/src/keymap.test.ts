@@ -193,6 +193,45 @@ describe("keymap", () => {
     expect(isWebviewKey(key("Shift+F10"))).toBe(false);
   });
 
+  test("se bloquean devtools, búsqueda, navegación y barras del webview", () => {
+    const webview = [
+      "F12",
+      "F7",
+      "Ctrl+F",
+      "Ctrl+G",
+      "Ctrl+Shift+G",
+      "F3",
+      "Shift+F3",
+      "Ctrl+Shift+J",
+      "Ctrl+J",
+      "Ctrl+Shift+C",
+      "Alt+ArrowLeft",
+      "Alt+ArrowRight",
+      "BrowserBack",
+      "BrowserForward",
+      "BrowserRefresh",
+    ];
+    for (const k of webview) {
+      const ev = key(k);
+      expect(isWebviewKey(ev), k).toBe(true);
+      expect(handleShortcut(ev, {}), k).toBe(false);
+      expect(ev.preventDefault, k).toHaveBeenCalled();
+    }
+    expect(isWebviewKey(key("ArrowLeft"))).toBe(false);
+    expect(isWebviewKey(key("Ctrl+Shift+End"))).toBe(false);
+  });
+
+  test("una tecla del webview con acción ejecuta la acción", () => {
+    const find = vi.fn();
+    const f = key("Ctrl+F");
+    expect(handleShortcut(f, { find })).toBe(true);
+    expect(find).toHaveBeenCalled();
+    expect(f.preventDefault).toHaveBeenCalled();
+    const declined = key("F12");
+    expect(handleShortcut(declined, { goToDeclaration: () => false })).toBe(false);
+    expect(declined.preventDefault).toHaveBeenCalled();
+  });
+
   test("una acción que devuelve false deja pasar la tecla", () => {
     const a = key("Ctrl+A");
     expect(handleShortcut(a, { selectGridRows: () => false })).toBe(false);

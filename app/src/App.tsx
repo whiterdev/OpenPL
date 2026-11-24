@@ -42,6 +42,7 @@ import {
   commands,
   formatKeys,
   handleShortcut,
+  isWebviewKey,
   matches,
   type CommandId,
 } from "./keymap";
@@ -132,7 +133,8 @@ const commandObjectTypes = {
   TYPE: "Type", SEQUENCE: "Sequence", SYNONYM: "Synonym", INDEX: "Index",
   "JAVA SOURCE": "JavaSource", LIBRARY: "Library", CLUSTER: "Cluster",
 } satisfies Record<string, ObjectInfo["object_type"]>;
-const editorEdits = [
+// En inputs y textareas estas teclas editan o seleccionan el texto del campo, no la ventana activa.
+const fieldKeys = [
   "comment",
   "duplicateLine",
   "deleteLine",
@@ -142,7 +144,12 @@ const editorEdits = [
   "redo",
   "indent",
   "outdent",
+  "fetchAllRows",
 ] as const;
+const isFieldKey = (e: KeyboardEvent) =>
+  fieldKeys.some((id) =>
+    [commands[id].keys, ...(commands[id].alt ?? [])].some((k) => k && matches(e, k)),
+  );
 
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
@@ -257,7 +264,7 @@ export default function App() {
       .map((id) => [id, () => programActions.current?.[id]?.()]),
   );
 
-  const actions: Partial<Record<CommandId, () => void>> = {
+  const actions: Partial<Record<CommandId, () => void | boolean>> = {
     ...currentProgramActions,
     ...sqlActions,
     newSql: active ? () => void openSql(active) : undefined,
@@ -281,20 +288,14 @@ export default function App() {
       // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.
       if (matches(e, commands.copyGrid.keys!)) return;
       if (showLogin || showTheme || showPalette || inspection || draft) {
-        if (
-          matches(e, commands.explainPlan.keys!) ||
-          matches(e, commands.refreshExplorer.keys!)
-        ) {
-          e.preventDefault();
-        }
+        if (isWebviewKey(e)) e.preventDefault();
         return;
       }
       const target = e.target;
       if (
         target instanceof HTMLElement &&
-        target.closest("input, textarea, select, [contenteditable=true]") &&
-        !target.closest(".cm-content") &&
-        editorEdits.some((id) => matches(e, commands[id].keys!))
+        target.closest("input, textarea") &&
+        isFieldKey(e)
       )
         return;
       handleShortcut(e, actions);
@@ -304,17 +305,33 @@ export default function App() {
   });
 
   useEffect(() => {
-    // Sin menú del navegador: solo los campos de texto conservan copiar y pegar.
+    // Sin menú del navegador: los campos de texto conservan el nativo y el editor muestra el suyo.
     const onContext = (e: MouseEvent) => {
       if (
-        e.target instanceof HTMLElement &&
-        e.target.closest("input, textarea")
+        e.target instanceof Element &&
+        e.target.closest("input, textarea, .cm-editor")
       )
         return;
       e.preventDefault();
     };
+    // Ctrl + rueda haría zoom del webview.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    // Los botones laterales del mouse (3 y 4) navegan atrás y adelante.
+    const onSideButton = (e: MouseEvent) => {
+      if (e.button === 3 || e.button === 4) e.preventDefault();
+    };
     document.addEventListener("contextmenu", onContext);
-    return () => document.removeEventListener("contextmenu", onContext);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("mouseup", onSideButton);
+    window.addEventListener("auxclick", onSideButton);
+    return () => {
+      document.removeEventListener("contextmenu", onContext);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("mouseup", onSideButton);
+      window.removeEventListener("auxclick", onSideButton);
+    };
   }, []);
 
   useEffect(() => {

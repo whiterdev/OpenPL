@@ -189,9 +189,27 @@ const WEBVIEW_KEYS = [
   "Ctrl+P",
   "Ctrl+U",
   "Ctrl+Shift+I",
+  "Ctrl+Shift+J",
+  "Ctrl+Shift+C",
+  "F12",
+  "F7",
+  "Ctrl+F",
+  "Ctrl+G",
+  "Ctrl+Shift+G",
+  "F3",
+  "Shift+F3",
+  "Ctrl+J",
+  "Alt+ArrowLeft",
+  "Alt+ArrowRight",
+  "BrowserBack",
+  "BrowserForward",
+  "BrowserRefresh",
 ];
 
-/** Teclas que el webview usa para recargar, imprimir, ver fuente, devtools o zoom. */
+/**
+ * Teclas que el webview usa para recargar, navegar, imprimir, ver fuente, devtools, buscar,
+ * descargas, navegación con cursor o zoom.
+ */
 export function isWebviewKey(e: KeyLike): boolean {
   const ctrl = e.ctrlKey || e.metaKey;
   // El zoom va con o sin Shift según la distribución del teclado.

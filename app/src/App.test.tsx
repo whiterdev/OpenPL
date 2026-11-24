@@ -264,6 +264,105 @@ test("bloquea el menú del navegador salvo en campos de texto", async () => {
   );
 });
 
+function press(target: EventTarget, init: KeyboardEventInit) {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+async function openNewProgram() {
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(
+    within(screen.getByRole("main")).getByRole("button", { name: /Nuevo programa/ }),
+  );
+  const editor = await screen.findByRole("textbox", { name: "Fuente" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  return { editor, view };
+}
+
+test("Ctrl A en el editor llega a CodeMirror y selecciona todo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const { editor, view } = await openNewProgram();
+  act(() => view.dispatch({ changes: { from: 0, insert: "SELECT 1\nFROM dual" } }));
+  press(editor, { key: "a", ctrlKey: true });
+  expect(view.state.doc.length).toBeGreaterThan(0);
+  expect(view.state.selection.main.from).toBe(0);
+  expect(view.state.selection.main.to).toBe(view.state.doc.length);
+});
+
+test("en un campo de texto las teclas de edición y selección son las nativas", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  render(<App />);
+  await connectAs();
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
+  await screen.findByRole("textbox", { name: "SQL" });
+  const filter = screen.getByRole("textbox", { name: "Filtrar objetos" });
+  const native: KeyboardEventInit[] = [
+    { key: "a", ctrlKey: true },
+    { key: "z", ctrlKey: true },
+    { key: "y", ctrlKey: true },
+    { key: "Z", ctrlKey: true, shiftKey: true },
+    { key: "End", ctrlKey: true, shiftKey: true },
+  ];
+  for (const init of native) {
+    expect(press(filter, init), JSON.stringify(init)).toBe(false);
+  }
+});
+
+test("las teclas del webview se bloquean con y sin diálogo abierto", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  const user = await screen.findByLabelText("Usuario");
+  const webview: KeyboardEventInit[] = [
+    { key: "r", ctrlKey: true },
+    { key: "R", ctrlKey: true, shiftKey: true },
+    { key: "F5" },
+    { key: "p", ctrlKey: true },
+    { key: "u", ctrlKey: true },
+    { key: "I", ctrlKey: true, shiftKey: true },
+    { key: "F12" },
+  ];
+  for (const init of webview) {
+    expect(press(user, init), `diálogo ${JSON.stringify(init)}`).toBe(true);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  for (const init of webview) {
+    expect(press(document.body, init), JSON.stringify(init)).toBe(true);
+  }
+});
+
+test("Ctrl rueda no hace zoom", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  await screen.findByRole("button", { name: "Cancelar" });
+  expect(fireEvent.wheel(document.body, { ctrlKey: true, deltaY: -100 })).toBe(false);
+  expect(fireEvent.wheel(document.body, { deltaY: -100 })).toBe(true);
+});
+
+test("los botones laterales del mouse no navegan", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  await screen.findByRole("button", { name: "Cancelar" });
+  for (const button of [3, 4]) {
+    expect(fireEvent.mouseUp(document.body, { button }), `mouseup ${button}`).toBe(false);
+    const aux = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button });
+    expect(fireEvent(document.body, aux), `auxclick ${button}`).toBe(false);
+  }
+  expect(fireEvent.mouseUp(document.body, { button: 0 })).toBe(true);
+});
+
+test("dentro del editor el menú contextual lo decide el editor", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const { editor } = await openNewProgram();
+  expect(fireEvent.contextMenu(editor.closest(".cm-editor")!)).toBe(true);
+  expect(fireEvent.contextMenu(document.querySelector(".titlebar")!)).toBe(false);
+});
+
 test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   render(<App />);
