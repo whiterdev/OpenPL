@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Minus, PencilSimple, Plus, WarningCircle } from "@phosphor-icons/react";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
-import { commands, formatKeys, matches } from "../keymap";
+import { commands, matches } from "../keymap";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
 export interface CellPosition { row: number; col: number }
@@ -20,10 +20,9 @@ interface Props {
   selected: CellPosition | null;
   onSelect: (position: CellPosition) => void;
   onEdit: (position: CellPosition, value: Cell) => void;
-  more: boolean;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   fetching: boolean;
   fetchError: string | null;
-  onFetchAll: (() => void) | undefined;
 }
 
 const ROW = 24;
@@ -43,8 +42,9 @@ const RESIZE = { min: 40, max: 1200, step: 16 };
 const clampWidth = (width: number) => Math.min(RESIZE.max, Math.max(RESIZE.min, Math.round(width)));
 
 export function ResultGrid(props: Props) {
-  const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, more, fetching, fetchError, onFetchAll } = props;
-  const scroll = useRef<HTMLDivElement>(null);
+  const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, fetching, fetchError } = props;
+  const localScroll = useRef<HTMLDivElement>(null);
+  const scroll = props.scrollRef ?? localScroll;
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
   const autoWidths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,17 +201,9 @@ export function ResultGrid(props: Props) {
   );
   return (
     <section className="sql-grid-region" aria-label="Grilla de resultados">
-      {(more || fetching || fetchError) && (
+      {(fetching || fetchError) && (
         <header className="sql-grid-header">
           {fetchError && <span role="alert">{fetchError}</span>}
-          {(more || fetching) && (
-            <button className="btn" disabled={!onFetchAll || fetching} onClick={() => {
-              scroll.current?.focus();
-              onFetchAll?.();
-            }}>
-              {commands.fetchAllRows.label} <span className="kbd">{formatKeys(commands.fetchAllRows.keys!)}</span>
-            </button>
-          )}
           {fetching && <span role="status">Trayendo filas…</span>}
         </header>
       )}
