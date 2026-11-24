@@ -1,21 +1,35 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (plan 3 implementado). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (plan 4 planificado). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
-- Rama de trabajo: `feat/plan-3-sql`, basada en `feat/plan-2-programa` (que sale de `feat/plan-1-base`). El repositorio todavía no tiene remoto.
+- Rama de trabajo: `feat/plan-4-ventana-prueba`, creada desde `feat/plan-3-sql` (que sale de
+  `feat/plan-2-programa` y esta de `feat/plan-1-base`). Hay un remoto `origin` configurado, pero
+  ninguna rama local tiene upstream y no existe `main` local.
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
-- Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
+- Plan 2 (ventana de programa) **implementado, pendiente de validar contra Oracle**.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 86 pruebas de Rust sin base y 170 de interfaz,
-  más el chequeo de TypeScript. Las ocho pruebas Rust `live` se omitieron sin credenciales.
+- Plan 3 (ventana SQL) **implementado** en los incrementos 1 y 2. Sigue en curso solo por la
+  validación contra Oracle, bloqueada por falta de credenciales y de orden explícita para escribir.
+- Plan 4 (ventana de prueba) **planificado**: plan y nota de comportamiento escritos. El código espera
+  las respuestas del dueño a las decisiones abiertas y al mockup "3 · Ventana de prueba".
+- Verificación local en Windows (2026-11-24): `cargo fmt --check` y Clippy con `-D warnings` sin
+  avisos; 86 pruebas de Rust pasan, de las cuales 8 son `live` y, sin `OPENPL_TEST_*`, terminan sin
+  conectarse (imprimen `SKIP`); 170 pruebas de interfaz en 18 archivos; `tsc --noEmit` sin errores.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
 - **No verificado todavía:** uso contra una base Oracle real (login, explorador, DDL, recompilar),
-  las pruebas `live` (necesitan `OPENPL_TEST_*`) y el CI (nunca corrió: no hay remoto).
+  las pruebas `live` (necesitan `OPENPL_TEST_*`) y el CI (no hay constancia local de que haya corrido:
+  ninguna rama tiene upstream).
+
+## Siguiente paso
+
+1. Credenciales `OPENPL_TEST_USER`, `OPENPL_TEST_PASSWORD` y `OPENPL_TEST_DB` apuntando a DEV, y orden
+   explícita para escribir, para validar los planes 2 y 3.
+2. Respuestas a las decisiones abiertas del plan 4 y el mockup "3 · Ventana de prueba".
 
 ## Hecho
 
@@ -134,7 +148,7 @@
 - **Sin verificar contra Oracle real** (nada de esto se probó escribiendo en una base; las pruebas
   `live` son de solo lectura). Validar en desarrollo: tipos DATE y TIMESTAMP al comparar y al guardar,
   números con decimales, CLOB, `RETURNING ROWID` en inserciones y el aviso de producción.
-- **Siguiente:** validar el plan 3 contra una base de desarrollo; después el plan 4 (ventana de prueba).
+- **Siguiente:** ver "Siguiente paso" más abajo.
 
 ### Auditoría antislop 001
 
@@ -145,8 +159,10 @@
 - [DESIGN.md](../DESIGN.md) es la dirección de diseño con sus motivos. Desde ahora toda interfaz
   nueva aplica antislop mientras se construye y cierra con su informe PASS/FAIL (`AGENTS.md`).
 
-- **Punto de continuación:** cerrar el plan 2 con la validación manual contra Oracle (lectura de
-  fuentes, menú de objeto, comparación, autocompletado) y pasar al plan 3 (ventana SQL).
+### Plan 4 — Ventana de prueba (planificado)
+
+- [Plan 4](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y
+  [nota de comportamiento](behavior/prueba.md) escritos. Sin código todavía.
 
 ### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 
@@ -209,12 +225,17 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 ## Pendiente inmediato
 
-1. **Probar contra una base real** (lo hace el dueño del proyecto o con `OPENPL_TEST_*`):
-   login con host/puerto/servicio y con alias, perfiles y contraseña guardada, explorador con los
-   35 tipos, Copiar DDL, Recompilar, reconexión.
-2. **Primer CI:** crear el remoto, subir la rama y corregir lo que falle (el YAML no se validó).
-3. Decidir el merge de `feat/plan-1-base` a `main`.
-4. Problemas menores conocidos (no bloquean):
+1. **Validar contra DEV** (requiere las credenciales y la orden del "Siguiente paso"):
+   - Plan 1: login con host/puerto/servicio y con alias, perfiles y contraseña guardada, explorador
+     con los 35 tipos, Copiar DDL, Recompilar, reconexión.
+   - Plan 2: lectura de fuentes, menú de objeto, comparación, preparación de compilación y
+     autocompletado, más el selector nativo de archivos.
+   - Plan 3: pruebas `live` de la ventana SQL y la edición en grilla escribiendo en una base.
+2. **Plan 4:** respuestas del dueño a las decisiones abiertas y al mockup antes de escribir código.
+3. **Primer CI:** el remoto `origin` ya está configurado; falta subir las ramas y corregir lo que
+   falle (el YAML no se validó).
+4. Decidir cómo y cuándo integrar las ramas `feat/plan-*` a `main`.
+5. Problemas menores conocidos (no bloquean):
    - Un pánico dentro de un trabajo de sesión deja esa sesión inutilizable, y en release
      (`panic = "abort"`) cierra la app (`crates/openpl-core/src/session.rs`).
    - Una reconexión simultánea con una consulta que falla puede volver a marcar como
@@ -229,16 +250,19 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
-### Plan 3 — Ventana SQL (en curso)
-- Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la validación contra Oracle real.
-
-### Plan 2 — Ventana de programa (implementado)
+### Plan 2 — Ventana de programa (implementado, pendiente de validar contra Oracle)
 - Tareas de implementación terminadas. Falta la validación manual contra Oracle del [plan](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
 - Validar manualmente la apertura de un paquete con y sin Body, la navegación a diagnósticos y el
   selector nativo en Windows y Linux. Las pruebas de la aplicación contra Oracle serán de solo lectura.
 
-### Plan 4 — Ventana de prueba (diseño §7.6, mockup "3 · Ventana de prueba")
-- Generar el bloque desde `ALL_ARGUMENTS` (sobrecargas, no escalares en `declare`), grilla de variables, ejecutar (F8), `DBMS_OUTPUT`, guardar `.tst`. Habilitar "Probar".
+### Plan 3 — Ventana SQL (en curso: solo validación contra Oracle)
+- Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la
+  validación contra Oracle real, bloqueada por credenciales y por la orden explícita de escritura.
+
+### Plan 4 — Ventana de prueba (planificado, código en espera)
+- [Plan](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y [nota](behavior/prueba.md) escritos
+  (diseño §7.6, mockup "3 · Ventana de prueba"). El código espera las respuestas del dueño.
+- Alcance: generar el bloque desde `ALL_ARGUMENTS` (sobrecargas, no escalares en `declare`), grilla de variables, ejecutar (F8), `DBMS_OUTPUT`, guardar `.tst`. Habilitar "Probar".
 
 ### Plan 5 — Empaquetado
 - Instaladores (MSI/NSIS, AppImage/.deb), firma, versión, notas de publicación.
@@ -254,9 +278,10 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 |---|---|
 | Diseño del producto | `docs/superpowers/specs/2026-11-23-openpl-design.md` |
 | Plan 1 (terminado) | `docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md` |
-| Plan 2 | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
-| Plan 3 (en curso) | `docs/superpowers/plans/2026-11-24-openpl-03-ventana-sql.md` |
-| Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md` |
+| Plan 2 (implementado, sin validar) | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
+| Plan 3 (en curso: validación) | `docs/superpowers/plans/2026-11-24-openpl-03-ventana-sql.md` |
+| Plan 4 (planificado) | `docs/superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md` |
+| Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md`, `programa.md`, `sql.md`, `prueba.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |
 | Mockup (privado del dueño) | referencia privada omitida |
