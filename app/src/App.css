@@ -129,6 +129,12 @@
     font-size: 14px;
     font-weight: 600;
 }
+.command-palette { width: min(460px, calc(100% - 32px)); padding: 8px; }
+.command-palette > input { width: 100%; box-sizing: border-box; }
+.command-palette-list { margin-top: 6px; max-height: min(320px, 50vh); overflow-y: auto; }
+.command-palette-list .menu-item { justify-content: space-between; }
+.command-palette-list [aria-selected="true"] { background: var(--s3); color: var(--text); }
+.command-palette-list p { padding: 6px 8px; margin: 0; }
 .dialog p {
     margin: 0 0 16px;
     color: var(--muted);

@@ -28,6 +28,7 @@ import { ObjectBrowser } from "./components/ObjectBrowser";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
+import { CommandPalette } from "./components/CommandPalette";
 import { routineDraft, type RoutineOverload } from "./routineTest";
 import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
@@ -138,6 +139,7 @@ export default function App() {
   const [states, setStates] = useState<Record<string, SessionState>>({});
   const [showLogin, setShowLogin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   const [themeMode, setThemeMode] = useState(() => activeTheme().mode);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const [routineOptions, setRoutineOptions] = useState<{
@@ -255,12 +257,13 @@ export default function App() {
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnect(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
+    palette: () => setShowPalette(true),
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (showLogin || showTheme) {
+      if (showLogin || showTheme || showPalette) {
         if (
           matches(e, commands.explainPlan.keys!) ||
           matches(e, commands.refreshExplorer.keys!)
@@ -822,8 +825,8 @@ export default function App() {
         <div className="titlebar-center">
           <button
             className="search"
-            disabled
-            title="Buscar comando · Próximamente"
+            title="Buscar comando"
+            onClick={actions.palette}
           >
             <MagnifyingGlass size={14} aria-hidden />
             <span>Buscar</span>
@@ -873,6 +876,7 @@ export default function App() {
         </button>
       </header>
 
+      {showPalette && <CommandPalette actions={actions} onClose={() => setShowPalette(false)} />}
       <div className="body">
         {active && explorerVisible && (
           <ObjectBrowser

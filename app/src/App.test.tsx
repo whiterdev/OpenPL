@@ -19,6 +19,20 @@ beforeAll(async () => {
   ]);
 });
 
+test("Ctrl K busca y ejecuta una acción disponible", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue(null);
+  vi.mocked(api.openProgramFile).mockClear();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  const search = screen.getByRole("textbox", { name: "Buscar comando" });
+  fireEvent.change(search, { target: { value: "ctrl o" } });
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(api.openProgramFile).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("dialog", { name: "Buscar comando" })).not.toBeInTheDocument();
+});
+
 const windowEvents = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({

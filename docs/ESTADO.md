@@ -51,6 +51,8 @@
 
 ## Hecho
 
+- **Buscar comando (Ctrl+K):** paleta filtrable por nombre o atajo con las acciones de la ventana actual.
+
 ### Consola de comandos
 
 - **Nuevo → Ventana de comando** abre una sesión SQL propia con prompt e historial. El editor de scripts y el ejecutor se comparten con SQL. [Comportamiento](behavior/comandos.md)
