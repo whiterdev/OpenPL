@@ -198,7 +198,7 @@ test("Nuevo despliega los tipos de ventana y crea un paquete con Spec y Body", a
   expect(
     await screen.findByRole("textbox", { name: "Spec" }),
   ).toHaveTextContent("CREATE OR REPLACE PACKAGE nuevo_paquete AS");
-  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
   expect(screen.getByRole("textbox", { name: "Body" })).toHaveTextContent(
     "CREATE OR REPLACE PACKAGE BODY nuevo_paquete AS",
   );

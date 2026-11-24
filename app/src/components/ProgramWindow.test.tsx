@@ -13,6 +13,37 @@ const parts = [
   { kind: "PACKAGE BODY", source: "PACKAGE BODY PKG_A AS\nEND;", diagnostics: [], last_ddl_time: null },
 ];
 
+test("Spec y Body son pestañas que marcan la seleccionada y se recorren con flechas", () => {
+  render(<ProgramWindow parts={parts} readOnly onDirty={vi.fn()} />);
+  const list = within(screen.getByRole("tablist", { name: "Partes del programa" }));
+  const spec = list.getByRole("tab", { name: /^Spec/ });
+  const body = list.getByRole("tab", { name: /^Body/ });
+  expect(spec).toHaveAttribute("aria-selected", "true");
+  expect(body).toHaveAttribute("aria-selected", "false");
+  expect(spec).not.toHaveAttribute("aria-pressed");
+  expect(spec.querySelector(".kbd")).not.toBeEmptyDOMElement();
+  expect(body.querySelector(".kbd")).not.toBeEmptyDOMElement();
+  expect(spec).toHaveAttribute("tabindex", "0");
+  expect(body).toHaveAttribute("tabindex", "-1");
+
+  fireEvent.keyDown(spec, { key: "ArrowRight" });
+  expect(body).toHaveAttribute("aria-selected", "true");
+  expect(spec).toHaveAttribute("aria-selected", "false");
+  expect(body).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: "Body" })).toBeInTheDocument();
+
+  fireEvent.keyDown(body, { key: "ArrowRight" });
+  expect(spec).toHaveAttribute("aria-selected", "true");
+  expect(spec).toHaveFocus();
+  fireEvent.keyDown(spec, { key: "ArrowLeft" });
+  expect(body).toHaveAttribute("aria-selected", "true");
+
+  const sideBySide = screen.getByRole("button", { name: "Lado a lado" });
+  expect(sideBySide).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(sideBySide);
+  expect(sideBySide).toHaveAttribute("aria-pressed", "true");
+});
+
 test("detecta un cambio remoto en el mismo segundo y conserva el borrador", async () => {
   const spec = { ...parts[0], last_ddl_time: "2026-01-01T12:00:00" };
   const lookup = vi.fn().mockResolvedValue([{ ...spec, source: "PACKAGE PKG_A AS\nEND; -- cambio externo" }]);
@@ -34,7 +65,7 @@ test("la comparación informa cuando el Body sigue ausente", async () => {
   const missing = { kind: "PACKAGE BODY", source: "", diagnostics: [], last_ddl_time: null };
   render(<ProgramWindow parts={[parts[0], missing]} readOnly onDirty={vi.fn()}
     readCurrentProgram={vi.fn().mockResolvedValue([parts[0]])} />);
-  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
   fireEvent.click(screen.getByRole("button", { name: /Comparar con Oracle/ }));
   const panel = await screen.findByRole("region", { name: "Comparación de Body" });
   expect(await within(panel).findByText("Fuente no disponible en Oracle")).toBeInTheDocument();
@@ -180,13 +211,13 @@ test("guarda los borradores por parte y abre ambos editores", async () => {
   const editor = screen.getByRole("textbox", { name: "Spec" });
   const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
   act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n-- borrador" } }));
-  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
   expect(screen.getByRole("textbox", { name: "Body" })).toHaveTextContent("PACKAGE BODY");
-  fireEvent.click(screen.getByRole("button", { name: /^Spec/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Spec/ }));
   expect(screen.getByRole("textbox", { name: "Spec" })).toHaveTextContent("-- borrador");
   fireEvent.click(screen.getByRole("button", { name: /Lado a lado/i }));
   expect(screen.getAllByRole("textbox")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Body" })).toHaveFocus());
 });
 
@@ -211,7 +242,7 @@ test("el panel distingue las sobrecargas y F12 permite seleccionar su declaraci�
     parts={[{ ...parts[0], source: spec }, { ...parts[1], source: body }]} />);
   const outline = within(screen.getByRole("complementary", { name: "Estructura" }));
   expect(outline.getByRole("button", { name: /g_total.*Público/ })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /^Body/ }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
   const editor = screen.getByRole("textbox", { name: "Body" });
   const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
   expect(outline.getByRole("button", { name: /registrar\(p_id NUMBER\).*Público/ })).toBeInTheDocument();

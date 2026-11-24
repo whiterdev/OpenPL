@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { FileCode, FloppyDisk, GitDiff, SplitVertical } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
@@ -95,6 +95,7 @@ export function ProgramWindow({
     closeDeclarationMenu();
   }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu]);
   const views = useRef<(EditorView | null)[]>([]);
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const saved = useRef(parts.map((part) => part.source));
   const names = useRef<(string | null)[]>([fileName ?? null]);
   const canSplit = parts.length === 2;
@@ -126,11 +127,20 @@ export function ProgramWindow({
     };
   }, [sessionId, contextOwner]);
 
-  function focusPart(index: number) {
+  function focusPart(index: number, focusEditor = true) {
     setComparison(null);
     closeDeclarationMenu();
     setSelected(index);
-    requestAnimationFrame(() => views.current[index]?.focus());
+    if (focusEditor) requestAnimationFrame(() => views.current[index]?.focus());
+  }
+
+  function moveTab(event: KeyboardEvent, index: number) {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (index + step + parts.length) % parts.length;
+    focusPart(next, false);
+    tabs.current[next]?.focus();
   }
 
   function navigateAt(index: number, anchor: number) {
@@ -303,11 +313,17 @@ export function ProgramWindow({
   return (
     <section className="program-window" aria-label="Ventana de programa">
       <div className="program-toolbar">
-        {canSplit && parts.map((entry, index) => (
-          <button key={entry.kind} className="btn" aria-pressed={selected === index} onClick={() => focusPart(index)}>
-            {caption(entry.kind)} <span className="kbd">{keyLabel(index ? "body" : "spec")}</span>
-          </button>
-        ))}
+        {canSplit && (
+          <div className="program-parts" role="tablist" aria-label="Partes del programa">
+            {parts.map((entry, index) => (
+              <button key={entry.kind} ref={(node) => { tabs.current[index] = node; }} className="program-part"
+                role="tab" aria-selected={selected === index} tabIndex={selected === index ? 0 : -1}
+                onClick={() => focusPart(index)} onKeyDown={(event) => moveTab(event, index)}>
+                {caption(entry.kind)} <span className="kbd">{keyLabel(index ? "body" : "spec")}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {canSplit && (
           <button className="ib" aria-label="Lado a lado" title={keyLabel("sideBySide")} aria-pressed={split} onClick={actions.sideBySide}>
             <SplitVertical size={16} aria-hidden />

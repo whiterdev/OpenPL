@@ -17,6 +17,22 @@
 .program-tabs { overflow-x: auto; }
 .program-toolbar { gap: 6px; padding: 4px 8px; flex-wrap: wrap; }
 .program-toolbar [aria-pressed="true"] { background: var(--s3); }
+.program-parts { display: flex; align-self: stretch; margin: -4px 0; }
+.program-part {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 9px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+}
+.program-part:hover { color: var(--text); background: var(--s2); }
+.program-part:active { background: var(--s3); }
+.program-part[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.program-part:focus-visible { outline-offset: -2px; }
 .program-tab {
     display: flex;
     align-items: center;
