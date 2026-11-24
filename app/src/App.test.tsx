@@ -84,6 +84,9 @@ test("permite editar y guardar un archivo local desde el flujo normal", async ()
     const view = EditorView.findFromDOM(
       editor.closest<HTMLElement>(".cm-editor")!,
     )!;
+    const copy = new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true });
+    editor.dispatchEvent(copy);
+    expect(copy.defaultPrevented).toBe(false);
     act(() =>
       view.dispatch({
         changes: { from: view.state.doc.length, insert: "\n-- cambio" },

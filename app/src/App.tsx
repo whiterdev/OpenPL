@@ -278,6 +278,8 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.
+      if (matches(e, commands.copyGrid.keys!)) return;
       if (showLogin || showTheme || showPalette || inspection || draft) {
         if (
           matches(e, commands.explainPlan.keys!) ||

@@ -1,9 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { ResultGrid } from "./ResultGrid";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
-import { copyGridCells, sumGridNumbers } from "../gridSelection";
+import { copyGridCells, gridTotal } from "../gridSelection";
 
 const columns: SqlColumn[] = [
   { name: "ID", type_name: "NUMBER", numeric: true },
@@ -39,15 +39,31 @@ test("el menu muestra totales numericos de la seleccion", () => {
   fireEvent.mouseDown(cell, { button: 2 });
   fireEvent.contextMenu(cell);
   expect(onSelect).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("menuitem", { name: "Sumar columnas numéricas" }));
-  expect(screen.getByRole("status")).toHaveTextContent("ID: 3");
-  expect(screen.getByRole("status")).not.toHaveTextContent("NOMBRE");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Suma" }));
+  const footer = screen.getByRole("row", { name: "Totales de columna" });
+  expect(footer.style.gridTemplateColumns).toBe(header().style.gridTemplateColumns);
+  expect(within(footer).getByRole("gridcell", { name: "ID · Suma" })).toHaveTextContent("3");
+
+  fireEvent.contextMenu(screen.getByRole("gridcell", { name: "NOMBRE Luis" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Conteo" }));
+  expect(within(footer).getByRole("gridcell", { name: "NOMBRE · Conteo" })).toHaveTextContent("2");
+  expect(within(footer).getByRole("gridcell", { name: "ID · Suma" })).toHaveTextContent("3");
+  fireEvent.contextMenu(cell);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Limpiar todos" }));
+  expect(footer).not.toBeInTheDocument();
 });
 
 test("CSV escapa comas y comillas y la suma conserva decimales exactos", () => {
   expect(copyGridCells([["1", 'A,"B"'], ["2", null]], true)).toBe('1,"A,""B"""\r\n2,');
   expect(copyGridCells([["1", "Ana"], ["2", null]], false)).toBe("1\tAna\n2\t");
-  expect(sumGridNumbers(["999999999999999999.1", null, "0.2", "-2e-1"])).toBe("999999999999999999.1");
+  expect(gridTotal(["999999999999999999.1", null, "0.2", "-2e-1"], "sum")).toBe("999999999999999999.1");
+  expect(gridTotal(["999999999999999999.1", "999999999999999999.2"], "average")).toBe("999999999999999999.15");
+  expect(gridTotal(["-10", null, "-9.9"], "min")).toBe("-10");
+  expect(gridTotal(["-10", null, "-9.9"], "max")).toBe("-9.9");
+  expect(gridTotal(["Ana", null, "Luis"], "count")).toBe("2");
 });
 const handle = (name: string) => screen.getByRole("separator", { name: `Ancho de ${name}` });
 

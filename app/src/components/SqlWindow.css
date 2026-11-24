@@ -57,6 +57,7 @@ body.resizing-rows { cursor: row-resize; user-select: none; }
 .sql-row { display: grid; height: 24px; position: absolute; left: 0; right: 0; top: 0; }
 .sql-row-alt { background: var(--s1); }
 .sql-row.sql-head { position: sticky; z-index: 1; background: var(--s1); font-family: var(--font-ui); font-weight: 500; color: var(--muted); }
+.sql-row.sql-totals { position: sticky; top: auto; bottom: 0; z-index: 1; background: var(--s1); border-top: 1px solid var(--line); font-weight: 500; }
 .sql-head .sql-cell { position: relative; }
 .sql-col-resizer { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: col-resize; }
 .sql-col-resizer:hover, .sql-col-resizer:focus-visible { outline: none;
