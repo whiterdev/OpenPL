@@ -21,12 +21,18 @@ Redactado con palabras propias a partir del diseño (§7.3) y del mockup "1 · V
 Observado en la herramienta de referencia y adaptado. Las opciones de ventanas que aún no
 existen se ven deshabilitadas para que se sepa dónde estarán.
 
-- **Objeto:** Abrir (Enter) · Ver / Editar (en paquetes: Ver / Editar Spec y Body) · Probar
-  (Ctrl T, paquetes, procedimientos y funciones) · Consultar datos / Editar datos (Ctrl E) /
-  Exportar datos (tablas, vistas, vistas materializadas) · Describir · Propiedades ·
+- **Objeto:** **Abrir** (Enter) · **Ver / Editar** (paquetes y tipos: Ver / Editar Spec y Body;
+  procedimientos, funciones y triggers) · Probar (Ctrl T, paquetes, procedimientos y funciones) ·
+  **Consultar datos** / **Editar datos** (Ctrl E) / Exportar datos (ver "Por tipo") · Describir · Propiedades ·
   **Recompilar** (código, vistas, Java; en producción pide confirmación) · **Copiar DDL**
   (DBMS_METADATA) · Comparar con… · **Copiar nombre** (Ctrl C) · **Copiar nombre con esquema** ·
   Renombrar (tablas, vistas, secuencias, sinónimos) · Eliminar · **Refrescar** (Ctrl R).
+- Por tipo (`app/src/objectMenu.ts`):
+  - Tabla: **Consultar datos** abre una ventana SQL con `SELECT t.* FROM "DUEÑO"."NOMBRE" t`;
+    **Editar datos** (Ctrl E) usa la misma consulta en modo edición. Exportar datos, deshabilitado.
+  - Vista y vista materializada: **Consultar datos** con la misma consulta. Editar datos se ve
+    deshabilitado: no hay un ROWID útil para editar filas.
+  - Usuario: Editar usuario y Privilegios, deshabilitados (Próximamente), y **Copiar DDL**.
 - **Carpeta de tipo:** Expandir / Contraer · Nuevo… · **Copiar nombres separados por coma** ·
   **Refrescar**.
 - En negrita: habilitado hoy. Al recompilar o copiar el DDL aparece un aviso breve.

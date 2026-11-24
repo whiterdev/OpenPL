@@ -11,9 +11,12 @@ Fuente de dirección para toda interfaz nueva. Se aplica junto con el filtro ant
 ## Identidad
 
 - **Motivo propio:** el ocre del logo (base de datos con la tapa abierta) es el único acento. Marca foco, selección principal, el botón primario y la pestaña activa sin entorno. El color del entorno (desarrollo, calidad, producción) reemplaza al ocre en el borde superior de la pestaña y en la franja de la conexión, porque saber contra qué base se trabaja es la información que más errores evita.
-- **Tema oscuro único:** la herramienta se usa jornadas completas frente a código. Es la convención de los IDE y la de la herramienta de referencia de los usuarios. No hay modo claro en v1, así que no hay conmutador que mantener.
+- **Temas:** Grafito (oscuro) es el tema por defecto, porque la herramienta se usa jornadas completas frente a código. Hay cinco temas predefinidos: Grafito, Papel (claro), Medianoche, Bosque y Alto contraste (`app/src/themes.ts`). El usuario puede crear temas propios a partir de uno existente; se guardan en `localStorage` del equipo y el tema activo se aplica al arrancar. El botón Sol/Luna de la barra de título alterna entre el último tema oscuro y el último claro usados. **Personalizar interfaz** (Ctrl+,, menú Ver) edita los colores con vista previa en vivo y avisa cuando un par baja del contraste mínimo, sin bloquear. Los temas predefinidos no tienen avisos (7:1 el texto sobre el editor, 4.5:1 secundario, comentarios y sintaxis; lo comprueba `themes.test.ts`). Un tema propio se guarda aunque tenga avisos.
+- **Colores de entorno fijos:** `--env-dev`, `--env-qa` y `--env-prod` no forman parte de ningún tema ni se editan. Saber contra qué base se trabaja no depende del tema elegido.
 
 ## Color
+
+Valores del tema Grafito. Los demás temas redefinen los mismos tokens, salvo los de entorno.
 
 | Token | Valor | Motivo |
 |---|---|---|

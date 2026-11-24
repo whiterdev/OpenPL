@@ -1,6 +1,6 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (preparación del historial para publicar). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (tanda B1 a B13: editor, compilación, explorador, completado, temas). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
@@ -15,9 +15,10 @@
   corrección de los binds de texto, pendiente de verificación. Las escrituras las prueba el usuario.
 - Plan 4 (ventana de prueba) **en curso**: lectura de firmas y sobrecargas implementada. La
   interfaz espera las decisiones abiertas y el mockup "3 · Ventana de prueba".
-- Verificación local en Windows (2026-11-24): `cargo fmt --check`, Clippy con `-D warnings`
-  y `tsc --noEmit` pasan. Se ejecutaron 81 pruebas Rust sin base y 171 de interfaz. Las 9 pruebas
-  Rust `live` terminan sin conectarse (imprimen `SKIP`).
+- Verificación local en Windows tras la tanda B1 a B13 (2026-11-24): `cargo fmt --check`, Clippy
+  con `-D warnings` y `tsc --noEmit` pasan. `cargo test --workspace`: 93 pruebas en verde, sin
+  variables `OPENPL_TEST_*` (las `live` terminan sin conectarse). `npm.cmd test`: 25 archivos y
+  339 pruebas, en verde en 3 corridas seguidas. Ver "Tanda B1 a B13" para lo que falta probar.
 - Pruebas `live` de lectura contra la base de desarrollo (2026-11-24, corrida del usuario, solo `SELECT`): 4 de 6 OK.
   Fallan con ORA-12704 `completa_objetos_y_columnas_sin_error` (`live_catalog.rs:47`, offset 500) y
   `edicion_en_grilla_solo_resuelve_tablas` (`live_catalog.rs:89`, offset 99). Corrección de los binds de texto
@@ -47,8 +48,57 @@
 4. Decisión pendiente del usuario: la ventana SQL de la app ejecuta bloques PL/SQL de `DBMS_OUTPUT`
    (`ENABLE` y `GET_LINE`) en cada consulta, aun en un `SELECT`. ¿Se acepta contra la base de desarrollo o se cambia?
 5. Mockup "3 · Ventana de prueba" y respuestas a las decisiones abiertas del plan 4.
+6. Pruebas del usuario de la tanda B1 a B13 (lista en "Tanda B1 a B13 › Pruebas del usuario").
 
 ## Hecho
+
+### Tanda B1 a B13 (2026-11-24)
+
+Cambios pedidos tras usar la app. Commits en `feat/plan-4-ventana-prueba`, en orden:
+
+| Cambio | Commits |
+|---|---|
+| Tab indenta con 2 espacios y no saca el foco; el editor indenta con 2 espacios | `a86b870`, `d2bccc3` |
+| Comentarios en cursiva (`--cm`, 4.5:1) y selección y línea activa visibles; `contrast.ts` | `17f6965`, `24ca815` |
+| Spec y Body como pestañas (`tablist`, `aria-selected`, activa con borde ocre) | `a21a740` |
+| Ancho de columnas ajustable en la grilla (arrastre, flechas de 16 px, doble clic restaura) | `cad1c69` |
+| Un solo **Comparar con Oracle**; Ctrl+S y Archivo > Guardar escriben el editor como `.sql` | `7f09bb6` |
+| F8 compila la pestaña activa en una sesión hermana; Detener (Shift+Esc) la cancela | `464abe4` |
+| Menú contextual por tipo: Consultar y Editar datos, usuario | `7e3bc7d` |
+| Completado con alcance `relations` tras FROM y JOIN (núcleo y comando) | `8b44de0` |
+| Completado de tablas tras FROM y JOIN y de columnas en el SELECT (interfaz) | `1c53932` |
+| Botón Detener con texto en la ventana SQL; corta también Traer todas y conserva las filas | `52dab57` |
+| Barra flotante de búsqueda y reemplazo (Ctrl+F, Ctrl+H) | `b896cc7` |
+| Temas: Grafito, Papel, Medianoche, Bosque y Alto contraste, temas propios en `localStorage` | `9ae9ef6` |
+| Diálogo **Personalizar interfaz** (Ctrl+,) y botón Sol/Luna | `7820f1b` |
+
+- Notas al día: [programa.md](behavior/programa.md) (Compilar, Detener, Comparar, Guardar, Tab,
+  búsqueda), [explorador.md](behavior/explorador.md) (menú por tipo) y [DESIGN.md](../DESIGN.md)
+  (temas y colores de entorno fijos).
+- **Preparar compilación** y su script con `SHOW ERRORS` ya no existen: los reemplaza **Compilar** (F8).
+- **Verificado:** solo pruebas automáticas (`cargo test`, Clippy, fmt, `tsc --noEmit`, `npm.cmd test`
+  tres veces). No se abrió la app ni se usó ninguna base. Nada se compiló en Oracle.
+- **Test inestable:** `App.test.tsx`, "cerrar una ventana SQL con transacción abierta pregunta qué
+  hacer", falló 1 de 4 corridas durante la tanda. En la verificación final pasó en 3 de 3 corridas;
+  sin causa encontrada todavía.
+- Las pruebas `live` de la ventana SQL contra la base de desarrollo siguen excluidas de las corridas de
+  agentes (`ventana_sql_pagina_salida_y_errores` ejecuta bloques PL/SQL).
+
+#### Pruebas del usuario
+
+Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
+
+1. Compilar de verdad, con F8, un paquete (Spec), su Body, un procedimiento, una función y un trigger
+   en una base de prueba donde se pueda escribir. Nunca en la base de desarrollo.
+2. Confirmar que un objeto con errores devuelve ORA-24344 como código (la app lo trata como
+   "Compilado con N errores") y que los números de línea de Problemas coinciden con el editor.
+3. Detener (Shift+Esc) corta una compilación larga y la app muestra "Compilación detenida".
+4. Completado con alcance `relations` tras FROM y JOIN contra la base de desarrollo, solo `SELECT`.
+5. Recorrido visual en `npm.cmd run tauri dev`: barra de búsqueda, pestañas Spec y Body, selección
+   y comentarios en el editor, ancho de columnas de la grilla y los cinco temas con Sol/Luna y
+   Personalizar interfaz.
+6. Confirmar si el test de `App.test.tsx` "cerrar una ventana SQL con transacción abierta pregunta qué
+   hacer" falla de forma intermitente en su máquina.
 
 ### Plan 2 — Primer incremento
 
@@ -93,6 +143,7 @@
 
 ### Plan 2 — Preparación de compilación
 
+- **Reemplazada** en la tanda B1 a B13 por **Compilar** (F8). Lo que sigue es histórico.
 - **Preparar compilación** (F8) funciona en modo **Editar** sobre una fuente abierta desde Oracle.
   Valida el encabezado, consulta la versión con la sesión original y muestra una comparación. Si
   detecta cambios, ofrece **Guardar pese al cambio** como acción explícita. Si falta la fuente o
@@ -242,7 +293,9 @@
 El [diseño](superpowers/specs/2026-11-23-openpl-design.md) sigue siendo la referencia del
 producto; estas decisiones son posteriores y mandan sobre él:
 
-1. Tema **grafito** único en v1 (tokens en `app/src/theme.css`), íconos **Phosphor**, **IBM Plex**
+1. Tema **grafito** por defecto (tokens en `app/src/theme.css`), con cinco temas predefinidos,
+   temas propios y botón Sol/Luna (`app/src/themes.ts`, ver [DESIGN.md](../DESIGN.md)); los colores
+   de entorno son fijos. Íconos **Phosphor**, **IBM Plex**
    empaquetada, componentes **estilo Zed**. Textos de interfaz cortos, sin explicaciones.
 2. **Sin cinta de opciones:** barra de menús en la barra de título + paleta Ctrl K + menús
    contextuales + barra propia de cada ventana con 3–4 acciones.

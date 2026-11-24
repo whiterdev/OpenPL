@@ -28,8 +28,9 @@ Si el diseño y `docs/ESTADO.md` se contradicen, manda `docs/ESTADO.md` (registr
    "Guardar contraseña". Nunca en archivos, logs, `Debug` ni mensajes de error.
 5. **TDD.** Primero el test, verlo fallar por la razón correcta, después el código mínimo, después
    la suite completa en verde. Un arreglo sin un test que falló antes no está verificado.
-6. **Interfaz:** textos cortos en español, sin frases explicativas en pantalla. Tema grafito,
-   íconos Phosphor, IBM Plex Sans/Mono, componentes rectos estilo Zed (ver "Interfaz" abajo).
+6. **Interfaz:** textos cortos en español, sin frases explicativas en pantalla. Tema grafito por
+   defecto, con temas predefinidos y propios (`app/src/themes.ts`); todo color nuevo es un token
+   con valor en cada tema (o derivado en `themes.ts`), salvo los de entorno, que son fijos. Íconos Phosphor, IBM Plex Sans/Mono, componentes rectos estilo Zed (ver "Interfaz" abajo).
    Toda interfaz nueva lee primero [DESIGN.md](DESIGN.md) (dirección) y aplica antislop como
    filtro mientras se construye (skills `antislop`, `antislop-ui`, `antislop-human` y
    `antislop-code`): contraste medido, estados de carga/vacío/error, foco visible, nada sin acción.
@@ -101,9 +102,15 @@ app/src/
   api.ts / types.ts     envoltorios tipados de los comandos y tipos espejo de Rust
   keymap.ts             registro único de comandos y atajos (+ handleShortcut)
   theme.css             tokens del tema grafito, botones, menús
-  App.tsx               barra de título (menús, Nuevo, conexión, transacción), layout
+  themes.ts             temas predefinidos y propios (localStorage), avisos de contraste
+  contrast.ts           razón de contraste WCAG 2.x
+  objectMenu.ts         menú contextual del explorador por tipo de objeto
+  programScript.ts      sentencia de compilación (F8) a partir del editor
+  programCompletion.ts  contexto del cursor y fuentes de completado
+  App.tsx               barra de título (menús, Nuevo, conexión, transacción, Sol/Luna), layout
   components/           StartupCheck, LoginDialog, ConnectionBar, MenuBar, ObjectBrowser,
-                        ContextMenu, Logo, ProgramWindow y ProgramEditor
+                        ContextMenu, Logo, ProgramWindow, ProgramEditor, EditorSearch,
+                        SqlWindow, ResultGrid, ThemeDialog
 docs/                   diseño, planes, notas de comportamiento, estado
 design/logo/            logo maestro, variantes y guía
 .github/workflows/ci.yml
@@ -148,7 +155,9 @@ design/logo/            logo maestro, variantes y guía
 
 - Dirección y motivos de cada decisión: [DESIGN.md](DESIGN.md).
 - Tokens en `app/src/theme.css` (`--s0..--s3`, `--line`, `--text`, `--muted`, `--accent` ocre
-  `#C99A3B`, `--env-dev/qa/prod`, colores de sintaxis). No usar colores sueltos.
+  `#C99A3B`, `--env-dev/qa/prod`, colores de sintaxis). No usar colores sueltos. Un token editable
+  nuevo va en `THEME_TOKENS` con valor en cada tema de `app/src/themes.ts` (el test compara
+  Grafito con `theme.css`); los derivados (selección, línea activa, sombras) se calculan ahí.
 - Componentes rectos: paneles y pestañas separados por líneas de 1 px, botones con radio 4 px,
   filas de 24 px. El color del entorno de la conexión va como franja en la conexión y en el borde
   superior de las pestañas.
