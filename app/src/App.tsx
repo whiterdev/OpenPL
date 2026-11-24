@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import {
   CaretDown,
   CheckCircle,
+  WarningCircle,
   MagnifyingGlass,
   Plus,
   SidebarSimple,
@@ -19,6 +20,7 @@ import type { ProgramActions } from "./components/ProgramWindow";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { newWindowTemplates } from "./newWindows";
+import { TransactionDialog } from "./components/TransactionDialog";
 import { commands, formatKeys, handleShortcut, matches, type CommandId } from "./keymap";
 import {
   describeError,
@@ -33,6 +35,13 @@ import "./components/ProgramWindow.css";
 
 const ProgramWindow = lazy(() => import("./components/ProgramWindow")
   .then((module) => ({ default: module.ProgramWindow })));
+const SqlWindow = lazy(() => import("./components/SqlWindow")
+  .then((module) => ({ default: module.SqlWindow })));
+
+const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const sqlTabActions = ["execute", "executeScript", "cancel", "commit", "rollback", "save", "complete", "foldBlock",
+  "unfoldBlock", "goToLine", "find", "replace", "comment", "duplicateLine", "deleteLine", "undo", "redo", "indent",
+  "outdent"] as const;
 
 interface ProgramTab {
   id: string;
@@ -45,6 +54,8 @@ interface ProgramTab {
   error?: string;
   fileName?: string;
   load?: symbol;
+  /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
+  sql?: { sessionId: string; initial: string; run: boolean; transaction: boolean };
 }
 
 const supportsProgram = new Set(["Package", "Type", "Procedure", "Function", "Trigger"]);
@@ -67,8 +78,12 @@ export default function App() {
   const [programs, setPrograms] = useState<ProgramTab[]>([]);
   const [programId, setProgramId] = useState<string | null>(null);
   const programActions = useRef<ProgramActions>(null);
+  const [closing, setClosing] = useState<ProgramTab | null>(null);
+  const sqlCount = useRef(0);
   const dirtyPrograms = useRef(false);
   dirtyPrograms.current = programs.some((tab) => tab.dirty);
+  const openTransactions = useRef(false);
+  openTransactions.current = programs.some((tab) => tab.sql?.transaction);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
   const program = programs.find((tab) => tab.id === programId);
@@ -76,6 +91,11 @@ export default function App() {
   const editorConnection = program?.connection
     ? connections.find((connection) => connection.sessionId === program.connection?.sessionId)
     : active;
+  const sqlActions = program?.sql
+    ? Object.fromEntries(sqlTabActions
+      .filter((id) => (id !== "commit" && id !== "rollback") || program.sql!.transaction)
+      .map((id) => [id, () => programActions.current?.[id]?.()]))
+    : {};
   const currentProgramActions = Object.fromEntries(
     (["save", "spec", "body", "sideBySide", "goToDeclaration", "foldBlock", "unfoldBlock", "objectActions", "complete", "compareProgram", "execute", "goToLine", "find", "replace",
       "comment", "duplicateLine", "deleteLine", "upperCase", "lowerCase", "undo", "redo", "indent", "outdent"] as const)
@@ -92,6 +112,8 @@ export default function App() {
 
   const actions: Partial<Record<CommandId, () => void>> = {
     ...currentProgramActions,
+    ...sqlActions,
+    newSql: active ? () => void openSql(active) : undefined,
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
@@ -134,6 +156,11 @@ export default function App() {
     if (!isTauri()) return;
     const listener = getCurrentWindow().onCloseRequested((event) => {
       if (dirtyPrograms.current && !window.confirm("¿Descartar los cambios sin guardar?")) {
+        event.preventDefault();
+        return;
+      }
+      // Al cerrar la conexión, Oracle descarta la transacción pendiente.
+      if (openTransactions.current && !window.confirm("Hay transacciones abiertas en ventanas SQL. ¿Salir con rollback?")) {
         event.preventDefault();
       }
     });
@@ -203,8 +230,58 @@ export default function App() {
     }
   }
 
+  async function openSql(connection: ActiveConnection, initial = "", run = false) {
+    try {
+      const sessionId = await api.sqlOpen(connection.sessionId);
+      sqlCount.current += 1;
+      addProgram({
+        id: crypto.randomUUID(), label: `SQL ${sqlCount.current}`, connection, readOnly: false, dirty: false,
+        sql: { sessionId, initial, run, transaction: false },
+      });
+    } catch (error) {
+      const detail = describeError(error);
+      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message);
+    }
+  }
+
+  function queryData(object: ObjectInfo) {
+    if (!active) return;
+    void openSql(active, `SELECT * FROM ${quoteName(object.owner)}.${quoteName(object.name)}`, true);
+  }
+
+  function removeTab(tab: ProgramTab) {
+    if (tab.sql) void api.sqlClose(tab.sql.sessionId);
+    setPrograms((all) => {
+      const index = all.findIndex((item) => item.id === tab.id);
+      const remaining = all.filter((item) => item.id !== tab.id);
+      setProgramId((current) => current === tab.id ? remaining[Math.min(index, remaining.length - 1)]?.id ?? null : current);
+      return remaining;
+    });
+  }
+
+  async function finishTransaction(tab: ProgramTab, action: "commit" | "rollback") {
+    try {
+      if (action === "commit") await api.sqlCommit(tab.sql!.sessionId);
+      else await api.sqlRollback(tab.sql!.sessionId);
+      setClosing(null);
+      removeTab(tab);
+    } catch (error) {
+      const detail = describeError(error);
+      setClosing(null);
+      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message);
+    }
+  }
+
   function closeProgram(tab: ProgramTab) {
-    if (tab.dirty && !window.confirm("¿Descartar cambios del programa?")) return;
+    if (tab.sql?.transaction) {
+      setClosing(tab);
+      return;
+    }
+    if (tab.dirty && !window.confirm(tab.sql ? "¿Descartar el texto sin guardar?" : "¿Descartar cambios del programa?")) return;
+    if (tab.sql) {
+      removeTab(tab);
+      return;
+    }
     const index = programs.findIndex((item) => item.id === tab.id);
     const remaining = programs.filter((item) => item.id !== tab.id);
     setPrograms(remaining);
@@ -359,15 +436,24 @@ export default function App() {
             <span className="kbd">{formatKeys(commands.palette.keys!)}</span>
           </button>
         </div>
-        <span className="tx">
-          <CheckCircle size={14} color="var(--env-dev)" aria-hidden />
-          Sin transacción
-        </span>
-        <button className="btn" disabled title="Commit · Próximamente">
+        {program?.sql?.transaction ? (
+          <span className="tx tx-open">
+            <WarningCircle size={14} aria-hidden />
+            Transacción abierta
+          </span>
+        ) : (
+          <span className="tx">
+            <CheckCircle size={14} aria-hidden />
+            Sin transacción
+          </span>
+        )}
+        <button className="btn" disabled={!actions.commit} onClick={actions.commit}
+          title={program?.sql ? undefined : "Commit de la ventana SQL activa"}>
           Commit{" "}
           <span className="kbd">{formatKeys(commands.commit.keys!)}</span>
         </button>
-        <button className="btn" disabled title="Rollback · Próximamente">
+        <button className="btn" disabled={!actions.rollback} onClick={actions.rollback}
+          title={program?.sql ? undefined : "Rollback de la ventana SQL activa"}>
           Rollback{" "}
           <span className="kbd">{formatKeys(commands.rollback.keys!)}</span>
         </button>
@@ -382,6 +468,7 @@ export default function App() {
             onOpenObject={(object, mode) => void onOpenObject(object, mode)}
             onConnectionLost={onConnectionLost}
             onNotice={showNotice}
+            onQueryData={queryData}
           />
         )}
         <main className="workspace">
@@ -415,7 +502,15 @@ export default function App() {
               </div>
               {programs.map((tab) => (
                 <div key={tab.id} className="program-document" hidden={tab.id !== programId}>
-                  {tab.parts ? (
+                  {tab.sql ? (
+                    <Suspense fallback={<p role="status">Cargando editor…</p>}>
+                      <SqlWindow sessionId={tab.sql.sessionId} initialSql={tab.sql.initial} runOnOpen={tab.sql.run}
+                        ref={tab.id === programId ? programActions : undefined}
+                        onDirty={(dirty) => updateProgram(tab.id, { dirty })}
+                        onTransaction={(open) => setPrograms((all) => all.map((item) => item.id === tab.id && item.sql
+                          ? { ...item, sql: { ...item.sql, transaction: open } } : item))} />
+                    </Suspense>
+                  ) : tab.parts ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <ProgramWindow parts={tab.parts} readOnly={tab.readOnly} fileName={tab.fileName}
                         active={tab.id === programId}
@@ -435,6 +530,12 @@ export default function App() {
                 </div>
               ))}
             </div>
+          )}
+          {closing && (
+            <TransactionDialog label={closing.label}
+              onCommit={() => void finishTransaction(closing, "commit")}
+              onRollback={() => void finishTransaction(closing, "rollback")}
+              onCancel={() => setClosing(null)} />
           )}
           {notice && (
             <div className="toast" role="status">

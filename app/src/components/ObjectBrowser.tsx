@@ -116,9 +116,10 @@ interface Props {
   onConnectionLost: () => void;
   refreshKey: number;
   onNotice?: (message: string) => void;
+  onQueryData?: (o: ObjectInfo) => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice }: Props) {
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -151,7 +152,9 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
     else if (code || DATA_TYPES.has(t)) items.push({ label: "Ver", pending: true }, { label: "Editar", pending: true });
     if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: commands.test.keys, pending: true });
     if (DATA_TYPES.has(t)) {
-      items.push("sep", { label: "Consultar datos", pending: true });
+      items.push("sep", onQueryData
+        ? { label: "Consultar datos", run: () => onQueryData(o) }
+        : { label: "Consultar datos", pending: true });
       if (t !== "MaterializedView") items.push({ label: "Editar datos", keys: commands.editData.keys, pending: true });
       if (t === "Table") items.push({ label: "Exportar datos", pending: true });
     }

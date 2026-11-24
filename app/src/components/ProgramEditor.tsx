@@ -4,7 +4,7 @@ import { EditorView, drawSelection, highlightActiveLine, lineNumbers, rectangula
 import { foldGutter, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { search, highlightSelectionMatches } from "@codemirror/search";
 import { history } from "@codemirror/commands";
-import { linter } from "@codemirror/lint";
+import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
@@ -36,11 +36,28 @@ interface Props {
   onObjectContext?: (reference: EditorReference, x: number, y: number) => void;
   /** Catálogo de la sesión del programa; se lee en cada consulta. */
   completion?: CompletionCatalog | null;
+  onSelection?: (head: number) => void;
+  /** Marcas con posiciones absolutas; reemplazan a los diagnósticos de la parte. */
+  markers?: EditorMarker[];
+}
+
+function markerDiagnostics(markers: EditorMarker[], length: number): Diagnostic[] {
+  return markers.map((m) => ({
+    from: Math.min(m.from, length), to: Math.min(Math.max(m.to, m.from + 1), length),
+    severity: "error", message: m.message,
+  }));
+}
+
+export interface EditorMarker {
+  from: number;
+  to: number;
+  message: string;
 }
 
 export function ProgramEditor(props: Props) {
   const host = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
+  const viewRef = useRef<EditorView | null>(null);
   latest.current = props;
   const { part, label, readOnly } = props;
 
@@ -89,8 +106,11 @@ export function ProgramEditor(props: Props) {
         }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latest.current.onChange(update.state.doc.toString());
+          if (update.selectionSet || update.docChanged) latest.current.onSelection?.(update.state.selection.main.head);
         }),
         linter((editor) => {
+          const markers = latest.current.markers;
+          if (markers) return markerDiagnostics(markers, editor.state.doc.length);
           if (editor.state.doc.toString() !== part.source) return [];
           return part.diagnostics.filter((item) => item.line > 0).map((item) => {
             const from = positionAt(editor, item.line, item.column);
@@ -103,11 +123,20 @@ export function ProgramEditor(props: Props) {
       ],
     });
     latest.current.onView(view);
+    viewRef.current = view;
     return () => {
+      viewRef.current = null;
       latest.current.onView(null);
       view.destroy();
     };
   }, [part, label, readOnly]);
+
+  useEffect(() => {
+    const editor = viewRef.current;
+    if (editor && props.markers) {
+      editor.dispatch(setDiagnostics(editor.state, markerDiagnostics(props.markers, editor.state.doc.length)));
+    }
+  }, [props.markers]);
 
   return <div className="program-editor" ref={host} />;
 }

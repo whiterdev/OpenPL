@@ -54,14 +54,14 @@ export interface Command {
 
 const list: Command[] = [
   { id: "execute", label: "Ejecutar", keys: "F8" },
-  // TODO(plan 3): ventana SQL, transacciones y edición en grilla. TODO(plan 4): ventana de prueba.
-  { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8", pending: true },
-  { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape", pending: true },
-  { id: "commit", label: "Commit", keys: "F10", pending: true },
-  { id: "rollback", label: "Rollback", keys: "Shift+F10", pending: true },
+  // TODO(plan 3, incremento 2): edición en grilla. TODO(plan 4): ventana de prueba. TODO: plan, paleta, comando.
+  { id: "executeScript", label: "Ejecutar script", keys: "Shift+F8" },
+  { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
+  { id: "commit", label: "Commit", keys: "F10" },
+  { id: "rollback", label: "Rollback", keys: "Shift+F10" },
   { id: "explainPlan", label: "Plan de ejecución", keys: "F5", pending: true },
   { id: "palette", label: "Buscar comando", keys: "Ctrl+K", pending: true },
-  { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N", pending: true },
+  { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
   { id: "test", label: "Probar", keys: "Ctrl+T", pending: true },
   { id: "newCommand", label: "Nueva ventana de comando", keys: "Ctrl+Shift+N", pending: true },
   { id: "newProgram", label: "Nuevo programa", keys: "Ctrl+Alt+N" },

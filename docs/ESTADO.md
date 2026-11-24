@@ -1,16 +1,16 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24. Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-24 (plan 3, incremento 1). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
-- Rama de trabajo: `feat/plan-2-programa`, basada en `feat/plan-1-base`. El repositorio todavía no tiene remoto.
+- Rama de trabajo: `feat/plan-3-sql`, basada en `feat/plan-2-programa` (que sale de `feat/plan-1-base`). El repositorio todavía no tiene remoto.
 - Plan 1 (base, conexión y explorador) **terminado**, con revisión final independiente y sus
   correcciones, más varias mejoras pedidas después (ver "Hecho después del plan 1").
 - Plan 2 **en curso**. El primer incremento incorpora la ventana de programa, desde el explorador hasta el guardado local.
   [Plan 2](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md)
-- Verificación local en Windows: `cargo fmt`, Clippy, 73 pruebas de Rust sin base y 125 de interfaz,
-  más el chequeo de TypeScript. Las seis pruebas Rust `live` se omitieron sin credenciales.
+- Verificación local en Windows: `cargo fmt`, Clippy, 81 pruebas de Rust sin base y 152 de interfaz,
+  más el chequeo de TypeScript. Las siete pruebas Rust `live` se omitieron sin credenciales.
 - El build de depuración de Tauri generó el ejecutable en Windows. Avisó que el identificador
   existente termina en `.app`, relevante para el empaquetado en macOS. Quedan pendientes la prueba
   manual del selector nativo, la validación visual y la lectura de fuentes desde la app con Oracle real.
@@ -108,6 +108,23 @@
   función, trigger, tipo y vista (`app/src/newWindows.ts`).
 - El clic derecho fuera de campos de texto ya no abre el menú del navegador (WebView).
 
+### Plan 3 — Ventana SQL, incremento 1
+
+- [Plan 3](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md) y [nota de comportamiento](behavior/sql.md).
+- **Núcleo:** `crates/openpl-core/src/sql.rs` ejecuta una sentencia con binds tipados, entrega la primera
+  página (200 filas) y guarda el cursor en el hilo de la sesión para `fetch`; lee `DBMS_OUTPUT` y el estado
+  de la transacción tras cada ejecución. `SessionManager::open_sibling` da a cada ventana su sesión;
+  `Session::interrupt` cancela con `break_execution` desde otro hilo. `DbError.offset` lleva la posición.
+- **Interfaz:** `app/src/sqlScript.ts` separa el script (`;`, `/`, bloques PL/SQL, SQL*Plus omitido),
+  `app/src/sqlBinds.ts` detecta `:x` y `&x`, `SqlWindow.tsx` ejecuta (F8, Shift F8), cancela (Shift Esc),
+  muestra Resultados (grilla, más filas al bajar, Traer todas), Salida e Historial, y el panel Variables.
+  Pestañas comunes con los programas; Ctrl N; Commit/Rollback de la ventana activa con indicador;
+  diálogo al cerrar con transacción abierta; **Consultar datos** desde el explorador.
+- **Sin verificar contra Oracle real:** la prueba `live` nueva (paginación, `DBMS_OUTPUT`, posición de
+  error) espera credenciales `OPENPL_TEST_*`. Falta mirar la ventana en la app nativa.
+- **Siguiente:** incremento 2, edición en grilla (candado Ctrl E, filas nuevas y borradas, Aplicar con
+  `FOR UPDATE NOWAIT` y conflictos).
+
 ### Auditoría antislop 001
 
 - Se instaló antislop (skills en `~/.claude/skills/antislop*`) y se auditó la interfaz:
@@ -174,6 +191,10 @@ producto; estas decisiones son posteriores y mandan sobre él:
    llamada con parámetros nombrados, grilla de variables con usar/variable/tipo/valor). Ver mockup.
 8. La edición en grilla **no** muestra un panel con el SQL que se aplicará; solo los indicadores
    de celda modificada / fila nueva / fila borrada.
+9. Grilla de resultados propia, virtualizada con `@tanstack/react-virtual` (ya en el proyecto), en vez
+   de AG Grid: sin dependencia nueva y con el estilo del tema. Se revisa en el incremento 2 si la
+   edición lo exige.
+10. Variables `:x` y `&x` en un panel al costado del editor (mockup v2), no en un diálogo previo.
 
 ## Pendiente inmediato
 
@@ -197,15 +218,13 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
-### Plan 2 — Ventana de programa (en curso)
+### Plan 3 — Ventana SQL (en curso)
+- Incremento 1 hecho. Sigue el incremento 2 (edición en grilla) del [plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md).
+
+### Plan 2 — Ventana de programa (implementado)
 - Tareas de implementación terminadas. Falta la validación manual contra Oracle del [plan](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
 - Validar manualmente la apertura de un paquete con y sin Body, la navegación a diagnósticos y el
   selector nativo en Windows y Linux. Las pruebas de la aplicación contra Oracle serán de solo lectura.
-
-### Plan 3 — Ventana SQL y edición en grilla (diseño §7.5, mockup "2 · Ventana SQL")
-- Sesión propia por ventana, ejecutar sentencia/selección/script, cancelar, variables `:x` y `&x`, `DBMS_OUTPUT`.
-- Grilla (AG Grid Community) con carga incremental; edición por `ROWID` con candado (Ctrl E), aplicar (Ctrl Shift Enter), conflictos con `FOR UPDATE NOWAIT`, Commit/Rollback.
-- Habilitar en el explorador: Consultar datos / Editar datos / Exportar datos.
 
 ### Plan 4 — Ventana de prueba (diseño §7.6, mockup "3 · Ventana de prueba")
 - Generar el bloque desde `ALL_ARGUMENTS` (sobrecargas, no escalares en `declare`), grilla de variables, ejecutar (F8), `DBMS_OUTPUT`, guardar `.tst`. Habilitar "Probar".
@@ -224,7 +243,8 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 |---|---|
 | Diseño del producto | `docs/superpowers/specs/2026-11-23-openpl-design.md` |
 | Plan 1 (terminado) | `docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md` |
-| Plan 2 (en curso) | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
+| Plan 2 | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
+| Plan 3 (en curso) | `docs/superpowers/plans/2026-11-24-openpl-03-ventana-sql.md` |
 | Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |

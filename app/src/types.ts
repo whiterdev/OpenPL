@@ -32,6 +32,38 @@ export interface DbError {
   code: string | null;
   kind: ErrorKind;
   message: string;
+  /** Posición del error en la sentencia (base 0). */
+  offset?: number | null;
+}
+
+export type BindKind = "Text" | "Number" | "Date";
+
+export interface BindValue {
+  name: string;
+  value: string | null;
+  kind: BindKind;
+}
+
+export interface SqlColumn {
+  name: string;
+  type_name: string;
+  numeric: boolean;
+}
+
+export interface QueryPage {
+  rows: (string | null)[][];
+  more: boolean;
+}
+
+export type ExecResult =
+  | { kind: "Query"; cursor: number; columns: SqlColumn[]; page: QueryPage }
+  | { kind: "Done"; message: string };
+
+export interface ExecOutcome {
+  result: ExecResult;
+  elapsed_ms: number;
+  output: string[];
+  transaction: boolean;
 }
 
 export type CoreError =
@@ -143,6 +175,7 @@ export function describeError(e: unknown): {
   code: string | null;
   kind: ErrorKind | null;
   message: string;
+  offset?: number | null;
 } {
   if (e === "SessionNotFound")
     return { code: null, kind: null, message: "La sesión no existe." };
@@ -156,7 +189,7 @@ export function describeError(e: unknown): {
     const o = e as Record<string, unknown>;
     if (o.Db && typeof o.Db === "object") {
       const d = o.Db as DbError;
-      return { code: d.code, kind: d.kind, message: d.message };
+      return { code: d.code, kind: d.kind, message: d.message, offset: d.offset ?? null };
     }
     for (const k of ["Io", "Json", "Secret"])
       if (typeof o[k] === "string")

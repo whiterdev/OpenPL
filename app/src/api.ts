@@ -4,6 +4,9 @@ import type { EditorReference } from "./editorReference";
 import type {
   ClientInfo,
   CompletionObject,
+  BindValue,
+  ExecOutcome,
+  QueryPage,
   ConnectParams,
   ConnectResult,
   ConnectionProfile,
@@ -41,6 +44,15 @@ export const api = {
     invoke<CompletionObject[]>("complete_objects", { sessionId, owner, prefix, contextOwner }),
   objectColumns: (sessionId: string, owner: string | null, name: string, contextOwner: string | null) =>
     invoke<ObjectColumn[]>("object_columns", { sessionId, owner, name, contextOwner }),
+  sqlOpen: (sessionId: string) => invoke<string>("sql_open", { sessionId }),
+  sqlClose: (sessionId: string) => invoke<void>("sql_close", { sessionId }),
+  sqlExecute: (sessionId: string, sql: string, binds: BindValue[], pageSize?: number) =>
+    invoke<ExecOutcome>("sql_execute", { sessionId, sql, binds, pageSize: pageSize ?? null }),
+  sqlFetch: (sessionId: string, cursor: number, size?: number) =>
+    invoke<QueryPage>("sql_fetch", { sessionId, cursor, size: size ?? null }),
+  sqlCancel: (sessionId: string) => invoke<boolean>("sql_cancel", { sessionId }),
+  sqlCommit: (sessionId: string) => invoke<boolean>("sql_commit", { sessionId }),
+  sqlRollback: (sessionId: string) => invoke<boolean>("sql_rollback", { sessionId }),
   openProgramFile: () => invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),

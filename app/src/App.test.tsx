@@ -19,6 +19,12 @@ vi.mock("./api", () => ({
     connect: vi.fn(),
     listObjects: vi.fn(),
     programSource: vi.fn(),
+    sqlOpen: vi.fn(),
+    sqlClose: vi.fn(),
+    sqlExecute: vi.fn(),
+    sqlCommit: vi.fn(),
+    sqlRollback: vi.fn(),
+    sqlCancel: vi.fn(),
   },
 }));
 
@@ -147,14 +153,16 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
   expect(await screen.findByRole("textbox", { name: "Fuente" })).toBeInTheDocument();
 
   expect(screen.queryByRole("button", { name: "Ayuda" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Commit/ })).toHaveAttribute("title", expect.stringMatching(/Próximamente/));
+  expect(screen.getByRole("button", { name: /^Commit/ })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
   const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
-  expect(menu.getByRole("menuitem", { name: /Ventana SQL.*Próximamente/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana de prueba.*Próximamente/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).toBeDisabled();
+  expect(menu.getByRole("menuitem", { name: /Ventana SQL/ })).not.toHaveTextContent("Próximamente");
   fireEvent.keyDown(document, { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
   const session = within(screen.getByRole("menu", { name: "Sesión" }));
-  expect(session.getByRole("menuitem", { name: /Commit.*Próximamente/ })).toBeDisabled();
+  expect(session.getByRole("menuitem", { name: /Plan de ejecución.*Próximamente/ })).toBeDisabled();
   expect(session.getByRole("menuitem", { name: /^Desconectar$/ })).toBeDisabled();
 });
 
@@ -164,4 +172,89 @@ test("Conectar desde el área vacía abre el login", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
   fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: /Conectar/ }));
   expect(await screen.findByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+});
+
+async function connectAs(service = "DEV") {
+  vi.mocked(api.connect).mockResolvedValueOnce({ session_id: "s1", server_version: "12.1.0", compat: { kind: "Supported" } });
+  const dialog = within(await screen.findByRole("dialog", { name: "Conectar a Oracle" }));
+  const user = dialog.getByLabelText("Usuario");
+  fireEvent.change(user, { target: { value: "HR" } });
+  fireEvent.change(dialog.getByLabelText("Contraseña"), { target: { value: "clave" } });
+  fireEvent.change(dialog.getByLabelText("Host"), { target: { value: "db.example.com" } });
+  fireEvent.change(dialog.getByLabelText("Servicio"), { target: { value: service } });
+  fireEvent.click(dialog.getByRole("button", { name: "Conectar" }));
+  await waitFor(() => expect(user).not.toBeInTheDocument());
+}
+
+test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.sqlExecute).mockResolvedValue({
+    result: { kind: "Done", message: "1 fila actualizada" }, elapsed_ms: 1, output: [], transaction: true,
+  });
+  vi.mocked(api.sqlCommit).mockResolvedValue(false);
+  render(<App />);
+  await connectAs();
+  expect(screen.getByText("Sin transacción")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  expect(api.sqlOpen).toHaveBeenCalledWith("s1");
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "update t set a = 1" } }));
+  await act(async () => { fireEvent.keyDown(window, { key: "F8" }); });
+  expect(api.sqlExecute).toHaveBeenCalledWith("w1", "update t set a = 1", []);
+  expect(await screen.findByText("Transacción abierta")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /^Commit/ }));
+  expect(await screen.findByText("Sin transacción")).toBeInTheDocument();
+  expect(api.sqlCommit).toHaveBeenCalledWith("w1");
+});
+
+test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w2");
+  vi.mocked(api.sqlExecute).mockResolvedValue({
+    result: { kind: "Done", message: "1 fila borrada" }, elapsed_ms: 1, output: [], transaction: true,
+  });
+  vi.mocked(api.sqlRollback).mockResolvedValue(false);
+  vi.mocked(api.sqlClose).mockResolvedValue();
+  render(<App />);
+  await connectAs();
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "delete from t where id = 1" } }));
+  await act(async () => { fireEvent.keyDown(window, { key: "F8" }); });
+  await screen.findByText("Transacción abierta");
+
+  fireEvent.click(screen.getByRole("button", { name: /^Cerrar SQL 1/ }));
+  let dialog = within(screen.getByRole("dialog", { name: "Transacción abierta" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Cancelar" }));
+  expect(editor).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /^Cerrar SQL 1/ }));
+  dialog = within(screen.getByRole("dialog", { name: "Transacción abierta" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Rollback" }));
+  await waitFor(() => expect(editor).not.toBeInTheDocument());
+  expect(api.sqlRollback).toHaveBeenCalledWith("w2");
+  expect(api.sqlClose).toHaveBeenCalledWith("w2");
+});
+
+test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([{
+    owner: "HR", name: "CLIENTES", object_type: "Table", status: "Valid", last_ddl_time: "",
+  }]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w3");
+  vi.mocked(api.sqlExecute).mockResolvedValue({
+    result: { kind: "Query", cursor: 1, columns: [{ name: "ID", type_name: "NUMBER", numeric: true }], page: { rows: [["1"]], more: false } },
+    elapsed_ms: 1, output: [], transaction: false,
+  });
+  render(<App />);
+  await connectAs();
+  fireEvent.click(await screen.findByRole("treeitem", { name: "Tablas" }));
+  fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "CLIENTES" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Consultar datos/ }));
+  expect(await screen.findByRole("grid", { name: "Resultados" })).toBeInTheDocument();
+  expect(api.sqlExecute).toHaveBeenCalledWith("w3", 'SELECT * FROM "HR"."CLIENTES"', []);
 });
