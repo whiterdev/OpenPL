@@ -57,6 +57,11 @@
 - En `feat/seleccion-temas`, la fila activa usa fondo de superficie y un tilde. Se quitó la franja lateral y se documentó la regla de selección en `DESIGN.md`.
 - [Auditoría antislop del selector](../anti-slop/audit-003-2026-11-24.md). Pasaron 340 pruebas de frontend, TypeScript, formato, Clippy y las pruebas de Rust sin conexión a Oracle. Sigue pendiente el recorrido visual de escritorio.
 
+### Papel y comentarios
+
+- Papel usa superficies gris cálido y sintaxis de baja saturación. Los comentarios usan un malva apagado y cursiva en SQL, PL/SQL y la vista previa. Se ajustaron los fondos del comparador para mantener legibilidad.
+- [Auditoría antislop](../anti-slop/audit-papel-2026-11-24.md). La verificación visual en escritorio sigue pendiente.
+
 ### Tanda B1 a B13 (2026-11-24)
 
 Cambios pedidos tras usar la app. Commits en `feat/plan-4-ventana-prueba`, en orden:

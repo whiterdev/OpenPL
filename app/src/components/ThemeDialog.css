@@ -44,7 +44,7 @@
 .td-preview .st { color: var(--st); }
 .td-preview .nu { color: var(--nu); }
 .td-preview .fn { color: var(--fn); }
-.td-preview .cm { color: var(--cm); }
+.td-preview .cm { color: var(--cm); font-style: italic; }
 
 .td-warn { max-height: 96px; overflow: auto; padding: 8px 20px; border-top: 1px solid var(--line); font-size: 12px; }
 .td-warn-head { display: flex; align-items: center; gap: 6px; font-weight: 500; }

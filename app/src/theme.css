@@ -22,9 +22,9 @@
     --accentText: #1e1a12;
     --accentSoft: #3d3524;
     --err: #ec8478;
-    --errSoft: #45292a;
+    --errSoft: #3e2526;
     --ok: #75c08e;
-    --okSoft: #263a2d;
+    --okSoft: #233128;
     --env-dev: #75c08e;
     --env-qa: #d9a441;
     --env-prod: #e5786c;
@@ -32,7 +32,7 @@
     --ty: #d6b27a;
     --st: #a7c08e;
     --nu: #da8f6e;
-    --cm: #a5a097;
+    --cm: #9993a8;
     --fn: #c7a2d9;
     --sel: rgba(201, 154, 59, 0.3);
     --selMatch: rgba(141, 178, 203, 0.18);
