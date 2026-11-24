@@ -8,6 +8,7 @@ import type {
   CompletionScope,
   BindValue,
   ExecOutcome,
+  ExplainPlan,
   QueryPage,
   EditTarget,
   RowChange,
@@ -126,6 +127,7 @@ export const api = {
     }),
   sqlFetch: (sessionId: string, cursor: number, size?: number) =>
     invoke<QueryPage>("sql_fetch", { sessionId, cursor, size: size ?? null }),
+  sqlExplain: (sessionId: string, sql: string) => invoke<ExplainPlan>("sql_explain", { sessionId, sql }),
   sqlCancel: (sessionId: string) =>
     invoke<boolean>("sql_cancel", { sessionId }),
   sqlCommit: (sessionId: string) =>

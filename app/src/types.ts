@@ -106,6 +106,11 @@ export interface ExecOutcome {
   test_outputs?: TestOutput[];
 }
 
+export interface ExplainPlan {
+  columns: SqlColumn[];
+  page: QueryPage;
+}
+
 export type TestOutput = { name: string } & (
   | { kind: "Scalar"; value: string | null }
   | { kind: "Cursor"; columns: SqlColumn[]; page: QueryPage }

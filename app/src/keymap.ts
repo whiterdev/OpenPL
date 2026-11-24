@@ -67,7 +67,7 @@ const list: Command[] = [
   { id: "cancel", label: "Cancelar ejecución", keys: "Shift+Escape" },
   { id: "commit", label: "Commit", keys: "F10" },
   { id: "rollback", label: "Rollback", keys: "Shift+F10" },
-  { id: "explainPlan", label: "Plan de ejecución", keys: "F5", pending: true },
+  { id: "explainPlan", label: "Plan de ejecución", keys: "F5" },
   { id: "palette", label: "Buscar comando", keys: "Ctrl+K" },
   { id: "newSql", label: "Nueva ventana SQL", keys: "Ctrl+N" },
   { id: "newTest", label: "Nueva ventana de prueba", keys: "Ctrl+Alt+T" },

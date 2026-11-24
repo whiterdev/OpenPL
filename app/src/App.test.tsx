@@ -288,7 +288,7 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
   fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
   const session = within(screen.getByRole("menu", { name: "Sesión" }));
   expect(
-    session.getByRole("menuitem", { name: /Plan de ejecución.*Próximamente/ }),
+    session.getByRole("menuitem", { name: /Plan de ejecución/ }),
   ).toBeDisabled();
   expect(
     session.getByRole("menuitem", { name: /^Desconectar$/ }),

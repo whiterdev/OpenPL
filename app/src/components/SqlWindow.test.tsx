@@ -44,6 +44,19 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
 });
 
+test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
+  const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({
+    columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false }],
+    page: { rows: [["TABLE ACCESS"]], more: false },
+  });
+  const execute = vi.spyOn(api, "sqlExecute");
+  const { ref } = setup("SELECT 1 FROM DUAL;");
+  await act(async () => ref.current!.explainPlan!());
+  expect(explain).toHaveBeenCalledWith("w1", "SELECT 1 FROM DUAL");
+  expect(execute).not.toHaveBeenCalled();
+  expect(screen.getByRole("tabpanel", { name: "Plan" })).toHaveTextContent("TABLE ACCESS");
+});
+
 test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {
   setup("select 1 from dual");
   const divider = screen.getByRole("separator", { name: "Alto del editor" });

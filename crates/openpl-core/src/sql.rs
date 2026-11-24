@@ -43,6 +43,44 @@ pub struct QueryPage {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ExplainPlan {
+    pub columns: Vec<Column>,
+    pub page: QueryPage,
+}
+
+/// Se ejecuta únicamente en la sesión descartable del plan.
+pub fn explain(conn: &DbConn, sql: &str, id: &str) -> Result<ExplainPlan, DbError> {
+    let kind = conn.raw().statement(sql).build()?.statement_type();
+    if !matches!(
+        kind,
+        StatementType::Select
+            | StatementType::Insert
+            | StatementType::Update
+            | StatementType::Delete
+            | StatementType::Merge
+    ) || id.len() != 30
+        || !id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(DbError::from_code(
+            None,
+            "La sentencia no admite plan de ejecución.",
+        ));
+    }
+    conn.raw().execute(
+        &format!("EXPLAIN PLAN SET STATEMENT_ID = '{id}' FOR {sql}"),
+        &[],
+    )?;
+    let rows = conn.raw().query(
+        "SELECT id, parent_id, depth, operation, options, object_owner, object_name, cost, cardinality
+         FROM plan_table WHERE statement_id = CAST(:1 AS VARCHAR2(30)) ORDER BY id",
+        &[&id],
+    )?;
+    let columns = result_columns(rows.column_info());
+    let page = read_page(&mut rows.peekable(), 300, |row| row_cells(&row))?;
+    Ok(ExplainPlan { columns, page })
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
 pub enum ExecResult {
     Query {

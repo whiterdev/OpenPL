@@ -366,6 +366,25 @@ pub async fn sql_execute(
 }
 
 #[tauri::command]
+pub async fn sql_explain(
+    st: St<'_>,
+    session_id: SessionId,
+    sql: String,
+) -> Result<openpl_core::sql::ExplainPlan, CoreError> {
+    let sibling = st.sessions.open_sibling(session_id).await?;
+    let result = async {
+        let id = uuid::Uuid::new_v4().simple().to_string()[..30].to_owned();
+        st.sessions
+            .get(sibling)?
+            .run(move |conn| openpl_core::sql::explain(conn, &sql, &id))
+            .await
+    }
+    .await;
+    st.sessions.close(sibling);
+    result
+}
+
+#[tauri::command]
 pub async fn sql_fetch(
     st: St<'_>,
     session_id: SessionId,

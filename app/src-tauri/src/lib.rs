@@ -51,6 +51,7 @@ pub fn run() {
             commands::sql_open,
             commands::sql_close,
             commands::sql_execute,
+            commands::sql_explain,
             commands::sql_fetch,
             commands::sql_cancel,
             commands::sql_commit,

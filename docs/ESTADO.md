@@ -51,6 +51,8 @@
 
 ## Hecho
 
+- **Plan de ejecución (F5):** plan estimado en su propia pestaña y sesión. Se confirmó por DBX la disponibilidad de las columnas del plan, en solo lectura. La ejecución de F5 contra Oracle se reserva para la prueba manual.
+
 - **Buscar comando (Ctrl+K):** paleta filtrable por nombre o atajo con las acciones de la ventana actual.
 
 ### Consola de comandos

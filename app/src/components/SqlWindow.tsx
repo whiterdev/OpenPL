@@ -10,7 +10,7 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import {
   describeError, type BindKind, type BindValue, type Conflict, type EditTarget, type Environment, type ExecOutcome,
-  type ProgramPart, type SqlColumn, type TestOutput,
+  type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
@@ -68,7 +68,7 @@ interface HistoryEntry {
   ok: boolean;
 }
 
-type Tab = "variables" | "results" | "output" | "history";
+type Tab = "variables" | "results" | "output" | "history" | "plan";
 const RESULT_TABS = [["results", "Resultados"], ["output", "Salida"], ["history", "Historial"]] as const;
 const EDITOR_SHARE = { initial: 70, min: 20, max: 85, step: 4 };
 const clampEditorShare = (share: number) => Math.max(EDITOR_SHARE.min, Math.min(EDITOR_SHARE.max, Math.round(share)));
@@ -97,8 +97,13 @@ export function SqlWindow({
   const [running, setRunning] = useState(false);
   const hasTestVariables = !!testSettings;
   const [tab, setTab] = useState<Tab>(command ? "output" : hasTestVariables ? "variables" : "results");
-  const tabs: readonly (readonly [Tab, string])[] = hasTestVariables
-    ? [["variables", "Variables"], ...RESULT_TABS] : RESULT_TABS;
+  const [plan, setPlan] = useState<ExplainPlan | null>(null);
+  const [planSelection, setPlanSelection] = useState<CellPosition | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const tabs: readonly (readonly [Tab, string])[] = [
+    ...(hasTestVariables ? [["variables", "Variables"] as const] : []),
+    ...RESULT_TABS, ...(plan ? [["plan", "Plan"] as const] : []),
+  ];
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [output, setOutput] = useState<OutputLine[]>([]);
@@ -168,6 +173,26 @@ export function SqlWindow({
     }
     const one = statementAt(splitScript(doc), range?.head ?? cursor);
     return { list: one ? [one] : [], script: false };
+  }
+
+  async function explain() {
+    if (planning) return;
+    const { list } = targets();
+    if (list.length !== 1 || list[0].kind !== "sql") {
+      setAlert("Selecciona una sentencia SQL");
+      return;
+    }
+    setPlanning(true);
+    setAlert("");
+    try {
+      setPlan(await api.sqlExplain(sessionId, list[0].text));
+      setPlanSelection(null);
+      setTab("plan");
+    } catch (error) {
+      setAlert(describeError(error).message);
+    } finally {
+      setPlanning(false);
+    }
   }
 
   function runConsoleCommand(source: string) {
@@ -523,6 +548,7 @@ export function SqlWindow({
   };
 
   const actions: ProgramActions = {
+    explainPlan: () => void explain(),
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
     fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
@@ -632,6 +658,7 @@ export function SqlWindow({
           <FloppyDisk size={16} aria-hidden />
         </button>
         {running && <span role="status" className="program-muted">Ejecutando…</span>}
+        {planning && <span role="status" className="program-muted">Generando plan…</span>}
         {!running && notice && <span role="status" className="program-muted">{notice}</span>}
         {alert && <span role="alert" className="sql-alert">{alert}</span>}
       </div>
@@ -836,6 +863,14 @@ export function SqlWindow({
             ))}
         </div>
         {footer && <div className="sql-footer">{footer}</div>}
+        {plan && (
+          <div role="tabpanel" id={`${tabPrefix}-panel-plan`} aria-label="Plan" hidden={tab !== "plan"} className="sql-panel">
+            <ResultGrid queryKey={0} columns={plan.columns} rows={plan.page.rows} status={[]}
+              isModified={() => false} editable={null} selected={planSelection} onSelect={setPlanSelection}
+              onEdit={() => {}} fetching={false} fetchError={null} />
+            {plan.page.more && <div className="sql-footer">{plan.page.rows.length} pasos mostrados</div>}
+          </div>
+        )}
       </div>
       {command && (
         <form className="sql-command-prompt" onSubmit={(event) => {
