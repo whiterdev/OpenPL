@@ -256,11 +256,6 @@ fn custom_fallback(t: ObjectType) -> Option<Custom> {
             "FROM user_role_privs WHERE 1 = 1",
             "granted_role",
         )),
-        ObjectType::Profile => Some(c(
-            "NO_OWNER, profile, 'PROFILE', 'VALID', NO_DATE",
-            "FROM user_users WHERE 1 = 1",
-            "profile",
-        )),
         _ => None,
     }
 }
@@ -399,19 +394,31 @@ fn run_query(conn: &DbConn, sql: &str, binds: &[(String, String)]) -> Result<Vec
     Ok(raw)
 }
 
-/// Lista objetos de un tipo desde la base. Si faltan privilegios y hay alternativa, la usa.
+/// Lista objetos de un tipo desde la base. Sin acceso al catálogo, Perfiles queda vacío.
 pub fn list_objects(
     conn: &DbConn,
     scope: Scope,
     t: ObjectType,
     filter: Option<&str>,
 ) -> Result<Vec<ObjectInfo>, DbError> {
+    list_objects_with(scope, t, filter, |sql, binds| run_query(conn, sql, binds))
+}
+
+fn list_objects_with(
+    scope: Scope,
+    t: ObjectType,
+    filter: Option<&str>,
+    mut query: impl FnMut(&str, &[(String, String)]) -> Result<Vec<RawRow>, DbError>,
+) -> Result<Vec<ObjectInfo>, DbError> {
     let (sql, binds) = objects_query(scope, t, filter);
-    let raw = match run_query(conn, &sql, &binds) {
+    let raw = match query(&sql, &binds) {
         Ok(r) => r,
         Err(e) if matches!(e.code.as_deref(), Some("ORA-00942") | Some("ORA-01031")) => {
+            if t == ObjectType::Profile {
+                return Ok(Vec::new());
+            }
             match fallback_query(scope, t, filter) {
-                Some((fsql, fbinds)) => run_query(conn, &fsql, &fbinds)?,
+                Some((fsql, fbinds)) => query(&fsql, &fbinds)?,
                 None => return Err(e),
             }
         }
@@ -854,13 +861,47 @@ mod tests {
     }
 
     #[test]
-    fn roles_y_perfiles_tienen_alternativa_sin_privilegios() {
+    fn perfiles_sin_privilegios_devuelve_lista_vacia_sin_otro_select() {
+        for code in ["ORA-00942", "ORA-01031"] {
+            let mut calls = 0;
+            let profiles =
+                list_objects_with(Scope::Mine, ObjectType::Profile, Some("A"), |sql, _| {
+                    calls += 1;
+                    if calls > 1 {
+                        return Err(DbError::from_code(
+                            Some("ORA-00904".into()),
+                            "PROFILE: invalid identifier",
+                        ));
+                    }
+                    assert!(sql.contains("FROM dba_profiles"));
+                    Err(DbError::from_code(
+                        Some(code.into()),
+                        "Sin acceso al catálogo",
+                    ))
+                });
+            assert!(profiles.unwrap().is_empty());
+            assert_eq!(calls, 1);
+        }
+    }
+
+    #[test]
+    fn perfiles_propaga_errores_ajenos_a_privilegios() {
+        let result = list_objects_with(Scope::Mine, ObjectType::Profile, None, |_, _| {
+            Err(DbError::from_code(
+                Some("ORA-00904".into()),
+                "Identificador inválido",
+            ))
+        });
+        assert_eq!(result.unwrap_err().code.as_deref(), Some("ORA-00904"));
+    }
+
+    #[test]
+    fn roles_tienen_alternativa_sin_privilegios() {
         let (sql, _) = objects_query(Scope::All, ObjectType::Role, None);
         assert!(sql.contains("FROM dba_roles"));
         let (fb, _) = fallback_query(Scope::All, ObjectType::Role, None).unwrap();
         assert!(fb.contains("FROM user_role_privs"));
-        let (fb, _) = fallback_query(Scope::All, ObjectType::Profile, None).unwrap();
-        assert!(fb.contains("FROM user_users"));
+        assert!(fallback_query(Scope::All, ObjectType::Profile, None).is_none());
         assert!(fallback_query(Scope::All, ObjectType::Table, None).is_none());
     }
 

@@ -52,6 +52,11 @@
 
 ## Hecho
 
+### Listado de perfiles con permisos limitados
+
+- En Oracle XE el fallback de **Perfiles** consultaba una columna que no existe en `USER_USERS`. Si la cuenta carece de acceso al catálogo de perfiles, OpenPL muestra una lista vacía. Los demás errores siguen visibles y **Roles** conserva su consulta alternativa.
+- La prueba de regresión simula la misma secuencia de errores detectada en CI. El test de catálogo contra Oracle XE sigue activo en GitHub Actions.
+
 ### Espacio del editor y formato de Probar
 
 - SQL y **Probar** abren con el 70 % del área dividida para el editor. El divisor se mueve con ratón o teclado.
