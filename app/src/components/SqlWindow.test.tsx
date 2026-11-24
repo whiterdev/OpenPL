@@ -28,6 +28,22 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   return { ref, view, onTransaction };
 }
 
+test("EDIT sugiere objetos y abre la selección sin ejecutar SQL", async () => {
+  const table = { owner: "HR", name: "VENTAS", object_type: "TABLE" };
+  const view = { owner: "HR", name: "VENTAS_V", object_type: "VIEW" };
+  vi.spyOn(api, "completeObjects").mockResolvedValue([table, view]);
+  const execute = vi.spyOn(api, "sqlExecute");
+  const open = vi.fn();
+  setup("", { command: true, onEditObject: open });
+  const prompt = screen.getByLabelText("Comando SQL");
+  fireEvent.change(prompt, { target: { value: "edit hr.vent" } });
+  expect(await screen.findByRole("option", { name: /VENTAS_V/ })).toBeVisible();
+  fireEvent.keyDown(prompt, { key: "ArrowDown" });
+  fireEvent.submit(prompt.closest("form")!);
+  expect(open).toHaveBeenCalledWith(view);
+  expect(execute).not.toHaveBeenCalled();
+});
+
 test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => {
   const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["7", "Ana"]]));
   setup("", { command: true });

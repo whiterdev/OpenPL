@@ -543,6 +543,7 @@ pub enum CompletionScope {
     #[default]
     Any,
     Relations,
+    Edit,
 }
 
 const COMPLETE_ANY_TYPES: &str = "'TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PACKAGE',
@@ -553,6 +554,11 @@ fn complete_objects_sql(scope: CompletionScope) -> String {
     let types = match scope {
         CompletionScope::Any => COMPLETE_ANY_TYPES,
         CompletionScope::Relations => COMPLETE_RELATION_TYPES,
+        CompletionScope::Edit => {
+            "'TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PACKAGE',
+                                  'PROCEDURE', 'FUNCTION', 'TYPE', 'SYNONYM', 'TRIGGER',
+                                  'INDEX', 'JAVA SOURCE', 'LIBRARY', 'CLUSTER'"
+        }
     };
     COMPLETE_OBJECTS_SQL.replace("{types}", types)
 }
