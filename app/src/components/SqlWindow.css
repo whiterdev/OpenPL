@@ -32,6 +32,11 @@ body.resizing-rows { cursor: row-resize; user-select: none; }
 .sql-row { display: grid; height: 24px; position: absolute; left: 0; right: 0; top: 0; }
 .sql-row-alt { background: var(--s1); }
 .sql-row.sql-head { position: sticky; z-index: 1; background: var(--s1); font-family: var(--font-ui); font-weight: 500; color: var(--muted); }
+.sql-head .sql-cell { position: relative; }
+.sql-col-resizer { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: col-resize; }
+.sql-col-resizer:hover, .sql-col-resizer:focus-visible { outline: none;
+  background: linear-gradient(to right, transparent 2px, var(--accent) 2px); }
+body.resizing-columns { cursor: col-resize; user-select: none; }
 .sql-cell { display: flex; align-items: center; min-width: 0; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .sql-cell.num { justify-content: flex-end; }

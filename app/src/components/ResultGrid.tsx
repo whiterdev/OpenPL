@@ -39,14 +39,21 @@ const columnWidth = (column: SqlColumn, rows: Cell[][], index: number) => {
   for (const row of rows.slice(0, 100)) longest = Math.max(longest, (row[index] ?? "NULL").length);
   return Math.min(360, Math.max(64, longest * 7.5 + 20));
 };
+const RESIZE = { min: 40, max: 1200, step: 16 };
+const clampWidth = (width: number) => Math.min(RESIZE.max, Math.max(RESIZE.min, Math.round(width)));
 
 export function ResultGrid(props: Props) {
   const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, more, fetching, fetchError, onFetchAll } = props;
   const scroll = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
-  const widths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
+  const autoWidths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [queryKey, columns]);
+  // Los anchos ajustados a mano valen solo para la consulta y las columnas con que se ajustaron.
+  const [resized, setResized] = useState<{ queryKey: number; columns: SqlColumn[]; widths: number[] } | null>(null);
+  const widths = resized && resized.queryKey === queryKey && resized.columns === columns ? resized.widths : autoWidths;
+  const setWidth = (index: number, width: number) =>
+    setResized({ queryKey, columns, widths: widths.map((w, i) => (i === index ? clampWidth(width) : w)) });
   const template = `64px ${widths.map((w) => `${w}px`).join(" ")}`;
   const virtualized = rows.length > VIRTUALIZE_ABOVE;
   const virtual = useVirtualizer({
@@ -79,7 +86,8 @@ export function ResultGrid(props: Props) {
   };
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (editing || fetching || !rows.length) return;
+    // Las teclas sobre un borde de columna no mueven ni editan la celda.
+    if (editing || fetching || !rows.length || event.target !== event.currentTarget) return;
     const at = selected ?? { row: 0, col: 0 };
     const steps: Record<string, [number, number]> = {
       ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
@@ -115,8 +123,36 @@ export function ResultGrid(props: Props) {
         <div role="row" className="sql-row sql-head" style={{ gridTemplateColumns: template }}>
           <div role="columnheader" aria-label="Fila" className="sql-cell sql-rownum" />
           {columns.map((c, i) => (
-            <div key={`${c.name}-${i}`} role="columnheader" className={`sql-cell${c.numeric ? " num" : ""}`}
-              title={editable && !editable[i] ? `${c.type_name} · solo lectura` : c.type_name}>{c.name}</div>
+            <div key={`${c.name}-${i}`} role="columnheader" aria-label={c.name} className={`sql-cell${c.numeric ? " num" : ""}`}
+              title={editable && !editable[i] ? `${c.type_name} · solo lectura` : c.type_name}>
+              {c.name}
+              <div role="separator" aria-orientation="vertical" aria-label={`Ancho de ${c.name}`} tabIndex={0}
+                className="sql-col-resizer" aria-valuemin={RESIZE.min} aria-valuemax={RESIZE.max} aria-valuenow={widths[i]}
+                onDoubleClick={() => setWidth(i, autoWidths[i])}
+                onKeyDown={(event) => {
+                  const step = { ArrowLeft: -RESIZE.step, ArrowRight: RESIZE.step }[event.key];
+                  if (step === undefined) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setWidth(i, widths[i] + step);
+                }}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startWidth = widths[i];
+                  document.body.classList.add("resizing-columns");
+                  const move = (e: PointerEvent) => setWidth(i, startWidth + e.clientX - startX);
+                  const stop = () => {
+                    document.body.classList.remove("resizing-columns");
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", stop);
+                    window.removeEventListener("pointercancel", stop);
+                  };
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", stop);
+                  window.addEventListener("pointercancel", stop);
+                }} />
+            </div>
           ))}
         </div>
         <div style={{ height: rows.length * ROW, position: "relative" }}>
