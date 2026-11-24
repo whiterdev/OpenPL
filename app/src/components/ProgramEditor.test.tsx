@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render } from "@testing-library/react";
+import { completionStatus, selectedCompletion, startCompletion } from "@codemirror/autocomplete";
+import { redo, undo } from "@codemirror/commands";
 import { sql } from "@codemirror/lang-sql";
 import { syntaxTree } from "@codemirror/language";
 import { oracleDialect } from "../editorReference";
 import { EditorSelection, EditorState, type Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { highlightTree, tags } from "@lezer/highlight";
-import { indentKeys, programSyntax } from "./ProgramEditor";
+import { indentKeys, ProgramEditor, programSyntax } from "./ProgramEditor";
 
 // Vitest vacía los imports ?raw de CSS; el proyecto no tiene @types/node.
 type Fs = { readFileSync(path: string, encoding: "utf8"): string };
@@ -84,5 +87,166 @@ describe("indentKeys", () => {
     const result = press("Shift-Tab", "  a\n  b", EditorSelection.single(0, 7));
     expect(result.handled).toBe(true);
     expect(result.doc).toBe("a\nb");
+  });
+});
+
+function mount(source: string, readOnly = false) {
+  let view: EditorView | null = null;
+  render(
+    <ProgramEditor
+      part={{ kind: "BODY", source, last_ddl_time: null, diagnostics: [] }}
+      label="Cuerpo" readOnly={readOnly} onView={(v) => { if (v) view = v; }} onChange={() => {}} activate={() => {}}
+    />,
+  );
+  return view!;
+}
+
+function key(view: EditorView, name: string, mods: { ctrl?: boolean; shift?: boolean } = {}) {
+  let free = true;
+  act(() => {
+    free = fireEvent.keyDown(view.contentDOM, { key: name, ctrlKey: !!mods.ctrl, shiftKey: !!mods.shift });
+  });
+  return { taken: !free };
+}
+
+const cursorAt = (view: EditorView, pos: number) => act(() => { view.dispatch({ selection: { anchor: pos } }); });
+const head = (view: EditorView) => view.state.selection.main.head;
+
+describe("teclas estándar del editor", () => {
+  it("Enter conserva la sangría de la línea", () => {
+    const view = mount("  IF x THEN");
+    cursorAt(view, view.state.doc.length);
+    key(view, "Enter");
+    const lines = view.state.doc.toString().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/^ {2,}$/);
+    expect(head(view)).toBe(view.state.doc.length);
+  });
+
+  it("Enter tras una sentencia completa mantiene la sangría del bloque", () => {
+    const view = mount("BEGIN\n    x := 1;\nEND;");
+    cursorAt(view, "BEGIN\n    x := 1;".length);
+    key(view, "Enter");
+    expect(view.state.doc.toString()).toBe("BEGIN\n    x := 1;\n    \nEND;");
+  });
+
+  it("Home va al primer carácter y un segundo Home a la columna 0", () => {
+    const view = mount("    x := 1;");
+    cursorAt(view, view.state.doc.length);
+    key(view, "Home");
+    expect(head(view)).toBe(4);
+    key(view, "Home");
+    expect(head(view)).toBe(0);
+  });
+
+  it("Ctrl+flechas se mueven por palabra respetando el guion bajo", () => {
+    const view = mount("v_total_x := 1");
+    cursorAt(view, 0);
+    key(view, "ArrowRight", { ctrl: true });
+    expect(head(view)).toBe("v_total_x".length);
+    key(view, "ArrowLeft", { ctrl: true });
+    expect(head(view)).toBe(0);
+  });
+
+  it("Ctrl+Backspace borra la palabra anterior completa", () => {
+    const view = mount("x := v_total_x");
+    cursorAt(view, view.state.doc.length);
+    key(view, "Backspace", { ctrl: true });
+    expect(view.state.doc.toString()).toBe("x := ");
+  });
+
+  it("Ctrl+A selecciona todo el documento", () => {
+    const view = mount("begin\n  null;\nend;");
+    cursorAt(view, 3);
+    key(view, "a", { ctrl: true });
+    expect(view.state.selection.main.from).toBe(0);
+    expect(view.state.selection.main.to).toBe(view.state.doc.length);
+  });
+
+  it("Tab sigue insertando dos espacios", () => {
+    const view = mount("begin");
+    cursorAt(view, view.state.doc.length);
+    key(view, "Tab");
+    expect(view.state.doc.toString()).toBe("begin  ");
+  });
+
+  it("Ctrl+Z, Ctrl+Shift+Z y Ctrl+Y quedan para el keymap de la app", () => {
+    const view = mount("begin");
+    cursorAt(view, view.state.doc.length);
+    key(view, "Enter");
+    expect(key(view, "z", { ctrl: true }).taken).toBe(false);
+    expect(key(view, "z", { ctrl: true, shift: true }).taken).toBe(false);
+    expect(key(view, "y", { ctrl: true }).taken).toBe(false);
+    act(() => { undo(view); });
+    expect(view.state.doc.toString()).toBe("begin");
+    act(() => { redo(view); });
+    expect(view.state.doc.toString()).toContain("\n");
+  });
+
+  it("en solo lectura navega y selecciona", () => {
+    const view = mount("  IF x THEN", true);
+    cursorAt(view, view.state.doc.length);
+    key(view, "Home");
+    expect(head(view)).toBe(2);
+    key(view, "a", { ctrl: true });
+    expect(view.state.selection.main.to).toBe(view.state.doc.length);
+  });
+
+  it("en solo lectura no toma teclas que editan", () => {
+    const view = mount("  IF x THEN", true);
+    cursorAt(view, view.state.doc.length);
+    for (const [name, ctrl] of [["Enter", false], ["Backspace", false], ["Delete", false], ["Backspace", true], ["Delete", true]] as const) {
+      expect(key(view, name, { ctrl }).taken, `${ctrl ? "Ctrl+" : ""}${name}`).toBe(false);
+    }
+    expect(view.state.doc.toString()).toBe("  IF x THEN");
+  });
+});
+
+const pause = (ms: number) => act(() => new Promise<void>((done) => setTimeout(done, ms)));
+
+async function typeText(view: EditorView, text: string) {
+  act(() => {
+    const at = view.state.selection.main.head;
+    view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: at + text.length }, userEvent: "input.type" });
+  });
+}
+
+async function openCompletion(view: EditorView) {
+  await vi.waitFor(() => expect(completionStatus(view.state)).toBe("active"));
+  // acceptCompletion ignora Enter durante interactionDelay (75 ms).
+  await pause(100);
+}
+
+describe("autocompletado", () => {
+  it("aparece al escribir sin opción preseleccionada y Enter inserta salto", async () => {
+    const view = mount("");
+    await typeText(view, "SEL");
+    await openCompletion(view);
+    expect(selectedCompletion(view.state)).toBeNull();
+    key(view, "Enter");
+    expect(view.state.doc.toString()).toBe("SEL\n");
+  });
+
+  it("tras ArrowDown, Enter acepta la sugerencia", async () => {
+    const view = mount("");
+    await typeText(view, "SEL");
+    await openCompletion(view);
+    key(view, "ArrowDown");
+    const option = selectedCompletion(view.state);
+    expect(option).not.toBeNull();
+    key(view, "Enter");
+    expect(view.state.doc.toString()).toBe(option!.label);
+  });
+
+  it.each([
+    ["comentario de línea", "-- SEL"],
+    ["comentario de bloque", "/* SEL"],
+    ["cadena", "x := 'SEL"],
+  ])("no aparece en %s", async (_name, text) => {
+    const view = mount("");
+    await typeText(view, text);
+    act(() => { startCompletion(view); });
+    await pause(150);
+    expect(completionStatus(view.state)).toBeNull();
   });
 });

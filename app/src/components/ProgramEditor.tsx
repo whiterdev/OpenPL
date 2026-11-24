@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import {
-  EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type KeyBinding,
+  EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type Command, type KeyBinding,
 } from "@codemirror/view";
 import { foldGutter, HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches } from "@codemirror/search";
-import { history, indentLess, indentMore } from "@codemirror/commands";
+import {
+  deleteCharBackward, deleteCharForward, deleteGroupBackward, deleteGroupForward, deleteLineBoundaryBackward,
+  deleteLineBoundaryForward, deleteToLineEnd, history, indentLess, indentMore, insertNewlineAndIndent,
+  insertNewlineKeepIndent, splitLine, standardKeymap, transposeChars,
+} from "@codemirror/commands";
 import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
@@ -41,6 +45,17 @@ export const indentKeys: KeyBinding[] = [{
     return true;
   },
 }];
+
+const editingCommands = new Set<Command>([
+  insertNewlineAndIndent, deleteCharBackward, deleteCharForward, deleteGroupBackward, deleteGroupForward,
+  deleteLineBoundaryBackward, deleteLineBoundaryForward, deleteToLineEnd, splitLine, transposeChars,
+]);
+
+// lang-sql calcula sangría 0 en PL/SQL (tras "x := 1;" o un IF al final), así que Enter copia la de la línea.
+const enterKeepsIndent: KeyBinding[] = [{ key: "Enter", run: insertNewlineKeepIndent, shift: insertNewlineKeepIndent }];
+
+// Sin los comandos que editan, para que solo lectura no tome Enter, Backspace ni Supr.
+const navigationKeymap = standardKeymap.filter((binding) => !binding.run || !editingCommands.has(binding.run));
 
 export function positionAt(view: EditorView, row: number, column: number) {
   const line = view.state.doc.line(Math.max(1, Math.min(row, view.state.doc.lines)));
@@ -93,8 +108,10 @@ export function ProgramEditor(props: Props) {
     locked ? [] : autocompletion({
       override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
       icons: false,
+      selectOnOpen: false,
     }),
-    locked ? [] : keymap.of(indentKeys),
+    locked ? [] : keymap.of([...indentKeys, ...enterKeepsIndent]),
+    keymap.of(locked ? navigationKeymap : standardKeymap),
   ], []);
 
   useEffect(() => {
