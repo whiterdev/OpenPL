@@ -58,6 +58,7 @@ vi.mock("./api", () => ({
     sqlOpen: vi.fn(),
     sqlClose: vi.fn(),
     sqlExecute: vi.fn(),
+    sqlFetch: vi.fn(),
     sqlCommit: vi.fn(),
     sqlRollback: vi.fn(),
     sqlCancel: vi.fn(),
@@ -513,6 +514,84 @@ test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella"
   fireEvent.click(screen.getByRole("button", { name: /^Commit/ }));
   expect(await screen.findByText("Sin transacción")).toBeInTheDocument();
   expect(api.sqlCommit).toHaveBeenCalledWith("w1");
+});
+
+async function openSqlWithResults() {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w5");
+  vi.mocked(api.sqlExecute).mockReset().mockResolvedValue({
+    result: {
+      kind: "Query",
+      cursor: 7,
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      page: { rows: [["1"]], more: true },
+    },
+    elapsed_ms: 1,
+    output: [],
+    transaction: false,
+  });
+  vi.mocked(api.sqlFetch).mockReset().mockResolvedValue({ rows: [["2"]], more: false });
+  render(<App />);
+  await connectAs();
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "SELECT id\nFROM t" } }));
+  view.focus();
+  await act(async () => {
+    press(editor, { key: "F8" });
+  });
+  const grid = await screen.findByRole("grid", { name: "Resultados" });
+  return { editor, view, grid };
+}
+
+test("Ctrl Shift End en el editor selecciona hasta el final y no trae todas", async () => {
+  const { editor, view } = await openSqlWithResults();
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  act(() => {
+    press(editor, { key: "End", ctrlKey: true, shiftKey: true });
+  });
+  expect(view.state.selection.main.anchor).toBe(0);
+  expect(view.state.selection.main.head).toBe(view.state.doc.length);
+  await act(async () => {});
+  expect(api.sqlFetch).not.toHaveBeenCalled();
+});
+
+test.each(["grilla", "fuera del editor"])("Ctrl Shift End en %s trae todas", async (place) => {
+  const { grid } = await openSqlWithResults();
+  const target = place === "grilla" ? grid : document.body;
+  await act(async () => {
+    press(target, { key: "End", ctrlKey: true, shiftKey: true });
+  });
+  await waitFor(() => expect(api.sqlFetch).toHaveBeenCalledWith("w5", 7, expect.anything()));
+});
+
+test("desde el editor las teclas de la app siguen actuando y Tab queda en el editor", async () => {
+  const { editor, view } = await openSqlWithResults();
+  expect(api.sqlExecute).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    press(editor, { key: "Enter", ctrlKey: true });
+  });
+  await waitFor(() => expect(api.sqlExecute).toHaveBeenCalledTimes(2));
+
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  act(() => {
+    expect(press(editor, { key: "Tab" })).toBe(true);
+  });
+  expect(view.state.doc.toString()).not.toBe("SELECT id\nFROM t");
+  expect(api.sqlExecute).toHaveBeenCalledTimes(2);
+  act(() => {
+    expect(press(editor, { key: "z", ctrlKey: true })).toBe(true);
+  });
+  expect(view.state.doc.toString()).toBe("SELECT id\nFROM t");
+
+  act(() => {
+    expect(press(editor, { key: "f", ctrlKey: true })).toBe(true);
+  });
+  expect(document.querySelector(".editor-search-bar")).toBeInTheDocument();
 });
 
 test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", async () => {
