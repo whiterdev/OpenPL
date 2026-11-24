@@ -421,8 +421,9 @@ pub fn list_objects(
 }
 
 const EDITOR_OBJECT_SQL: &str = "WITH requested AS (
-    SELECT :1 AS requested_name, :2 AS explicit_owner,
-           COALESCE(:3, SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')) AS context_owner
+    SELECT CAST(:1 AS VARCHAR2(4000)) AS requested_name,
+           CAST(:2 AS VARCHAR2(4000)) AS explicit_owner,
+           COALESCE(CAST(:3 AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')) AS context_owner
     FROM dual
 ), candidates AS (
     SELECT r.requested_name AS name, COALESCE(r.explicit_owner, r.context_owner) AS owner,
@@ -537,7 +538,7 @@ const COMPLETE_OBJECTS_SQL: &str = "SELECT owner, object_name, object_type FROM 
                             'PROCEDURE', 'FUNCTION', 'TYPE', 'SYNONYM')
       AND ((:owner IS NOT NULL AND o.owner = :owner)
            OR (:owner IS NULL
-               AND (o.owner = COALESCE(:context, SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+               AND (o.owner = COALESCE(CAST(:context AS VARCHAR2(4000)), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
                     OR (o.owner = 'PUBLIC' AND o.object_type = 'SYNONYM'))))
     ORDER BY CASE WHEN o.owner = 'PUBLIC' THEN 1 ELSE 0 END, o.object_name,
              CASE o.object_type WHEN 'MATERIALIZED VIEW' THEN 0 ELSE 1 END
@@ -615,6 +616,18 @@ mod tests {
         assert!(COMPLETE_OBJECTS_SQL.contains("LIKE :prefix ESCAPE"));
         assert!(COMPLETE_OBJECTS_SQL.contains(&format!("ROWNUM <= {COMPLETION_LIMIT}")));
         assert!(!COMPLETE_OBJECTS_SQL.contains("PACKAGE BODY"));
+    }
+
+    // Un bind NULL dentro de COALESCE o UNION ALL da ORA-12704 si no se tipa como VARCHAR2.
+    #[test]
+    fn binds_de_texto_en_coalesce_y_union_van_como_varchar2() {
+        for bind in [":1", ":2", ":3"] {
+            assert!(
+                EDITOR_OBJECT_SQL.contains(&format!("CAST({bind} AS VARCHAR2(4000))")),
+                "falta CAST en {bind}"
+            );
+        }
+        assert!(COMPLETE_OBJECTS_SQL.contains("CAST(:context AS VARCHAR2(4000))"));
     }
 
     #[test]
