@@ -227,6 +227,8 @@ export default function App() {
         "cancel",
         "goToLine",
         "find",
+        "findNext",
+        "findPrev",
         "replace",
         "comment",
         "duplicateLine",
@@ -258,6 +260,8 @@ export default function App() {
             "unfoldBlock",
             "goToLine",
             "find",
+            "findNext",
+            "findPrev",
           ].includes(id)
         );
       })
@@ -779,7 +783,7 @@ export default function App() {
     },
     {
       label: "Buscar",
-      items: [run("find"), run("replace"), "sep", run("palette")],
+      items: [run("find"), run("replace"), run("findNext"), run("findPrev"), "sep", run("palette")],
     },
     {
       label: "Ver",

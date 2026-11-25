@@ -7,6 +7,7 @@ import { createRef, useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
+import { handleShortcut } from "../keymap";
 import type { ProgramPart } from "../types";
 import "./ProgramWindow.css";
 
@@ -701,5 +702,70 @@ describe("paquete grande", () => {
     await act(async () => ref.current?.compareProgram?.());
     const panel = screen.getByRole("region", { name: "Comparación de Spec" });
     expect(within(panel).getByRole("textbox", { name: "Borrador local" })).toHaveTextContent("-- local");
+  });
+});
+
+describe("búsqueda y reemplazo desde ProgramActions", () => {
+  const keyEvent = (key: string, mods: Partial<KeyboardEventInit> = {}) =>
+    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods });
+
+  test("Ctrl+R y Ctrl+H abren Reemplazar, y en solo lectura quedan deshabilitados", () => {
+    const ref = createRef<ProgramActions>();
+    const { rerender } = render(<ProgramWindow ref={ref} parts={[parts[0]]} readOnly={false} onDirty={vi.fn()} />);
+
+    act(() => {
+      handleShortcut(keyEvent("r", { ctrlKey: true }), ref.current!);
+    });
+    expect(screen.getByRole("textbox", { name: "Reemplazar con" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+
+    act(() => {
+      handleShortcut(keyEvent("h", { ctrlKey: true }), ref.current!);
+    });
+    expect(screen.getByRole("textbox", { name: "Reemplazar con" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+
+    rerender(<ProgramWindow ref={ref} parts={[parts[0]]} readOnly={true} onDirty={vi.fn()} />);
+    expect(ref.current?.replace).toBeUndefined();
+    expect(handleShortcut(keyEvent("r", { ctrlKey: true }), ref.current!)).toBe(false);
+    expect(handleShortcut(keyEvent("h", { ctrlKey: true }), ref.current!)).toBe(false);
+    expect(screen.queryByRole("textbox", { name: "Reemplazar con" })).toBeNull();
+  });
+
+  test("F3 y Shift+F3 funcionan también en solo lectura", () => {
+    const ref = createRef<ProgramActions>();
+    const twoMatches = {
+      ...parts[0],
+      source: "PACKAGE PKG_A AS\n  PROCEDURE hello;\n  PROCEDURE hello_two;\nEND;",
+    };
+    render(<ProgramWindow ref={ref} parts={[twoMatches]} readOnly={true} onDirty={vi.fn()} />);
+    expect(ref.current?.findNext).toBeTypeOf("function");
+    expect(ref.current?.findPrev).toBeTypeOf("function");
+
+    act(() => {
+      handleShortcut(keyEvent("F3"), ref.current!);
+    });
+    const search = screen.getByRole("textbox", { name: "Buscar" });
+    fireEvent.change(search, { target: { value: "PROCEDURE" } });
+    fireEvent.keyDown(search, { key: "Escape" });
+
+    const view = viewOf("Spec");
+    act(() => {
+      handleShortcut(keyEvent("F3"), ref.current!);
+    });
+    const firstFrom = view.state.selection.main.from;
+    expect(view.state.sliceDoc(firstFrom, view.state.selection.main.to)).toBe("PROCEDURE");
+
+    act(() => {
+      handleShortcut(keyEvent("F3"), ref.current!);
+    });
+    const secondFrom = view.state.selection.main.from;
+    expect(secondFrom).toBeGreaterThan(firstFrom);
+    expect(view.state.sliceDoc(secondFrom, view.state.selection.main.to)).toBe("PROCEDURE");
+
+    act(() => {
+      handleShortcut(keyEvent("F3", { shiftKey: true }), ref.current!);
+    });
+    expect(view.state.selection.main.from).toBe(firstFrom);
   });
 });

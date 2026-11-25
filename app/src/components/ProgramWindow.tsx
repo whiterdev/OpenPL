@@ -5,7 +5,7 @@ import { EditorSelection, Text } from "@codemirror/state";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { startCompletion } from "@codemirror/autocomplete";
 import { gotoLine } from "@codemirror/search";
-import { openFind, openReplace } from "./EditorSearch";
+import { findNextMatch, findPrevMatch, openFind, openReplace } from "./EditorSearch";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
@@ -490,6 +490,8 @@ export function ProgramWindow({
     complete: readOnly ? undefined : runInEditor(startCompletion),
     goToLine: runInEditor(gotoLine),
     find: runInEditor(openFind),
+    findNext: runInEditor(findNextMatch),
+    findPrev: runInEditor(findPrevMatch),
     replace: readOnly ? undefined : runInEditor(openReplace),
     ...(readOnly ? {} : {
       comment: runInEditor(toggleComment),
