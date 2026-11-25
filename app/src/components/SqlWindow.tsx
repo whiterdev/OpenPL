@@ -832,7 +832,8 @@ export function SqlWindow({
             activate={() => {}}
             onView={onView}
             onSelection={setCursor}
-            onChange={(value) => {
+            onChange={(doc) => {
+              const value = doc.toString();
               setSource(value);
               setTestResults([]);
               setMarkers([]);

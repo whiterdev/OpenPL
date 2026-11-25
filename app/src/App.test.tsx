@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeAll, expect, test, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
+import { Profiler } from "react";
 import App from "./App";
 import { api } from "./api";
 
@@ -66,6 +67,32 @@ vi.mock("./api", () => ({
     sqlApply: vi.fn(),
   },
 }));
+
+test("tipear en un programa ya modificado no vuelve a renderizar la app", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue({
+    name: "demo.pks",
+    source: "PACKAGE demo AS\nEND;",
+  });
+  let commits = 0;
+  render(
+    <Profiler id="app" onRender={() => { commits += 1; }}>
+      <App />
+    </Profiler>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n" }, userEvent: "input.type" }));
+  await screen.findByRole("button", { name: /demo\.pks \*/ });
+
+  commits = 0;
+  for (const insert of ["-", "-", " ", "x"]) {
+    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert }, userEvent: "input.type" }));
+  }
+  expect(commits).toBe(0);
+});
 
 test("permite editar y guardar un archivo local desde el flujo normal", async () => {
   windowEvents.close.mockResolvedValue(() => {});

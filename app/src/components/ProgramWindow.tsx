@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { GitDiff, Hammer, SplitVertical, Stop } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
-import { EditorSelection } from "@codemirror/state";
+import { EditorSelection, Text } from "@codemirror/state";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { startCompletion } from "@codemirror/autocomplete";
 import { gotoLine } from "@codemirror/search";
@@ -37,6 +37,9 @@ interface Baseline {
 }
 
 const NO_MARKERS: EditorMarker[] = [];
+/** Pausa tras la última tecla antes de recalcular la estructura y las marcas. */
+const SETTLE_MS = 150;
+const toDoc = (source: string) => Text.of(source.split(/\r\n?|\n/));
 
 const baselineOf = (entry: ProgramPart): Baseline => ({
   text: entry.source, source: entry.source, last_ddl_time: entry.last_ddl_time, diagnostics: entry.diagnostics,
@@ -126,11 +129,42 @@ export function ProgramWindow({
   }, [active, catalog?.sessionId, closeObjectMenu, closeDeclarationMenu, closeRoutineMenu]);
   const views = useRef<(EditorView | null)[]>([]);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
-  const saved = useRef(parts.map((part) => part.source));
+  // Último texto guardado o compilado; doc.eq comparte estructura con el editor y no recorre el documento.
+  const [saved] = useState(() => ({ current: parts.map((part) => toDoc(part.source)) }));
+  const dirty = useRef(false);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const names = useRef<(string | null)[]>([fileName ?? null]);
   const root = useRef<HTMLElement>(null);
   const shownParts = useRef(parts);
   const wasActive = useRef(active);
+
+  function currentTexts() {
+    return parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);
+  }
+
+  function isDirty() {
+    return parts.some((_, index) => {
+      const view = views.current[index];
+      return !!view && !!saved.current[index] && !view.state.doc.eq(saved.current[index]);
+    });
+  }
+
+  function reportDirty() {
+    const now = isDirty();
+    if (now === dirty.current) return;
+    dirty.current = now;
+    onDirty(now);
+  }
+
+  /** Texto actual de cada parte; adelanta la pausa si hay teclas sin procesar. */
+  function flush() {
+    if (!settle.current) return values;
+    clearTimeout(settle.current);
+    settle.current = null;
+    const texts = currentTexts();
+    setValues(texts);
+    return texts;
+  }
 
   // Una recarga reemplaza el texto con dispatch para no perder el historial; un borrador con cambios no se toca.
   useEffect(() => {
@@ -138,22 +172,28 @@ export function ProgramWindow({
     shownParts.current = parts;
     const reloaded = parts.map((entry, index) => {
       const view = views.current[index];
-      const text = view?.state.doc.toString() ?? entry.source;
       const previous = saved.current[index];
-      if (previous !== undefined && text !== previous) return false;
-      saved.current[index] = entry.source;
-      if (view && text !== entry.source) {
+      if (view && previous !== undefined && !view.state.doc.eq(previous)) return false;
+      saved.current[index] = toDoc(entry.source);
+      if (view && !view.state.doc.eq(saved.current[index])) {
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: entry.source } });
       }
+      if (view) saved.current[index] = view.state.doc;
       return true;
     });
     saved.current.length = parts.length;
-    const current = parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);
+    if (settle.current) clearTimeout(settle.current);
+    settle.current = null;
     setBaselines((all) => parts.map((entry, index) => reloaded[index] || !all[index] ? baselineOf(entry) : all[index]));
-    setValues(current);
+    setValues(currentTexts());
     setSelected((index) => index < parts.length ? index : 0);
-    onDirty(current.some((text, index) => text !== saved.current[index]));
+    dirty.current = isDirty();
+    onDirty(dirty.current);
   }, [parts, onDirty]);
+
+  useEffect(() => () => {
+    if (settle.current) clearTimeout(settle.current);
+  }, []);
 
   useEffect(() => {
     const activated = active && !wasActive.current;
@@ -169,10 +209,18 @@ export function ProgramWindow({
   const secondOutline = useMemo(() => values[1] ? programStructure(values[1]) : [], [values[1]]);
   const outline = selected === 0 ? firstOutline : secondOutline;
   const publicKeys = useMemo(() => new Set(firstOutline.map((entry) => entry.key)), [firstOutline]);
-  function canTest(entry: ProgramDeclaration, index: number) {
+  /** Estructura del texto actual, para comandos que llegan antes de terminar la pausa. */
+  function structureNow() {
+    const texts = flush();
+    if (texts === values) return { texts, first: firstOutline, second: secondOutline, keys: publicKeys };
+    const first = programStructure(texts[0]);
+    const second = texts[1] ? programStructure(texts[1]) : [];
+    return { texts, first, second, keys: new Set(first.map((entry) => entry.key)) };
+  }
+  function canTest(entry: ProgramDeclaration, index: number, keys = publicKeys) {
     const kind = parts[index].kind;
     return !!onTestRoutine && (entry.kind === "procedure" || entry.kind === "function") &&
-      (kind === "PACKAGE" || (kind === "PACKAGE BODY" && index > 0 && publicKeys.has(entry.key)) ||
+      (kind === "PACKAGE" || (kind === "PACKAGE BODY" && index > 0 && keys.has(entry.key)) ||
         kind === "PROCEDURE" || kind === "FUNCTION");
   }
   function openRoutineMenu(entry: ProgramDeclaration, x: number, y: number) {
@@ -181,9 +229,10 @@ export function ProgramWindow({
     setRoutineMenu({ name: entry.name, x, y });
   }
   function routineAt(index: number, position: number) {
-    return (index === 0 ? firstOutline : secondOutline).find((entry) =>
-      canTest(entry, index) && position >= entry.from &&
-      position < entry.from + entry.name.length + (values[index][entry.from] === '"' ? 2 : 0));
+    const { texts, first, second, keys } = structureNow();
+    return (index === 0 ? first : second).find((entry) =>
+      canTest(entry, index, keys) && position >= entry.from &&
+      position < entry.from + entry.name.length + (texts[index][entry.from] === '"' ? 2 : 0));
   }
   const part = parts[selected];
   const sessionId = catalog?.sessionId;
@@ -246,12 +295,13 @@ export function ProgramWindow({
       ?? (position > 0 ? editorReference(view.state, position - 1) : null);
     if (!reference || (reference.owner && compilationTarget && reference.owner !== compilationTarget.name)) return;
 
+    const { first, second } = structureNow();
     const bySignature = new Map<string, DeclarationTarget>();
-    for (const entry of outline) {
+    for (const entry of selected === 0 ? first : second) {
       if (entry.name === reference.name) bySignature.set(entry.key, { index: selected, entry });
     }
     if (canSplit && selected === 1) {
-      for (const entry of firstOutline) {
+      for (const entry of first) {
         if (entry.name === reference.name) bySignature.set(entry.key, { index: 0, entry });
       }
     }
@@ -268,15 +318,16 @@ export function ProgramWindow({
   async function save() {
     if (saving) return;
     const index = selected;
-    const source = values[index];
+    const doc = views.current[index]?.state.doc;
+    const source = doc?.toString() ?? values[index];
     setSaving(true);
     setMessage("");
     try {
       const name = await api.saveProgramFile(source, "sql", names.current[index] ?? null);
       if (name) {
         names.current[index] = name;
-        saved.current[index] = source;
-        onDirty(parts.some((other, i) => (views.current[i]?.state.doc.toString() ?? other.source) !== saved.current[i]));
+        saved.current[index] = doc ?? toDoc(source);
+        reportDirty();
         setMessage("Archivo guardado");
       }
     } catch (error) {
@@ -296,6 +347,7 @@ export function ProgramWindow({
 
   async function compare() {
     if (!readCurrentProgram || comparison?.result.state === "loading") return;
+    flush();
     const request = { index: selected, result: { state: "loading" } } as const;
     setComparison(request);
     closeObjectMenu();
@@ -315,7 +367,8 @@ export function ProgramWindow({
     if (!compile || !compilationTarget || compilation.current) return;
     const index = selected;
     const { kind } = parts[index];
-    const text = views.current[index]?.state.doc.toString() ?? values[index];
+    const doc = views.current[index]?.state.doc;
+    const text = doc?.toString() ?? values[index];
     let statement: string;
     try {
       statement = compileStatement(text, kind, compilationTarget);
@@ -349,8 +402,9 @@ export function ProgramWindow({
         // ORA-24344: Oracle guardó el objeto con errores; los detalles llegan con la fuente releída.
         if (describeError(error).code !== "ORA-24344") throw error;
       }
-      saved.current[index] = text;
-      onDirty(parts.some((_, i) => (views.current[i]?.state.doc.toString() ?? values[i]) !== saved.current[i]));
+      saved.current[index] = doc ?? toDoc(text);
+      reportDirty();
+      flush();
       const current = readCurrentProgram ? await latestPart() : null;
       const diagnostics = current?.diagnostics ?? [];
       const view = views.current[index];
@@ -564,14 +618,19 @@ export function ProgramWindow({
                   closeDeclarationMenu();
                   setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
                 } : undefined}
-                onView={(view) => { views.current[index] = view; }}
-                onChange={(value) => {
-                  closeDeclarationMenu();
-                  const updated = parts.map((other, i) => i === index
-                    ? value
-                    : views.current[i]?.state.doc.toString() ?? other.source);
-                  setValues(updated);
-                  onDirty(updated.some((current, i) => current !== saved.current[i]));
+                onView={(view) => {
+                  views.current[index] = view;
+                  const base = saved.current[index];
+                  if (view && base && view.state.doc.eq(base)) saved.current[index] = view.state.doc;
+                }}
+                onChange={() => {
+                  if (declarationMenu) closeDeclarationMenu();
+                  reportDirty();
+                  if (settle.current) clearTimeout(settle.current);
+                  settle.current = setTimeout(() => {
+                    settle.current = null;
+                    setValues(currentTexts());
+                  }, SETTLE_MS);
                 }}
               />
             </div>

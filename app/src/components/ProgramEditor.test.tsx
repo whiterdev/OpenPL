@@ -5,7 +5,7 @@ import { redo, undo } from "@codemirror/commands";
 import { sql } from "@codemirror/lang-sql";
 import { syntaxTree } from "@codemirror/language";
 import { oracleDialect } from "../editorReference";
-import { EditorSelection, EditorState, type Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState, Text, type Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { highlightTree, tags } from "@lezer/highlight";
 import { indentKeys, ProgramEditor, programSyntax } from "./ProgramEditor";
@@ -344,5 +344,63 @@ describe("menú contextual", () => {
     fireEvent.contextMenu(view.contentDOM, { clientX: 300, clientY: 200 });
     expect(menu()).toHaveStyle({ left: "40px", top: "62px" });
     expect(posAt).not.toHaveBeenCalled();
+  });
+});
+
+describe("paquete grande", () => {
+  const source = ["PACKAGE BODY PKG_VENTAS AS", ...Array.from({ length: 20000 }, (_, i) => `  -- línea ${i}`), "END;"].join("\n");
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  // Solo cuenta las conversiones hechas desde el editor; plegado y completado tienen su propio costo.
+  function conversionsFrom(file: string) {
+    const calls: string[] = [];
+    const original = Text.prototype.toString;
+    vi.spyOn(Text.prototype, "toString").mockImplementation(function (this: Text) {
+      const stack = new Error().stack ?? "";
+      if (stack.includes(file)) calls.push(stack);
+      return original.call(this);
+    });
+    return calls;
+  }
+
+  it("tipear entrega el documento sin convertirlo a texto", () => {
+    vi.useFakeTimers();
+    const changes: Text[] = [];
+    let view!: EditorView;
+    render(
+      <ProgramEditor
+        part={{ kind: "PACKAGE BODY", source, last_ddl_time: null,
+          diagnostics: [{ line: 2, column: 3, text: "PLS-00103: símbolo inesperado", warning: false }] }}
+        label="Body" readOnly={false} onView={(v) => { if (v) view = v; }} onChange={(doc) => changes.push(doc)}
+        activate={() => {}}
+      />,
+    );
+    act(() => { vi.advanceTimersByTime(1000); });
+    const conversions = conversionsFrom("ProgramEditor.tsx");
+    for (const insert of ["x", "y", "z"]) {
+      act(() => { view.dispatch({ changes: { from: 0, insert }, userEvent: "input.type" }); });
+    }
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(conversions).toHaveLength(0);
+    expect(changes).toHaveLength(3);
+    expect(changes[2]).toBe(view.state.doc);
+  });
+
+  it("los diagnósticos de la parte se muestran mientras el texto coincide con Oracle", async () => {
+    let view!: EditorView;
+    render(
+      <ProgramEditor
+        part={{ kind: "PACKAGE BODY", source, last_ddl_time: null,
+          diagnostics: [{ line: 2, column: 3, text: "PLS-00103: símbolo inesperado", warning: false }] }}
+        label="Body" readOnly={false} onView={(v) => { if (v) view = v; }} onChange={() => {}} activate={() => {}}
+      />,
+    );
+    await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).toBeInTheDocument());
+    act(() => { view.dispatch({ changes: { from: 0, insert: "x" }, userEvent: "input.type" }); });
+    await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).not.toBeInTheDocument());
   });
 });

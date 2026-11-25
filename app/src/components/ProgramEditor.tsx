@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Text } from "@codemirror/state";
 import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type Command, type KeyBinding,
 } from "@codemirror/view";
@@ -69,7 +69,8 @@ interface Props {
   label: string;
   readOnly: boolean;
   onView: (view: EditorView | null) => void;
-  onChange: (value: string) => void;
+  /** Recibe el documento sin convertir; el texto se pide solo cuando hace falta. */
+  onChange: (doc: Text) => void;
   activate: () => void;
   onObjectContext?: (reference: EditorReference, x: number, y: number, position: number) => void;
   /** Ítems de la ventana que se suman al menú contextual del editor. */
@@ -88,6 +89,13 @@ function markerDiagnostics(markers: EditorMarker[], length: number): Diagnostic[
   }));
 }
 
+// Compara con la fuente de Oracle sin convertir el documento; al coincidir guarda el doc para compartir su estructura.
+function sameSource(doc: Text, source: string, cache: { source: string; doc: Text } | null) {
+  const known = cache && cache.source === source ? cache : { source, doc: Text.of(source.split(/\r\n?|\n/)) };
+  const same = doc.eq(known.doc);
+  return { same, cache: same ? { source, doc } : known };
+}
+
 export interface EditorMarker {
   from: number;
   to: number;
@@ -98,6 +106,7 @@ export function ProgramEditor(props: Props) {
   const host = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
   const viewRef = useRef<EditorView | null>(null);
+  const sourceDoc = useRef<{ source: string; doc: Text } | null>(null);
   const editing = useRef(new Compartment()).current;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -175,14 +184,17 @@ export function ProgramEditor(props: Props) {
           },
         }),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) latest.current.onChange(update.state.doc.toString());
+          if (update.docChanged) latest.current.onChange(update.state.doc);
           if (update.selectionSet || update.docChanged) latest.current.onSelection?.(update.state.selection.main.head);
         }),
         linter((editor) => {
           const markers = latest.current.markers;
           if (markers) return markerDiagnostics(markers, editor.state.doc.length);
           const { part: current } = latest.current;
-          if (editor.state.doc.toString() !== current.source) return [];
+          if (!current.diagnostics.length) return [];
+          const check = sameSource(editor.state.doc, current.source, sourceDoc.current);
+          sourceDoc.current = check.cache;
+          if (!check.same) return [];
           return current.diagnostics.filter((item) => item.line > 0).map((item) => {
             const from = positionAt(editor, item.line, item.column);
             return {

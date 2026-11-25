@@ -406,6 +406,22 @@ export default function App() {
     );
   }
 
+  // Un aviso estable por pestaña; si el estado no cambia, la app no vuelve a renderizar.
+  const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>());
+  function dirtyHandler(id: string) {
+    let handler = dirtyHandlers.current.get(id);
+    if (!handler) {
+      handler = (dirty: boolean) =>
+        setPrograms((tabs) =>
+          tabs.some((tab) => tab.id === id && tab.dirty !== dirty)
+            ? tabs.map((tab) => (tab.id === id ? { ...tab, dirty } : tab))
+            : tabs,
+        );
+      dirtyHandlers.current.set(id, handler);
+    }
+    return handler;
+  }
+
   function addProgram(tab: ProgramTab) {
     setPrograms((tabs) =>
       tabs.some((item) => item.id === tab.id) ? tabs : [...tabs, tab],
@@ -1032,7 +1048,7 @@ export default function App() {
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
-                        onDirty={(dirty) => updateProgram(tab.id, { dirty })}
+                        onDirty={dirtyHandler(tab.id)}
                         onTransaction={(open) =>
                           setPrograms((all) =>
                             all.map((item) =>
@@ -1102,7 +1118,7 @@ export default function App() {
                             : undefined
                         }
                         ref={tab.id === programId ? programActions : undefined}
-                        onDirty={(dirty) => updateProgram(tab.id, { dirty })}
+                        onDirty={dirtyHandler(tab.id)}
                       />
                     </Suspense>
                   ) : tab.error ? (

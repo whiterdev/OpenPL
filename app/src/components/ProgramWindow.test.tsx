@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
+import { Text } from "@codemirror/state";
 import { foldedRanges } from "@codemirror/language";
 import { undo } from "@codemirror/commands";
 import { createRef, useState } from "react";
-import { expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { ProgramWindow, type ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
 import type { ProgramPart } from "../types";
@@ -617,4 +618,88 @@ test("recargar no pisa un borrador con cambios locales", () => {
   rerender(<ProgramWindow parts={[{ ...parts[0], source: "PACKAGE PKG_A AS\nEND; -- remoto" }, parts[1]]}
     readOnly={false} onDirty={vi.fn()} />);
   expect(viewOf("Spec").state.doc.toString()).toBe(parts[0].source + "\n-- borrador");
+});
+
+describe("paquete grande", () => {
+  const big = {
+    kind: "PACKAGE",
+    source: ["PACKAGE PKG_A AS", ...Array.from({ length: 20000 }, (_, i) => `  -- línea ${i}`), "END;"].join("\n"),
+    diagnostics: [],
+    last_ddl_time: null,
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  // Solo cuenta las conversiones de la ventana y su editor; plegado y completado tienen su propio costo.
+  function conversionsFrom(...files: string[]) {
+    const calls: string[] = [];
+    const original = Text.prototype.toString;
+    vi.spyOn(Text.prototype, "toString").mockImplementation(function (this: Text) {
+      const stack = new Error().stack ?? "";
+      if (files.some((file) => stack.includes(file))) calls.push(stack);
+      return original.call(this);
+    });
+    return calls;
+  }
+
+  function type(view: EditorView, from: number, pieces: string[]) {
+    for (const insert of pieces) {
+      act(() => { view.dispatch({ changes: { from, insert }, userEvent: "input.type" }); });
+      from += insert.length;
+    }
+  }
+
+  test("tipear no convierte el documento y la estructura se recalcula tras una pausa", () => {
+    vi.useFakeTimers();
+    render(<ProgramWindow parts={[big, parts[1]]} readOnly={false} onDirty={vi.fn()} />);
+    const view = viewOf("Spec");
+    const outline = screen.getByRole("complementary", { name: "Estructura" });
+    const conversions = conversionsFrom("ProgramWindow.tsx", "ProgramEditor.tsx");
+    type(view, view.state.doc.line(1).to + 1, ["  PROCEDURE ", "bye", ";", "\n"]);
+    expect(conversions).toHaveLength(0);
+    act(() => { vi.advanceTimersByTime(149); });
+    expect(within(outline).queryByRole("button", { name: /Procedimiento bye/ })).not.toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(within(outline).getByRole("button", { name: /Procedimiento bye/ })).toBeInTheDocument();
+  });
+
+  test("onDirty solo avisa cuando pasa de limpio a sucio y vuelta", () => {
+    const onDirty = vi.fn();
+    render(<ProgramWindow parts={[big, parts[1]]} readOnly={false} onDirty={onDirty} />);
+    const view = viewOf("Spec");
+    const end = view.state.doc.length;
+    type(view, end, ["x", "y", "z"]);
+    act(() => { view.dispatch({ changes: { from: end, to: end + 3 } }); });
+    expect(onDirty.mock.calls).toEqual([[true], [false]]);
+  });
+
+  test("F8 apenas se tipea compila el texto nuevo sin esperar la pausa", async () => {
+    vi.useFakeTimers();
+    const ref = createRef<ProgramActions>();
+    const compile = compiler();
+    render(<ProgramWindow ref={ref} parts={[compiled]} readOnly={false} onDirty={vi.fn()}
+      readCurrentProgram={vi.fn().mockResolvedValue([compiled])} compilationTarget={hrTarget} compile={compile} />);
+    const view = viewOf("Spec");
+    type(view, view.state.doc.length, ["\n", "-- nuevo"]);
+    await act(async () => ref.current?.execute?.());
+    expect(compile.run).toHaveBeenCalledWith(`${compiledStatement}\n-- nuevo`);
+  });
+
+  test("Guardar y Comparar apenas se tipea usan el texto nuevo", async () => {
+    vi.useFakeTimers();
+    const ref = createRef<ProgramActions>();
+    const save = vi.spyOn(api, "saveProgramFile").mockResolvedValue("pkg_a.sql");
+    render(<ProgramWindow ref={ref} parts={[parts[0]]} readOnly={false} onDirty={vi.fn()}
+      readCurrentProgram={vi.fn().mockResolvedValue([parts[0]])} />);
+    const view = viewOf("Spec");
+    type(view, view.state.doc.length, ["\n", "-- local"]);
+    await act(async () => ref.current?.save?.());
+    expect(save).toHaveBeenCalledWith(`${parts[0].source}\n-- local`, "sql", null);
+    await act(async () => ref.current?.compareProgram?.());
+    const panel = screen.getByRole("region", { name: "Comparación de Spec" });
+    expect(within(panel).getByRole("textbox", { name: "Borrador local" })).toHaveTextContent("-- local");
+  });
 });
