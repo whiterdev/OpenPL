@@ -1,11 +1,13 @@
 import { EditorState } from "@codemirror/state";
 import { sql } from "@codemirror/lang-sql";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import {
   CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { oracleDialect } from "./editorReference";
+import { tokenize } from "./programStructure";
 import type { CompletionObject } from "./types";
 import {
   catalogCompletion,
@@ -14,8 +16,14 @@ import {
   sqlContext,
   statementAliases,
   statementTables,
+  STATEMENT_SPAN_LINES,
   type CompletionCatalog,
 } from "./programCompletion";
+
+vi.mock("./programStructure", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./programStructure")>();
+  return { ...actual, tokenize: vi.fn(actual.tokenize) };
+});
 
 const at = (source: string) => {
   const position = source.indexOf("|");
@@ -366,5 +374,113 @@ describe("keywordCompletion", () => {
     expect(
       await keywordCompletion(new CompletionContext(state, position, false)),
     ).not.toBeNull();
+  });
+});
+
+describe("en un paquete grande", () => {
+  const preface = "  v_total := pkg_ventas.total(1); -- línea\n".repeat(20_000);
+  const longest = () =>
+    Math.max(0, ...vi.mocked(tokenize).mock.calls.map(([text]) => text.length));
+  // Como en el editor, donde el árbol de sintaxis ya cubre el cursor.
+  const parsed = (source: string) => {
+    const { state, position } = at(source);
+    ensureSyntaxTree(state, state.doc.length, 60_000);
+    const ready = state.update({}).state;
+    expect(syntaxTree(ready).length).toBe(ready.doc.length);
+    return { state: ready, position };
+  };
+  async function run(state: EditorState, position: number) {
+    const current = catalog();
+    const result = (await catalogCompletion(() => current)(
+      new CompletionContext(state, position, false),
+    )) as CompletionResult | null;
+    return { result, current };
+  }
+  // El árbol de `at` no pasa del inicio, así que da el cálculo sobre todo el documento.
+  async function compare(source: string) {
+    const fast = parsed(source);
+    vi.mocked(tokenize).mockClear();
+    const windowed = await run(fast.state, fast.position);
+    const tokenized = longest();
+    const slow = at(source);
+    const full = await run(slow.state, slow.position);
+    expect(windowed.result).toEqual(full.result);
+    expect(vi.mocked(windowed.current.columns).mock.calls).toEqual(
+      vi.mocked(full.current.columns).mock.calls,
+    );
+    expect(vi.mocked(windowed.current.objects).mock.calls).toEqual(
+      vi.mocked(full.current.objects).mock.calls,
+    );
+    return { windowed, tokenized };
+  }
+
+  beforeEach(() => {
+    vi.mocked(tokenize).mockClear();
+  });
+
+  test("resuelve el alias de la sentencia actual tokenizando solo su tramo", async () => {
+    const { windowed, tokenized } = await compare(
+      `${preface}select v.| from hr.ventas v where v.id = 1;\n${preface}`,
+    );
+    expect(windowed.current.columns).toHaveBeenCalledWith("HR", "VENTAS");
+    expect(tokenized).toBeGreaterThan(0);
+    expect(tokenized).toBeLessThan(2_000);
+  });
+
+  test("un ';' dentro de un comentario previo no corta la sentencia", async () => {
+    const { windowed, tokenized } = await compare(
+      `${preface}/* ; select * from otra o */ select o.| from hr.ventas v;\n${preface}`,
+    );
+    expect(windowed.current.columns).toHaveBeenCalledWith(null, "O");
+    expect(tokenized).toBeLessThan(2_000);
+  });
+
+  test("con una sola tabla ofrece sus columnas tokenizando solo su tramo", async () => {
+    const { windowed, tokenized } = await compare(
+      `${preface}SELECT i| FROM clientes;\n${preface}`,
+    );
+    expect(windowed.current.columns).toHaveBeenCalledWith(null, "CLIENTES");
+    expect(tokenized).toBeLessThan(2_000);
+  });
+
+  test("el contexto tras JOIN se decide tokenizando solo el tramo", () => {
+    const { state, position } = parsed(
+      `${preface}select * from clientes c join ped|\n${preface}`,
+    );
+    vi.mocked(tokenize).mockClear();
+    expect(sqlContext(state, position)).toBe("source");
+    expect(longest()).toBeLessThan(2_000);
+  });
+
+  test("dentro de un comentario de bloque que empezó antes del tramo no consulta", async () => {
+    const body = "select * from t;\n".repeat(2 * STATEMENT_SPAN_LINES);
+    const { state, position } = parsed(
+      `${preface}/* desactivado\n${body}select * from ven|\n*/\n`,
+    );
+    vi.mocked(tokenize).mockClear();
+    const { result, current } = await run(state, position);
+    expect(result).toBeNull();
+    expect(current.objects).not.toHaveBeenCalled();
+    expect(sqlContext(state, position)).toBeNull();
+    expect(longest()).toBe(0);
+  });
+
+  test("dentro de una cadena no consulta", async () => {
+    const { state, position } = parsed(
+      `${preface}select 'from ven|' from dual;\n${preface}`,
+    );
+    vi.mocked(tokenize).mockClear();
+    const { result, current } = await run(state, position);
+    expect(result).toBeNull();
+    expect(current.objects).not.toHaveBeenCalled();
+    expect(longest()).toBe(0);
+  });
+
+  test("si la sentencia supera el tope cae al cálculo completo", async () => {
+    const columns = "  , v.id\n".repeat(STATEMENT_SPAN_LINES + 10);
+    const source = `${preface}select v.|\n${columns}from hr.ventas v;\n`;
+    const { windowed, tokenized } = await compare(source);
+    expect(windowed.current.columns).toHaveBeenCalledWith("HR", "VENTAS");
+    expect(tokenized).toBe(source.length - 1);
   });
 });

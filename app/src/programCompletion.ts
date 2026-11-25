@@ -149,6 +149,45 @@ function statementBounds(tokens: Token[], position: number) {
   return { start, end };
 }
 
+/** Líneas que se recorren a cada lado del cursor buscando los ';' que cierran la sentencia. */
+export const STATEMENT_SPAN_LINES = 500;
+
+/**
+ * Texto con la sentencia de `position`, cortado en los ';' de código que marca el árbol de
+ * sintaxis, y su desplazamiento en el documento. Hasta el final de la sentencia con `whole`; si
+ * no, hasta el final de la línea del cursor. Si el árbol no cubre el tramo o la sentencia pasa el
+ * tope de líneas, devuelve el documento entero.
+ */
+function statementSource(
+  state: EditorState,
+  position: number,
+  whole: boolean,
+): { text: string; offset: number } {
+  const { doc } = state;
+  const tree = syntaxTree(state);
+  const line = doc.lineAt(position);
+  const first = doc.line(Math.max(1, line.number - STATEMENT_SPAN_LINES));
+  const last = doc.line(Math.min(doc.lines, line.number + STATEMENT_SPAN_LINES));
+  const limit = whole ? last.to : line.to;
+  let from = first.number === 1 ? 0 : -1;
+  let to = -1;
+  if (tree.length >= limit)
+    tree.iterate({
+      from: first.from,
+      to: limit,
+      enter(node) {
+        if (to >= 0) return false;
+        if (node.name !== ";") return;
+        if (node.from < position) from = node.to;
+        else to = node.to;
+      },
+    });
+  if (to < 0 && (!whole || last.number === doc.lines)) to = limit;
+  if (from < 0 || to < 0 || tree.length < limit)
+    return { text: doc.toString(), offset: 0 };
+  return { text: state.sliceDoc(from, to), offset: from };
+}
+
 /**
  * Tablas de la sentencia. Con `strict`, INTO solo introduce una tabla tras INSERT o MERGE (en
  * SELECT ... INTO son variables) y FOR UPDATE no se lee como tabla.
@@ -241,14 +280,16 @@ export function sqlContext(
 ): SqlContext | null {
   const node = syntaxTree(state).resolveInner(position, -1);
   if (/Comment|String/.test(node.name)) return null;
-  const tokens = tokenize(state.doc.toString());
-  const { start } = statementBounds(tokens, position);
+  const { text, offset } = statementSource(state, position, false);
+  const tokens = tokenize(text);
+  const local = position - offset;
+  const { start } = statementBounds(tokens, local);
   let end = start;
-  while (end < tokens.length && tokens[end].from < position) end += 1;
+  while (end < tokens.length && tokens[end].from < local) end += 1;
   const last = tokens[end - 1];
   if (
     end > start &&
-    last.from + last.text.length >= position &&
+    last.from + last.text.length >= local &&
     typing.test(last.text)
   )
     end -= 1;
@@ -343,12 +384,18 @@ export function catalogCompletion(
 
     let options: Completion[];
     let complete = true;
+    const statement = () => {
+      const { text, offset } = statementSource(
+        context.state,
+        context.pos,
+        true,
+      );
+      return { text, position: context.pos - offset };
+    };
     try {
       if (target.qualifier) {
-        const table = statementAliases(
-          context.state.doc.toString(),
-          context.pos,
-        ).get(target.qualifier);
+        const { text, position } = statement();
+        const table = statementAliases(text, position).get(target.qualifier);
         const [columns, objects] = await Promise.all([
           catalog.columns(
             table ? table.owner : null,
@@ -362,10 +409,11 @@ export function catalogCompletion(
         options = [...columns.map(columnOption), ...objects.map(objectOption)];
       } else {
         const place = sqlContext(context.state, context.pos);
-        const tables =
-          place === "select"
-            ? statementTables(context.state.doc.toString(), context.pos)
-            : [];
+        let tables: StatementTable[] = [];
+        if (place === "select") {
+          const { text, position } = statement();
+          tables = statementTables(text, position);
+        }
         const only = tables.length === 1 && !tables[0].alias ? tables[0] : null;
         const [columns, objects] = await Promise.all([
           only
