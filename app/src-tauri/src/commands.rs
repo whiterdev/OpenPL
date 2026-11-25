@@ -89,7 +89,16 @@ pub async fn connect_impl<C: Connector>(
     params: ConnectParams,
 ) -> Result<ConnectResult, CoreError> {
     let client = (st.client_version)()?;
-    let id = st.sessions.open(params).await?;
+    let id = tokio::time::timeout(std::time::Duration::from_secs(20), st.sessions.open(params))
+        .await
+        .map_err(|_| {
+            CoreError::Db(DbError {
+                code: None,
+                kind: openpl_oracle::ErrorKind::Timeout,
+                message: "No se alcanzó el servidor.".to_string(),
+                offset: None,
+            })
+        })??;
     let session = st.sessions.get(id)?;
     let server = session.run(|c| Ok(C::server_version(c))).await?;
     let compat = openpl_oracle::check_compat(client, server);
@@ -685,5 +694,79 @@ mod tests {
             client_info_impl(&st).lib_dir.as_deref(),
             Some("C:\\oracle\\ic19")
         );
+    }
+
+    struct SlowConnector {
+        gate: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        dropped: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    struct SlowConn(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Drop for SlowConn {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl Connector for SlowConnector {
+        type Conn = SlowConn;
+        fn connect(&self, _p: &ConnectParams) -> Result<SlowConn, DbError> {
+            let (lock, cv) = &*self.gate;
+            let mut ready = lock.lock().unwrap();
+            while !*ready {
+                ready = cv.wait(ready).unwrap();
+            }
+            Ok(SlowConn(self.dropped.clone()))
+        }
+        fn server_version(_conn: &SlowConn) -> DbVersion {
+            DbVersion::new(19, 0, 0)
+        }
+    }
+
+    #[tokio::test]
+    async fn connect_tardio_da_timeout_y_cierra_sesion_si_llega() {
+        tokio::time::pause();
+        let dir = tempfile::tempdir().unwrap();
+        let gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let dropped = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let st = Arc::new(AppState {
+            profiles: ProfileStore::new(dir.path().join("connections.json")),
+            secrets: Arc::new(MemoryStore::default()),
+            sessions: SessionManager::new(Arc::new(SlowConnector {
+                gate: gate.clone(),
+                dropped: dropped.clone(),
+            })),
+            client_version: Box::new(|| Ok(DbVersion::new(19, 21, 0))),
+            settings_path: dir.path().join("settings.json"),
+        });
+
+        let st_task = st.clone();
+        let mut task = tokio::spawn(async move { connect_impl(&st_task, params()).await });
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+
+        tokio::time::advance(std::time::Duration::from_secs(21)).await;
+        let err = (&mut task).await.unwrap().unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::Db(ref d)
+                if d.kind == ErrorKind::Timeout && d.message == "No se alcanzó el servidor."
+        ));
+        assert!(st.sessions.is_empty());
+
+        {
+            let (lock, cv) = &*gate;
+            *lock.lock().unwrap() = true;
+            cv.notify_all();
+        }
+        for _ in 0..50 {
+            if dropped.load(std::sync::atomic::Ordering::SeqCst) == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(dropped.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(st.sessions.is_empty());
     }
 }

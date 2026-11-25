@@ -24,7 +24,9 @@ export type ErrorKind =
   | "ClientMissing"
   | "InvalidCredentials"
   | "PasswordExpired"
+  | "AccountLocked"
   | "UnknownService"
+  | "Timeout"
   | "ConnectionLost"
   | "Other";
 

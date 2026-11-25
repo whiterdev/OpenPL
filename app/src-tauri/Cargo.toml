@@ -16,7 +16,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { workspace = true }
 serde_json = "1"
-tokio = { version = "1", features = ["sync", "rt"] }
+tokio = { version = "1", features = ["sync", "rt", "time"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
 openpl-oracle = { path = "../../crates/openpl-oracle" }
@@ -28,4 +28,4 @@ tauri-plugin-window-state = "2"
 
 [dev-dependencies]
 openpl-core = { path = "../../crates/openpl-core", features = ["testing"] }
-tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time", "test-util"] }
