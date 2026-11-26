@@ -15,7 +15,8 @@
   y resuelve el cursor entre sentencias. El brief 16 interpreta los comandos SQL*Plus y
   traduce `EXEC` a PL/SQL. El brief 17 calcula la posición de errores Oracle.
   El brief 18 cuenta las variables de todo el script y respeta las comillas alternativas.
-  TypeScript y 514 tests en verde. Sigue el brief 19.
+  El brief 19 clasifica sentencias de lectura y escritura. TypeScript y 545 tests en verde.
+  Sigue el brief 20.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
