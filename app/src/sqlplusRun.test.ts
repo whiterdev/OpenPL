@@ -48,3 +48,34 @@ test("VARIABLE declara binds y PRINT muestra valores", async () => {
   expect(ctx.print).toHaveBeenLastCalledWith("ID = 7");
   expect(timingLine(120)).toBe("Transcurrido: 00:00:00.12");
 });
+
+test("@@ resuelve junto al script principal y limita la profundidad", async () => {
+  const { state, ctx } = setup();
+  const readFile = vi.fn(async () => ({ name: "otro.sql", path: "C:\\docs\\otro.sql", source: "select 1 from dual" }));
+  const runScript = vi.fn();
+  const script = { path: "C:\\docs\\demo.sql", depth: 1 };
+  const command = parseSqlplus("@@otro")!;
+  await runSqlplus(command, state, { ...ctx, readFile, runScript, script });
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("C:\\docs\\otro");
+  expect(runScript).toHaveBeenCalledWith("select 1 from dual", { path: "C:\\docs\\otro.sql", depth: 2 });
+  expect(ctx.print).toHaveBeenCalledWith("@ C:\\docs\\otro.sql");
+  await runSqlplus(command, state, { ...ctx, readFile, runScript, script: { ...script, depth: 5 } });
+  expect(readFile).toHaveBeenCalledOnce();
+  expect(ctx.print).toHaveBeenLastCalledWith(expect.stringContaining("5"), "error");
+});
+
+test("SPOOL recoge la salida, cambia de archivo y guarda al terminar", async () => {
+  const { state, ctx } = setup();
+  const writeFile = vi.fn(async (path: string, _text: string) => path + ".lst");
+  const run = (text: string) => runSqlplus(parseSqlplus(text)!, state, { ...ctx, writeFile });
+  await run("spool uno");
+  await run("define x = 1");
+  await run("define");
+  await run("spool dos");
+  expect(writeFile).toHaveBeenCalledExactlyOnceWith("uno", "X = 1\n");
+  await run("spool");
+  expect(ctx.print).toHaveBeenLastCalledWith("SPOOL: dos");
+  await run("spool off");
+  expect(writeFile).toHaveBeenLastCalledWith("dos", "SPOOL: dos\n");
+  expect(ctx.print).toHaveBeenLastCalledWith("Salida guardada en dos.lst");
+});

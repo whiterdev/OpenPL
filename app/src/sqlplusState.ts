@@ -13,6 +13,7 @@ export interface SqlplusState {
   defines: Map<string, string>;
   vars: Map<string, { type: BindKind; value: string | null }>;
   lastCreated?: string;
+  spool?: { path: string; lines: string[] };
 }
 
 export function createSqlplusState(): SqlplusState {

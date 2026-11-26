@@ -1,8 +1,13 @@
 import { applySubstitutions, findVariables } from "./sqlBinds";
 import type { SqlplusCommand } from "./sqlplus";
 import type { SqlplusState } from "./sqlplusState";
-import type { BindKind, BindValue, ExecOutcome } from "./types";
+import { describeError, type BindKind, type BindValue, type ExecOutcome } from "./types";
 import { createdObject, describeObject, printQuery, showErrorsQuery, showUserQuery } from "./sqlplusQueries";
+
+interface ScriptLocation {
+  path: string;
+  depth: number;
+}
 
 export interface SqlplusCtx {
   print(line: string, kind?: "info" | "output" | "error"): void;
@@ -10,7 +15,8 @@ export interface SqlplusCtx {
   query(sql: string, binds?: BindValue[]): Promise<ExecOutcome>;
   readFile?(path: string): Promise<{ name: string; path: string; source: string }>;
   writeFile?(path: string, text: string): Promise<string>;
-  runScript?(source: string, path: string): Promise<void>;
+  runScript?(source: string, script: ScriptLocation): Promise<void>;
+  script?: ScriptLocation;
 }
 
 export async function substituteDefines(
@@ -79,8 +85,72 @@ function variableType(input: string): BindKind | null {
   return null;
 }
 
-export async function runSqlplus(cmd: SqlplusCommand, state: SqlplusState, ctx: SqlplusCtx): Promise<void> {
+export function printSqlplus(
+  state: SqlplusState,
+  print: SqlplusCtx["print"],
+  line: string,
+  kind?: Parameters<SqlplusCtx["print"]>[1],
+) {
+  state.spool?.lines.push(line);
+  if (kind === undefined) print(line);
+  else print(line, kind);
+}
+
+async function startScript(cmd: Extract<SqlplusCommand, { kind: "start" }>, ctx: SqlplusCtx) {
+  const depth = (ctx.script?.depth ?? 0) + 1;
+  if (depth > 5) {
+    ctx.print("Máximo de 5 scripts anidados", "error");
+    return;
+  }
+  if (!cmd.path || !ctx.readFile || !ctx.runScript) {
+    ctx.print("Script no disponible", "error");
+    return;
+  }
+  const parent = ctx.script?.path ?? "";
+  const base = parent.slice(0, Math.max(parent.lastIndexOf("/"), parent.lastIndexOf("\\")) + 1);
+  const path = cmd.nested && !/^(?:[a-z]:|[\\/])/i.test(cmd.path) ? base + cmd.path : cmd.path;
+  try {
+    const file = await ctx.readFile(path);
+    ctx.print("@ " + file.path);
+    await ctx.runScript(file.source, { path: file.path, depth });
+  } catch (error) {
+    ctx.print("Error de script: " + describeError(error).message, "error");
+  }
+}
+
+async function spool(target: string, state: SqlplusState, ctx: SqlplusCtx) {
+  if (!target) {
+    ctx.print(state.spool ? "SPOOL: " + state.spool.path : "SPOOL desactivado");
+    return;
+  }
+  if (!ctx.writeFile) {
+    ctx.print("SPOOL no disponible", "error");
+    return;
+  }
+  if (state.spool) {
+    const { path, lines } = state.spool;
+    try {
+      const resolved = await ctx.writeFile(path, lines.length ? lines.join("\n") + "\n" : "");
+      delete state.spool;
+      ctx.print("Salida guardada en " + resolved);
+    } catch (error) {
+      ctx.print("Error de SPOOL: " + describeError(error).message, "error");
+      return;
+    }
+  }
+  if (target !== "off") state.spool = { path: target, lines: [] };
+}
+
+export async function runSqlplus(cmd: SqlplusCommand, state: SqlplusState, context: SqlplusCtx): Promise<void> {
+  const ctx = { ...context, print: (line: string, kind?: Parameters<SqlplusCtx["print"]>[1]) =>
+    printSqlplus(state, context.print, line, kind) };
   switch (cmd.kind) {
+    case "start":
+      await startScript(cmd, ctx);
+      return;
+    case "spool":
+      await spool(cmd.target, state, ctx);
+      return;
     case "show": {
       const option = cmd.what.trim().toUpperCase();
       if (option === "USER") {
