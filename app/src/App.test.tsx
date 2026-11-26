@@ -49,6 +49,25 @@ test("soltar un archivo abre su contenido y soltar texto conserva el comportamie
   expect(await screen.findByText("Tipo no admitido: demo.zip")).toBeVisible();
 });
 
+test("Ctrl Tab cambia de pestaña y Ctrl Shift RePág la reordena", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.drop(window, { dataTransfer: { types: ["Files"], files: [
+    { name: "uno.sql", text: async () => "select 1 from dual" },
+    { name: "dos.sql", text: async () => "select 2 from dual" },
+  ] } });
+  const two = await screen.findByRole("button", { name: "dos.sql" });
+  const one = screen.getByRole("button", { name: "uno.sql" });
+  expect(two).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+  expect(one).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "Tab", ctrlKey: true, shiftKey: true });
+  expect(two).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "PageUp", ctrlKey: true, shiftKey: true });
+  expect(screen.getAllByRole("button", { name: /^(dos|uno)\.sql$/ })).toEqual([two, one]);
+});
+
 const windowEvents = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({

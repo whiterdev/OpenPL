@@ -31,6 +31,7 @@ import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
 import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { pendingDiscardMessage } from "./gridEdits";
+import { neighbor, reorder } from "./tabs";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { CommandPalette } from "./components/CommandPalette";
@@ -71,6 +72,7 @@ const SqlWindow = lazy(() =>
 );
 
 const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const TAB_DRAG_TYPE = "application/x-openpl-tab";
 const sqlTabActions = [
   "execute",
   "executeScript",
@@ -201,6 +203,7 @@ export default function App() {
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
   const program = programs.find((tab) => tab.id === programId);
+  const tabIndex = programs.findIndex((tab) => tab.id === programId);
   const programObject = program?.object;
   const editorSessionExists = (tab: ProgramTab) =>
     connections.some((connection) => connection.sessionId === tab.connection?.sessionId);
@@ -296,6 +299,11 @@ export default function App() {
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
+    nextTab: programs.length > 1 ? () => setProgramId(neighbor(programs, tabIndex, 1)?.id ?? null) : undefined,
+    prevTab: programs.length > 1 ? () => setProgramId(neighbor(programs, tabIndex, -1)?.id ?? null) : undefined,
+    moveTabLeft: tabIndex > 0 ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex - 1)) : undefined,
+    moveTabRight: tabIndex >= 0 && tabIndex < programs.length - 1
+      ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex + 1)) : undefined,
     connect: () => setShowLogin(true),
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
     refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
@@ -921,6 +929,11 @@ export default function App() {
         run("unfoldBlock"),
         run("compareProgram"),
         "sep",
+        run("nextTab"),
+        run("prevTab"),
+        run("moveTabLeft"),
+        run("moveTabRight"),
+        "sep",
         run("customizeUi"),
       ],
     },
@@ -1132,6 +1145,22 @@ export default function App() {
                   <div
                     key={tab.id}
                     className={`program-tab ${tab.connection?.environment ? `env-${tab.connection.environment}` : ""}`}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id);
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(event) => {
+                      if (event.dataTransfer.types.includes(TAB_DRAG_TYPE)) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+                      event.preventDefault();
+                      const from = event.dataTransfer.getData(TAB_DRAG_TYPE);
+                      setPrograms((current) => reorder(current,
+                        current.findIndex((item) => item.id === from),
+                        current.findIndex((item) => item.id === tab.id)));
+                    }}
                   >
                     <button
                       aria-pressed={tab.id === programId}
