@@ -11,6 +11,7 @@ pub mod secrets;
 pub mod session;
 pub mod sql;
 mod value_fmt;
+pub mod workspace;
 
 pub use error::CoreError;
 pub use profiles::{ConnectionProfile, Environment, ProfileStore};
