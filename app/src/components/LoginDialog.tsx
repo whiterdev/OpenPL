@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CheckCircle, MagnifyingGlass, Plug, Plus, WarningCircle } from "@phosphor-icons/react";
 import { api } from "../api";
 import { describeError, type ActiveConnection, type ConnectionProfile, type Environment, type Role } from "../types";
+import { useFocusTrap } from "../useFocusTrap";
 import "./LoginDialog.css";
 
 const ROLES: { id: Role; label: string }[] = [
@@ -196,9 +197,18 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
     }
   }
 
+  const cancelDialog = () => {
+    if (!onCancel && !busy) return;
+    connectionAttempt.current = null;
+    setBusy(false);
+    onCancel?.();
+  };
+
+  const trap = useFocusTrap(onCancel || busy ? cancelDialog : undefined);
+
   return (
     <div className="login-backdrop">
-      <div role="dialog" aria-modal="true" aria-labelledby="login-title" className="login">
+      <div role="dialog" aria-modal="true" aria-labelledby="login-title" className="login" {...trap}>
         <aside className="login-profiles" aria-label="Perfiles guardados">
           <label className="login-search">
             <MagnifyingGlass size={14} aria-hidden />

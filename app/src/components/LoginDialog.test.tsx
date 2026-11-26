@@ -215,4 +215,27 @@ describe("LoginDialog", () => {
     expect(screen.getByRole("radio", { name: "Alias TNS" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Alias")).toHaveValue("PRODALIAS");
   });
+
+  test("Tab cicla dentro del diálogo y Escape cierra devolviendo el foco", async () => {
+    const opener = document.body.appendChild(document.createElement("button"));
+    opener.textContent = "Abrir login";
+    opener.focus();
+    const onCancel = vi.fn();
+    const { unmount } = render(<LoginDialog onConnected={vi.fn()} onCancel={onCancel} />);
+    await screen.findByRole("button", { name: /HR en DEV/ });
+
+    const search = screen.getByRole("textbox", { name: "Buscar perfil" });
+    const connect = screen.getByRole("button", { name: "Conectar" });
+    search.focus();
+    await userEvent.tab({ shift: true });
+    expect(connect).toHaveFocus();
+    await userEvent.tab();
+    expect(search).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
 });

@@ -27,26 +27,47 @@ interface Props {
 export function ContextMenu({ x, y, label, items, onClose, width = 260, className = "" }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const hasAction = items.some((item) => item !== "sep" && item.run);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const previousFocusRef = useRef<Element | null | undefined>(undefined);
+  if (previousFocusRef.current === undefined) {
+    previousFocusRef.current = typeof document !== "undefined" ? document.activeElement : null;
+  }
+
+  const restoreFocus = () => {
+    const prev = previousFocusRef.current;
+    if (prev instanceof HTMLElement && prev.isConnected) prev.focus();
+  };
 
   useEffect(() => {
-    const previousFocus = document.activeElement;
     const out = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (ref.current?.contains(e.target as Node)) return;
+      const focusInside = ref.current?.contains(document.activeElement);
+      const hitsControl =
+        e.target instanceof Element &&
+        !!e.target.closest('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]');
+      onCloseRef.current();
+      if (focusInside && !hitsControl) restoreFocus();
     };
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-        if (ref.current?.contains(document.activeElement) && previousFocus instanceof HTMLElement) previousFocus.focus();
-      }
+      if (e.key !== "Escape") return;
+      const focusInside = ref.current?.contains(document.activeElement);
+      onCloseRef.current();
+      if (focusInside) restoreFocus();
     };
     document.addEventListener("mousedown", out);
     document.addEventListener("keydown", esc);
-    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     return () => {
       document.removeEventListener("mousedown", out);
       document.removeEventListener("keydown", esc);
     };
-  }, [onClose, hasAction]);
+  }, []);
+
+  useEffect(() => {
+    if (!ref.current?.contains(document.activeElement)) {
+      ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    }
+  }, [hasAction]);
 
   // Mantener el menú dentro de la ventana.
   const fittedWidth = Math.min(width, window.innerWidth);
@@ -61,6 +82,12 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
     <div ref={ref} role="menu" aria-label={label} className={`menu ${className}`}
       style={{ position: "fixed", left, top, minWidth: fittedWidth, width: "max-content", maxWidth: "100vw", maxHeight: `calc(100vh - ${top}px)`, overflow: "auto" }}
       onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          onCloseRef.current();
+          restoreFocus();
+          return;
+        }
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
         const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
         if (!buttons.length) return;
