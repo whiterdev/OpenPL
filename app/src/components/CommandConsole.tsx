@@ -41,6 +41,12 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
     if (active) commandInput.current?.focus({ preventScroll: true });
   }, [active]);
   const [prompt, setPrompt] = useState("");
+  useLayoutEffect(() => {
+    const input = commandInput.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }, [prompt]);
   const [commandLines, setCommandLines] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
   const [choice, setChoice] = useState<number>();
@@ -69,10 +75,8 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
 
   return (
     <section className="sql-window" aria-label="Ventana de comando">
-      <div className="sql-terminal" ref={terminal}>
-        <div role="log" aria-label="Transcripción">
-          {lines.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
-        </div>
+      <div className="sql-terminal" ref={terminal} role="log" aria-label="Transcripción">
+        {lines.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
         {commandLines.map((line, index) => <div key={index} className="sql-line sql-line-info">
           {index === 0 ? "SQL>" : index + 1} {line}
         </div>)}
@@ -121,7 +125,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
           await onRun(source, io);
         }}>
           <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
-          <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
+          <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="mono" aria-label="Comando SQL"
             role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
             aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}

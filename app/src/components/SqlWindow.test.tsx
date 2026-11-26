@@ -88,9 +88,18 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   const transcript = screen.getByRole("log");
   const row = within(transcript).getByText(/^7\s+Ana$/);
   expect(row.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(transcript.parentElement).toContainElement(prompt);
+  expect(transcript).toContainElement(prompt);
   fireEvent.keyDown(prompt, { key: "ArrowUp" });
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
+});
+
+test("el prompt crece con el contenido dentro de la transcripción", () => {
+  setup("", { command: true });
+  const prompt = screen.getByLabelText("Comando SQL");
+  expect(prompt).not.toHaveClass("fld");
+  Object.defineProperty(prompt, "scrollHeight", { value: 36 });
+  fireEvent.change(prompt, { target: { value: "SELECT\n1 FROM DUAL" } });
+  expect(prompt).toHaveStyle({ height: "36px" });
 });
 
 test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
