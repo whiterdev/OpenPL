@@ -53,7 +53,8 @@
   El brief 47 pregunta antes de descartar ediciones de grilla al ejecutar o cerrar.
   El brief 48 añade copia con encabezados y como INSERT y exporta CSV con BOM.
   El brief 49 conecta el pegado de celdas y F3/Shift+F3. TypeScript y 599 tests
-  en verde. Sigue el brief 50.
+  en verde. El brief 50 separa los atajos del editor de la consola. F5 sigue
+  bloqueado como tecla del webview. TypeScript y 600 tests en verde. Sigue el brief 51.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

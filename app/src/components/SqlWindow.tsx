@@ -752,21 +752,21 @@ export function SqlWindow({
   useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
   const actions: ProgramActions = {
     hasPending: () => count > 0,
-    explainPlan: () => void explain(),
-    execute: () => void run(targets().list),
-    executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
-    exportData: grid && !editSession && !running && !fetching && !applying ? () => void exportRows(grid) : undefined,
-    fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
+    explainPlan: command ? undefined : () => void explain(),
+    execute: command ? undefined : () => void run(targets().list),
+    executeScript: command ? undefined : () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    exportData: !command && grid && !editSession && !busy ? () => void exportRows(grid) : undefined,
+    fetchAllRows: !command && grid?.more && !busy ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
     cancel: running || fetching ? () => {
       if (fetchingRef.current) stopFetchRef.current = true;
       void api.sqlCancel(sessionId);
     } : undefined,
-    editData: grid ? () => void toggleEdit() : undefined,
+    editData: !command && grid ? () => void toggleEdit() : undefined,
     applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
     commit: busy ? undefined : () => void transaction("commit"),
     rollback: busy ? undefined : () => void transaction("rollback"),
-    save: () => void save(),
+    save: command ? undefined : () => void save(),
     complete: inEditor(startCompletion),
     foldBlock: inEditor(foldCode),
     unfoldBlock: inEditor(unfoldCode),

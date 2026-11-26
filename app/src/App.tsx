@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -209,7 +210,7 @@ export default function App() {
   const sqlActions = program?.sql
     ? Object.fromEntries(
         sqlTabActions
-          .filter((id) => !program.sql!.command || ["exportData", "cancel", "commit", "rollback"].includes(id))
+          .filter((id) => !program.sql!.command || ["cancel", "commit", "rollback"].includes(id))
           .filter(
             (id) =>
               (id !== "commit" && id !== "rollback") ||
@@ -302,7 +303,7 @@ export default function App() {
     palette: () => setShowPalette(true),
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.

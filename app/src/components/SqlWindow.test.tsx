@@ -94,6 +94,13 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
   expect(prompt).toHaveValue("SELECT 7 FROM DUAL;");
 });
 
+test("la consola no expone acciones del editor SQL", () => {
+  const { ref } = setup("", { command: true });
+  for (const action of ["execute", "executeScript", "explainPlan", "save", "editData", "exportData"] as const) {
+    expect(ref.current?.[action], action).toBeUndefined();
+  }
+});
+
 test("el prompt crece con el contenido dentro de la transcripción", () => {
   setup("", { command: true });
   const prompt = screen.getByLabelText("Comando SQL");
