@@ -306,9 +306,12 @@ export function ResultGrid(props: Props) {
                         onSelect(next);
                         scroll.current?.focus();
                       }}
-                      onMouseEnter={() => {
+                      onMouseEnter={(event) => {
                         if (drag.current) onSelect(selectRange(drag.current, { row, col }, "extend"));
+                        const cell = event.currentTarget;
+                        if (!isEditing && value !== null && cell.scrollWidth > cell.clientWidth) cell.title = value;
                       }}
+                      onMouseLeave={(event) => event.currentTarget.removeAttribute("title")}
                       onClick={(event) => {
                         if (event.detail === 0 && !editing && !fetching) onSelect({ row, col });
                       }}
@@ -346,7 +349,11 @@ export function ResultGrid(props: Props) {
         </div>
         {!!totalValues.length && <div role="row" aria-label="Totales de columna" aria-rowindex={rows.length + 2}
           className="sql-row sql-totals" style={{ gridTemplateColumns: template }}>
-          <div role="rowheader" className="sql-cell sql-rownum">Total</div>
+          <div role="rowheader" className="sql-cell sql-rownum"
+            aria-label={props.more ? "Total parcial" : undefined}
+            title={props.more ? `Parcial, ${sourceRows.length} filas cargadas` : undefined}>
+            {props.more ? "Parcial" : "Total"}
+          </div>
           {columns.map((column, index) => {
             const operation = totals?.[index];
             const label = operation ? `${column.name} · ${TOTAL_LABELS[operation]}` : column.name;

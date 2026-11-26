@@ -90,6 +90,28 @@ test("el menu muestra totales numericos de la seleccion", () => {
   expect(footer).not.toBeInTheDocument();
 });
 
+test("el tooltip de celda solo aparece cuando el contenido desborda", () => {
+  render(grid());
+  const cell = screen.getByRole("gridcell", { name: "NOMBRE Ana" });
+  Object.defineProperty(cell, "clientWidth", { value: 24 });
+  Object.defineProperty(cell, "scrollWidth", { value: 25, configurable: true });
+  fireEvent.mouseEnter(cell);
+  expect(cell).toHaveAttribute("title", "Ana");
+  Object.defineProperty(cell, "scrollWidth", { value: 24 });
+  fireEvent.mouseLeave(cell);
+  fireEvent.mouseEnter(cell);
+  expect(cell).not.toHaveAttribute("title");
+});
+
+test("un total indica cuando quedan filas por traer", () => {
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={null} selected={null} onSelect={vi.fn()} onEdit={vi.fn()} fetching={false} fetchError={null} more />);
+  fireEvent.contextMenu(screen.getByRole("columnheader", { name: "ID" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Suma" }));
+  expect(screen.getByRole("rowheader", { name: "Total parcial" })).toHaveAttribute("title", "Parcial, 2 filas cargadas");
+});
+
 test("Escape cancela la edición y pegar TSV recorta al rango disponible", () => {
   const onEdit = vi.fn();
   const onPasteCells = vi.fn();
