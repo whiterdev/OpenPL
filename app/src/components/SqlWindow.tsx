@@ -25,7 +25,7 @@ import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type 
 import { copyGridCells } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
-import { applySubstitutions, findVariables } from "../sqlBinds";
+import { applySubstitutions, assignedBinds, findVariables } from "../sqlBinds";
 import type { CompletionCatalog } from "../programCompletion";
 import { ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import type { ProgramActions } from "./ProgramWindow";
@@ -263,6 +263,7 @@ export function SqlWindow({
     setRunning(true);
     let startedSql = false;
     let lastQuery = false;
+    const promptedBinds = new Map<string, string>();
     const ask: SqlplusCtx["ask"] = io?.ask ?? (async (name) => {
       const value = values[name.toUpperCase()]?.value;
       if (value) return value;
@@ -305,6 +306,31 @@ export function SqlWindow({
         }
         const sql = await substituteDefines(statement.text, sqlplus, ask);
         if (sql === null) return false;
+        const vars = findVariables(sql).filter((variable) => variable.kind === "bind");
+        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.key === output.name)) ?? [];
+        const assigned = statement.kind === "plsql" ? assignedBinds(sql) : new Set<string>();
+        const binds: BindValue[] = [];
+        for (const variable of vars) {
+          if (outputs.some((output) => output.name === variable.key)) continue;
+          const declared = sqlplus.vars.get(variable.key);
+          if (declared && assigned.has(variable.key)) {
+            outputs.push({ name: variable.key, label: variable.name, kind: declared.type });
+            continue;
+          }
+          const entry = values[variable.key];
+          if (declared || entry) {
+            binds.push({ name: variable.name, value: declared ? declared.value : entry.value || null, kind: declared?.type ?? entry.kind });
+            continue;
+          }
+          if (!io) {
+            setAlert(`Falta el valor de :${variable.name}`);
+            return false;
+          }
+          const value = promptedBinds.get(variable.key) ?? await io.ask(`:${variable.name}`);
+          if (value === null) return false;
+          promptedBinds.set(variable.key, value);
+          binds.push({ name: variable.name, value: value || null, kind: "Text" });
+        }
         if (!startedSql) {
           startedSql = true;
           setEditSession(null);
@@ -312,11 +338,6 @@ export function SqlWindow({
           setConflicts(null);
           setSelected(null);
         }
-        const vars = findVariables(statement.text);
-        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
-        const binds = vars.filter((v) => v.kind === "bind" && !outputs.some((output) => output.name === v.key)).map((v) => ({
-          name: v.name, value: values[v.key]?.value || null, kind: values[v.key]?.kind ?? ("Text" as BindKind),
-        }));
         let outcome: ExecOutcome;
         try {
           setFetchError(null);
@@ -356,7 +377,13 @@ export function SqlWindow({
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
         if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
         if (createdObject(sql)) sqlplus.lastCreated = sql;
-        if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
+        if (outcome.test_outputs?.length) {
+          for (const output of outcome.test_outputs) {
+            const variable = sqlplus.vars.get(output.name.toUpperCase());
+            if (variable && output.kind === "Scalar") variable.value = output.value;
+          }
+          if (testSettings) setTestResults(outcome.test_outputs);
+        }
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;

@@ -24,6 +24,21 @@ function scan(source: string, visit: Visit) {
 
 const NAME = /^[\p{L}_][\p{L}\p{N}_$#]*/u;
 
+export function assignedBinds(sql: string): Set<string> {
+  const names = new Set<string>();
+  const assignment = /:([\p{L}_][\p{L}\p{N}_$#]*)\s*:=/uy;
+  scan(sql, (index, char) => {
+    if (char !== ":") return;
+    assignment.lastIndex = index;
+    const match = assignment.exec(sql);
+    if (match) {
+      names.add(match[1].toUpperCase());
+      return assignment.lastIndex;
+    }
+  });
+  return names;
+}
+
 export function findVariables(script: string): SqlVariable[] {
   const found = new Map<string, SqlVariable>();
   function count(kind: SqlVariable["kind"], name: string) {

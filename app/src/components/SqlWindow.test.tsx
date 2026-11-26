@@ -436,6 +436,21 @@ test("el script ejecuta SQL*Plus, junta DBMS_OUTPUT y avisa la transacción", as
   expect(history.getAllByRole("button")[0]).toHaveTextContent("begin dbms_output.put_line('hola'); end;");
 });
 
+test("VARIABLE recibe un bind de salida, PRINT lo muestra y SELECT lo reutiliza", async () => {
+  const execute = vi.spyOn(api, "sqlExecute")
+    .mockResolvedValueOnce({
+      result: { kind: "Done", message: "Bloque ejecutado" },
+      output: [], elapsed_ms: 1, transaction: false,
+      test_outputs: [{ name: "ID", kind: "Scalar", value: "7" }],
+    })
+    .mockResolvedValueOnce(query([]));
+  const { ref } = setup("var id number\nexec :id := 7\nprint id\nselect :id from dual;");
+  await act(async () => ref.current!.executeScript!());
+  expect(execute).toHaveBeenNthCalledWith(1, "w1", "BEGIN :id := 7; END;", [], undefined, [{ name: "ID", label: "id", kind: "Number" }]);
+  expect(execute).toHaveBeenNthCalledWith(2, "w1", "select :id from dual", [{ name: "id", kind: "Number", value: "7" }]);
+  expect(screen.getByText("ID = 7")).toBeInTheDocument();
+});
+
 test("pide y envía los valores de las variables", async () => {
   const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
   const { ref } = setup("select * from &tabla where ciudad = :ciudad and alta > :desde");

@@ -47,7 +47,9 @@
   y deshabilita Commit y Rollback durante operaciones SQL. TypeScript y 594 tests
   en verde. El brief 43 lista las variables del script y sustituye valores al pedir
   el plan de ejecución. El brief 44 integra SQL*Plus en la ventana SQL y la consola.
-  TypeScript y 595 tests en verde. Sigue el brief 45.
+  El brief 45 conecta VARIABLE y PRINT a los binds. Los OUT se reconocen en
+  asignaciones directas; los IN OUT y los OUT reales requieren verificación aparte.
+  TypeScript y 596 tests en verde. Sigue el brief 46.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
