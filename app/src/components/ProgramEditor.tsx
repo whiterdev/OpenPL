@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useRef } from "react";
-import { Compartment, EditorState } from "@codemirror/state";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Compartment, EditorState, Text } from "@codemirror/state";
 import {
-  EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type KeyBinding,
+  EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, type Command, type KeyBinding,
 } from "@codemirror/view";
 import { foldGutter, HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches } from "@codemirror/search";
-import { history, indentLess, indentMore } from "@codemirror/commands";
-import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import {
+  deleteCharBackward, deleteCharForward, deleteGroupBackward, deleteGroupForward, deleteLineBoundaryBackward,
+  deleteLineBoundaryForward, deleteToLineEnd, history, indentLess, indentMore, insertNewlineAndIndent,
+  insertNewlineKeepIndent, splitLine, standardKeymap, transposeChars,
+} from "@codemirror/commands";
+import { forceLinting, linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { autocompletion } from "@codemirror/autocomplete";
 import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
@@ -15,6 +19,8 @@ import { editorReference, oracleDialect, type EditorReference } from "../editorR
 import { programFolding } from "../programFolding";
 import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
 import { editorSearch } from "./EditorSearch";
+import { editorMenuItems } from "../editorMenu";
+import { ContextMenu, type ContextItem } from "./ContextMenu";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -42,6 +48,17 @@ export const indentKeys: KeyBinding[] = [{
   },
 }];
 
+const editingCommands = new Set<Command>([
+  insertNewlineAndIndent, deleteCharBackward, deleteCharForward, deleteGroupBackward, deleteGroupForward,
+  deleteLineBoundaryBackward, deleteLineBoundaryForward, deleteToLineEnd, splitLine, transposeChars,
+]);
+
+// lang-sql calcula sangría 0 en PL/SQL (tras "x := 1;" o un IF al final), así que Enter copia la de la línea.
+const enterKeepsIndent: KeyBinding[] = [{ key: "Enter", run: insertNewlineKeepIndent, shift: insertNewlineKeepIndent }];
+
+// Sin los comandos que editan, para que solo lectura no tome Enter, Backspace ni Supr.
+const navigationKeymap = standardKeymap.filter((binding) => !binding.run || !editingCommands.has(binding.run));
+
 export function positionAt(view: EditorView, row: number, column: number) {
   const line = view.state.doc.line(Math.max(1, Math.min(row, view.state.doc.lines)));
   return Math.min(line.to, line.from + Math.max(0, column - 1));
@@ -52,9 +69,12 @@ interface Props {
   label: string;
   readOnly: boolean;
   onView: (view: EditorView | null) => void;
-  onChange: (value: string) => void;
+  /** Recibe el documento sin convertir; el texto se pide solo cuando hace falta. */
+  onChange: (doc: Text) => void;
   activate: () => void;
   onObjectContext?: (reference: EditorReference, x: number, y: number, position: number) => void;
+  /** Ítems de la ventana que se suman al menú contextual del editor. */
+  menuExtra?: (ContextItem | "sep")[];
   /** Catálogo de la sesión del programa; se lee en cada consulta. */
   completion?: CompletionCatalog | null;
   onSelection?: (head: number) => void;
@@ -69,6 +89,13 @@ function markerDiagnostics(markers: EditorMarker[], length: number): Diagnostic[
   }));
 }
 
+// Compara con la fuente de Oracle sin convertir el documento; al coincidir guarda el doc para compartir su estructura.
+function sameSource(doc: Text, source: string, cache: { source: string; doc: Text } | null) {
+  const known = cache && cache.source === source ? cache : { source, doc: Text.of(source.split(/\r\n?|\n/)) };
+  const same = doc.eq(known.doc);
+  return { same, cache: same ? { source, doc } : known };
+}
+
 export interface EditorMarker {
   from: number;
   to: number;
@@ -79,7 +106,10 @@ export function ProgramEditor(props: Props) {
   const host = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
   const viewRef = useRef<EditorView | null>(null);
+  const sourceDoc = useRef<{ source: string; doc: Text } | null>(null);
   const editing = useRef(new Compartment()).current;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   latest.current = props;
   const { part, label, readOnly } = props;
 
@@ -93,14 +123,17 @@ export function ProgramEditor(props: Props) {
     locked ? [] : autocompletion({
       override: [keywordCompletion, catalogCompletion(() => latest.current.completion ?? null)],
       icons: false,
+      selectOnOpen: false,
     }),
-    locked ? [] : keymap.of(indentKeys),
+    locked ? [] : keymap.of([...indentKeys, ...enterKeepsIndent]),
+    keymap.of(locked ? navigationKeymap : standardKeymap),
   ], []);
 
   useEffect(() => {
+    let keyboardMenu = false;
     const view = new EditorView({
       parent: host.current!,
-      doc: part.source,
+      doc: latest.current.part.source,
       extensions: [
         lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
         highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
@@ -118,28 +151,51 @@ export function ProgramEditor(props: Props) {
         EditorState.allowMultipleSelections.of(true),
         EditorView.domEventHandlers({
           focus: () => { latest.current.activate(); },
+          keydown: (event) => {
+            keyboardMenu = event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
+            return false;
+          },
+          mousedown: () => { keyboardMenu = false; return false; },
           contextmenu: (event, editor) => {
-            const open = latest.current.onObjectContext;
-            if (!open || !(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
-            const point = editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY });
-            if (!point) return false;
-            const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
-            const reference = editorReference(editor.state, position);
-            if (!reference) return false;
+            if (!(event.target instanceof Node) || !editor.contentDOM.contains(event.target)) return false;
+            // La tecla Menú y Shift+F10 llegan como contextmenu; Chromium a veces manda coordenadas 0.
+            const keyboard = keyboardMenu || (event.clientX === 0 && event.clientY === 0);
+            keyboardMenu = false;
+            event.preventDefault();
             latest.current.activate();
-            open(reference, event.clientX, event.clientY, position);
+            const open = latest.current.onObjectContext;
+            const point = open && !keyboard ? editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY }) : null;
+            if (open && point) {
+              const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
+              const reference = editorReference(editor.state, position);
+              if (reference) {
+                setMenu(null);
+                open(reference, event.clientX, event.clientY, position);
+                return true;
+              }
+            }
+            if (keyboard) {
+              const coords = editor.coordsAtPos(editor.state.selection.main.head) ?? editor.contentDOM.getBoundingClientRect();
+              setMenu({ x: coords.left, y: coords.bottom });
+            } else {
+              setMenu({ x: event.clientX, y: event.clientY });
+            }
             return true;
           },
         }),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) latest.current.onChange(update.state.doc.toString());
+          if (update.docChanged) latest.current.onChange(update.state.doc);
           if (update.selectionSet || update.docChanged) latest.current.onSelection?.(update.state.selection.main.head);
         }),
         linter((editor) => {
           const markers = latest.current.markers;
           if (markers) return markerDiagnostics(markers, editor.state.doc.length);
-          if (editor.state.doc.toString() !== part.source) return [];
-          return part.diagnostics.filter((item) => item.line > 0).map((item) => {
+          const { part: current } = latest.current;
+          if (!current.diagnostics.length) return [];
+          const check = sameSource(editor.state.doc, current.source, sourceDoc.current);
+          sourceDoc.current = check.cache;
+          if (!check.same) return [];
+          return current.diagnostics.filter((item) => item.line > 0).map((item) => {
             const from = positionAt(editor, item.line, item.column);
             return {
               from, to: Math.min(from + 1, editor.state.doc.length),
@@ -156,7 +212,13 @@ export function ProgramEditor(props: Props) {
       latest.current.onView(null);
       view.destroy();
     };
-  }, [part, label, editing, editingExtensions]);
+  }, [label, editing, editingExtensions]);
+
+  // El texto nuevo lo aplica ProgramWindow con dispatch; aquí solo se recalculan los diagnósticos de la parte.
+  useEffect(() => {
+    const editor = viewRef.current;
+    if (editor && !latest.current.markers) forceLinting(editor);
+  }, [part]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -172,5 +234,14 @@ export function ProgramEditor(props: Props) {
     }
   }, [props.markers]);
 
-  return <div className="program-editor" ref={host} />;
+  const view = viewRef.current;
+  return (
+    <>
+      <div className="program-editor" ref={host} />
+      {menu && view && (
+        <ContextMenu x={menu.x} y={menu.y} label="Editor" onClose={closeMenu}
+          items={editorMenuItems(view, { readOnly, extra: props.menuExtra })} />
+      )}
+    </>
+  );
 }

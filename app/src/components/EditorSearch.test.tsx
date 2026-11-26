@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
-import { editorSearch, openFind, openReplace } from "./EditorSearch";
+import { getSearchQuery, searchPanelOpen, SearchQuery } from "@codemirror/search";
+import { editorSearch, findNextMatch, findPrevMatch, openFind, openReplace } from "./EditorSearch";
 import { createRef } from "react";
 import { ProgramEditor } from "./ProgramEditor";
 import { SqlWindow } from "./SqlWindow";
@@ -150,6 +150,86 @@ describe("barra de búsqueda", () => {
     open(view);
     fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
     expect(searchPanelOpen(view.state)).toBe(false);
+  });
+
+  it("el contador no recalcula al mover el cursor ni al escribir el reemplazo", () => {
+    const getCursorSpy = vi.spyOn(SearchQuery.prototype, "getCursor");
+    try {
+      const view = editor("uno dos uno tres uno");
+      open(view, openReplace);
+      expect(getCursorSpy).toHaveBeenCalledTimes(0);
+
+      fireEvent.change(searchField(), { target: { value: "uno" } });
+      expect(counter()).toHaveTextContent("3 resultados");
+      expect(getCursorSpy).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 0, head: 3 } });
+      });
+      expect(counter()).toHaveTextContent("1 de 3");
+      expect(getCursorSpy).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 8, head: 11 } });
+      });
+      expect(counter()).toHaveTextContent("2 de 3");
+      expect(getCursorSpy).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 4 } });
+      });
+      expect(counter()).toHaveTextContent("3 resultados");
+      expect(getCursorSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Reemplazar con" }), { target: { value: "dos" } });
+      expect(getCursorSpy).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "Mayúsculas y minúsculas" }));
+      expect(getCursorSpy).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        view.dispatch({ changes: { from: view.state.doc.length, insert: " uno" } });
+      });
+      expect(counter()).toHaveTextContent("4 resultados");
+      expect(getCursorSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      getCursorSpy.mockRestore();
+    }
+  });
+
+  it("findNextMatch y findPrevMatch abren la barra si no hay consulta", () => {
+    const first = editor("select 1 from dual");
+    act(() => { findNextMatch(first); });
+    expect(searchPanelOpen(first.state)).toBe(true);
+    expect(document.activeElement).toBe(searchField());
+
+    act(() => { first.destroy(); });
+    document.body.innerHTML = "";
+
+    const second = editor("select 1 from dual");
+    act(() => { findPrevMatch(second); });
+    expect(searchPanelOpen(second.state)).toBe(true);
+    expect(document.activeElement).toBe(searchField());
+  });
+
+  it("findNextMatch y findPrevMatch recorren coincidencias con la barra cerrada", () => {
+    const view = editor("uno dos uno tres");
+    open(view);
+    fireEvent.change(searchField(), { target: { value: "uno" } });
+    fireEvent.keyDown(searchField(), { key: "Escape" });
+    expect(searchPanelOpen(view.state)).toBe(false);
+
+    act(() => { findNextMatch(view); });
+    expect(view.state.selection.main.from).toBe(0);
+    expect(view.state.selection.main.to).toBe(3);
+
+    act(() => { findNextMatch(view); });
+    expect(view.state.selection.main.from).toBe(8);
+    expect(view.state.selection.main.to).toBe(11);
+
+    act(() => { findPrevMatch(view); });
+    expect(view.state.selection.main.from).toBe(0);
+    expect(view.state.selection.main.to).toBe(3);
   });
 });
 

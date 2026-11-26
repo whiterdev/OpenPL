@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
   CaretDown,
@@ -267,13 +267,56 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
   }, [expanded, cache, errors, scope, query]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const unavailable = useId();
+  const [focusedRow, setFocusedRow] = useState<string | null>(null);
+  const requestedFocus = useRef<string | null>(null);
+  const rowKey = (row: Row) => row.kind === "obj"
+    ? JSON.stringify([row.i, row.o.owner, row.o.name, row.o.object_type])
+    : `${row.kind}-${row.i}`;
+  const tabIndex = Math.max(0, rows.findIndex((row) => rowKey(row) === focusedRow));
+  const tabKey = rowKey(rows[tabIndex]);
   const virtual = rows.length > VIRTUALIZE_ABOVE;
   const virtualizer = useVirtualizer({
     count: virtual ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW,
     overscan: 12,
+    rangeExtractor: (range) => {
+      const visible = defaultRangeExtractor(range);
+      return visible.includes(tabIndex) ? visible : [...visible, tabIndex].sort((a, b) => a - b);
+    },
   });
+
+  function navigate(event: KeyboardEvent, row: Row) {
+    const index = rows.indexOf(row);
+    const type = TYPES[row.i].t;
+    let target: Row | undefined;
+    const previous = (from: number) => {
+      for (let i = from; i >= 0; i--) {
+        if (rows[i].kind !== "note") return rows[i];
+      }
+    };
+    switch (event.key) {
+      case "ArrowDown": target = rows.slice(index + 1).find((item) => item.kind !== "note"); break;
+      case "ArrowUp": target = previous(index - 1); break;
+      case "Home": target = rows[0]; break;
+      case "End": target = previous(rows.length - 1); break;
+      case "ArrowRight":
+        if (row.kind === "type" && !expanded.has(type)) toggle(type);
+        else if (row.kind === "type" && rows[index + 1]?.kind === "obj") target = rows[index + 1];
+        break;
+      case "ArrowLeft":
+        if (row.kind === "type" && expanded.has(type)) toggle(type);
+        else if (row.kind === "obj") target = rows.find((item) => item.i === row.i && item.kind === "type");
+        break;
+      default: return;
+    }
+    event.preventDefault();
+    if (!target || target === row) return;
+    requestedFocus.current = rowKey(target);
+    setFocusedRow(requestedFocus.current);
+    if (virtual) virtualizer.scrollToIndex(rows.indexOf(target), { align: "auto" });
+  }
 
   function toggle(t: ObjectType) {
     setExpanded((s) => {
@@ -297,6 +340,17 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
 
   function renderRow(r: Row, style?: React.CSSProperties) {
     const ty = TYPES[r.i];
+    const key = rowKey(r);
+    const focusProps = {
+      tabIndex: key === tabKey ? 0 : -1,
+      onFocus: () => setFocusedRow(key),
+      ref: (node: HTMLDivElement | null) => {
+        if (node && requestedFocus.current === key) {
+          requestedFocus.current = null;
+          node.focus({ preventScroll: virtual });
+        }
+      },
+    };
     if (r.kind === "type") {
       const list = cache[keyOf(ty.t)];
       const open = expanded.has(ty.t);
@@ -307,12 +361,17 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
           aria-level={1}
           aria-label={ty.label}
           aria-expanded={open}
-          tabIndex={0}
+          {...focusProps}
           className="ob-row ob-type"
           style={style}
           onClick={() => toggle(ty.t)}
           onContextMenu={(e) => typeMenu(e, ty.t, ty.label)}
-          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(ty.t))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggle(ty.t);
+            } else navigate(e, r);
+          }}
         >
           {open ? <CaretDown size={10} className="ob-caret" aria-hidden /> : <CaretRight size={10} className="ob-caret" aria-hidden />}
           <ty.Icon size={15} color={ty.tint} aria-hidden />
@@ -339,16 +398,16 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
     const invalid = o.status === "Invalid";
     return (
       <div
-        key={`o-${ty.t}-${o.owner}-${o.name}`}
+        key={key}
         role="treeitem"
         aria-level={2}
         aria-label={invalid ? `${shown}, inválido` : shown}
-        tabIndex={0}
+        {...focusProps}
         className="ob-row ob-obj"
         style={style}
         onDoubleClick={() => onOpenObject(o)}
         onContextMenu={(e) => objectMenu(e, o)}
-        onKeyDown={(e) => onObjKey(e, o)}
+        onKeyDown={(e) => { navigate(e, r); onObjKey(e, o); }}
       >
         <ty.Icon size={15} color={ty.tint} aria-hidden />
         <span className="ob-label">{shown}</span>
@@ -363,10 +422,11 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
         <button className="ib active" aria-label="Objetos" aria-pressed="true">
           <TreeStructure size={16} />
         </button>
-        <button className="ib" aria-label="Buscar en el esquema" disabled>
+        <span id={unavailable} hidden>Próximamente</span>
+        <button className="ib" aria-label="Buscar en el esquema" title="Próximamente" aria-describedby={unavailable} disabled>
           <MagnifyingGlass size={16} />
         </button>
-        <button className="ib" aria-label="Historial de sentencias" disabled>
+        <button className="ib" aria-label="Historial de sentencias" title="Próximamente" aria-describedby={unavailable} disabled>
           <ClockCounterClockwise size={16} />
         </button>
         <span style={{ flex: 1 }} />

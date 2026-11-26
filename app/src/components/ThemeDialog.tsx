@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, WarningCircle } from "@phosphor-icons/react";
 import {
   activeTheme,
@@ -12,6 +12,7 @@ import {
   type Theme,
   type ThemeToken,
 } from "../themes";
+import { useFocusTrap } from "../useFocusTrap";
 import "./ThemeDialog.css";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -141,14 +142,6 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => applyTheme(draft), [draft]);
 
-  useEffect(() => {
-    const opener = document.activeElement;
-    selectedRef.current?.focus();
-    return () => {
-      if (opener instanceof HTMLElement) opener.focus();
-    };
-  }, []);
-
   function edit(change: Partial<Theme>) {
     setEdits((all) => ({ ...all, [draft.id]: { ...draft, ...change } }));
   }
@@ -188,6 +181,8 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
+  const trap = useFocusTrap(cancel, selectedRef);
+
   function save() {
     try {
       for (const theme of Object.values(edits)) saveCustomTheme({ ...theme, name: theme.name.trim() });
@@ -201,16 +196,9 @@ export function ThemeDialog({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    cancel();
-  }
-
   return (
     <div className="td-backdrop">
-      <div role="dialog" aria-modal="true" aria-labelledby="td-title" className="td" onKeyDown={onKeyDown}>
+      <div role="dialog" aria-modal="true" aria-labelledby="td-title" className="td" {...trap}>
         <div className="td-side">
           <h1 id="td-title" className="td-title">Personalizar interfaz</h1>
           <div role="radiogroup" aria-label="Temas" className="td-list">

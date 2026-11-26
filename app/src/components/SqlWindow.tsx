@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { CommandConsole, type ConsoleIo, type OutputLine } from "./CommandConsole";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { locateError, formatConsoleError } from "../sqlError";
+import { useLineBuffer } from "../useLineBuffer";
+import { createSqlplusState } from "../sqlplusState";
+import { createdObject } from "../sqlplusQueries";
+import { feedbackLine, formatTable } from "../sqlplusFormat";
+import { printSqlplus, runSqlplus, substituteDefines, timingLine, type SqlplusCtx } from "../sqlplusRun";
+import { parseSqlplus } from "../sqlplus";
+import { needsConfirm } from "../sqlRisk";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { gotoLine } from "@codemirror/search";
-import { openFind, openReplace } from "./EditorSearch";
+import { findNextMatch, findPrevMatch, openFind, openReplace } from "./EditorSearch";
 import { startCompletion } from "@codemirror/autocomplete";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
@@ -13,11 +22,11 @@ import {
   type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan, type CompletionObject,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
-import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
-import { copyGridCells } from "../gridSelection";
+import { appliedRows, buildChanges, emptyPending, pendingCount, pendingDiscardMessage, type Cell, type Pending } from "../gridEdits";
+import { copyGridCells, withBom } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
-import { applySubstitutions, findVariables } from "../sqlBinds";
+import { applySubstitutions, assignedBinds, findVariables } from "../sqlBinds";
 import type { CompletionCatalog } from "../programCompletion";
 import { ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import type { ProgramActions } from "./ProgramWindow";
@@ -39,7 +48,10 @@ interface Props {
   editOnOpen?: boolean;
   environment?: Environment;
   onTransaction: (open: boolean) => void;
+  onBusy?: (busy: boolean) => void;
+  onPendingChange?: (count: number) => void;
   onDirty: (dirty: boolean) => void;
+  onWorkspaceChange?: (text: string) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
 }
@@ -60,12 +72,6 @@ interface EditSession {
   names: (string | null)[];
 }
 
-interface OutputLine {
-  id: number;
-  kind: "info" | "output" | "error" | "skip";
-  text: string;
-}
-
 interface HistoryEntry {
   id: number;
   sql: string;
@@ -78,6 +84,36 @@ const EDITOR_SHARE = { initial: 70, min: 20, max: 85, step: 4 };
 const clampEditorShare = (share: number) => Math.max(EDITOR_SHARE.min, Math.min(EDITOR_SHARE.max, Math.round(share)));
 const FETCH_ALL = 1000;
 const CANCELLED = "ORA-01013";
+
+function ConfirmExecution({ complete }: { complete: (approved: boolean) => void }) {
+  const id = useId();
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    cancel.current?.focus();
+    return () => { if (previous instanceof HTMLElement) previous.focus(); };
+  }, []);
+  return (
+    <div className="dialog-backdrop">
+      <div role="dialog" aria-modal="true" aria-labelledby={id} className="dialog"
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape") complete(false);
+          else if (event.key === "Tab") {
+            event.preventDefault();
+            Array.from(event.currentTarget.querySelectorAll("button"))
+              .find((button) => button !== document.activeElement)?.focus();
+          }
+        }}>
+        <h2 id={id}>Producción. ¿Ejecutar?</h2>
+        <div className="dialog-actions">
+          <button type="button" className="btn primary" onClick={() => complete(true)}>Ejecutar</button>
+          <button type="button" className="btn" ref={cancel} onClick={() => complete(false)}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 const KINDS: { id: BindKind; label: string }[] = [
   { id: "Text", label: "Texto" }, { id: "Number", label: "Número" }, { id: "Date", label: "Fecha" },
 ];
@@ -86,11 +122,8 @@ const REASONS: Record<Conflict["reason"], string> = {
   Changed: "cambió en Oracle", Locked: "bloqueada por otra sesión", Missing: "ya no existe",
 };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const editCommand = /^edit(?:\s|$)/i;
-const editTarget = /^edit\s+(?:([\w$#]+)\.)?([\w$#]+);?$/i;
-
 export function SqlWindow({
-  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, onWorkspaceChange, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -99,6 +132,14 @@ export function SqlWindow({
   const view = useRef<EditorView | null>(null);
   const tabPrefix = useId();
   const [source, setSource] = useState(initialSql);
+  const [confirming, setConfirming] = useState(false);
+  const confirmation = useRef<((approved: boolean) => void) | null>(null);
+  useEffect(() => () => { confirmation.current?.(false); }, []);
+  const confirmationDialog = confirming && <ConfirmExecution complete={(approved) => {
+    confirmation.current?.(approved);
+    confirmation.current = null;
+    setConfirming(false);
+  }} />;
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
   const hasTestVariables = !!testSettings;
@@ -112,39 +153,14 @@ export function SqlWindow({
   ];
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
-  const [output, setOutput] = useState<OutputLine[]>([]);
-  const terminal = useRef<HTMLDivElement>(null);
-  const commandInput = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    if (command && active) commandInput.current?.focus({ preventScroll: true });
-  }, [command, active]);
-  const [prompt, setPrompt] = useState("");
-  const [commandLines, setCommandLines] = useState<string[]>([]);
-  const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
-  const [choice, setChoice] = useState<number>();
-  const [dismissed, setDismissed] = useState(false);
-  const matchesEdit = commandLines.length ? null : prompt.trim().match(editTarget);
-  const candidates = suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
-  const exact = candidates.findIndex((object) => object.name === matchesEdit?.[2].toUpperCase());
-  const picked = choice ?? Math.max(0, exact);
-  useEffect(() => {
-    const area = terminal.current;
-    if (area) area.scrollTop = area.scrollHeight;
-  }, [output, commandLines, running, suggestions, dismissed]);
-  useEffect(() => {
-    const target = prompt.trim().match(editTarget);
-    if (!command || commandLines.length || !target) return;
-    let current = true;
-    const timer = setTimeout(() => {
-      void api.completeObjects(sessionId, target[1]?.toUpperCase() ?? null, target[2].toUpperCase(), null, "edit")
-        .then((items) => { if (current) setSuggestions({ prompt, items }); })
-        .catch(() => { if (current) setSuggestions(undefined); });
-    }, 120);
-    return () => { current = false; clearTimeout(timer); };
-  }, [command, commandLines.length, prompt, sessionId]);
-  const commandHistory = useRef<string[]>([]);
-  const historyIndex = useRef(0);
-  const commandOptions = useRef({ echo: true, serverOutput: true });
+  const { lines, omitted: omittedLines, append, flush: flushOutput, clear: clearOutput } =
+    useLineBuffer<OutputLine>(command ? 2000 : 10000);
+  const output = useMemo(() => omittedLines
+    ? [{ id: 0, kind: "info" as const, text: `… ${omittedLines} líneas anteriores omitidas` }, ...lines]
+    : lines, [lines, omittedLines]);
+  const echo = useRef(true);
+  const sqlplusRef = useRef<ReturnType<typeof createSqlplusState> | null>(null);
+  const sqlplus = sqlplusRef.current ??= createSqlplusState();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
@@ -171,13 +187,19 @@ export function SqlWindow({
   const lastQueryRef = useRef<{ sql: string; binds: BindValue[] } | null>(null);
   const [editSession, setEditSession] = useState<EditSession | null>(null);
   const [pending, setPending] = useState<Pending>(emptyPending);
+  const count = pendingCount(pending);
+  useEffect(() => { onPendingChange?.(count); }, [count, onPendingChange]);
   const [selected, setSelected] = useState<CellPosition | null>(null);
   const [conflicts, setConflicts] = useState<{ list: Conflict[]; rowsOf: number[] } | null>(null);
   const [applying, setApplying] = useState(false);
 
   const statements = useMemo(() => splitScript(source), [source]);
   const current = statementAt(statements, cursor);
-  const variables = useMemo(() => findVariables(current?.text ?? ""), [current?.text]);
+  const variables = useMemo(() => findVariables(source), [source]);
+  const activeVariables = useMemo(
+    () => new Set(findVariables(current?.text ?? "").map((variable) => `${variable.kind}-${variable.key}`)),
+    [current?.text],
+  );
   const editableVariables = variables.filter((variable) =>
     variable.kind !== "bind" || !declaredOutputs?.some((output) => output.name === variable.key));
 
@@ -190,9 +212,15 @@ export function SqlWindow({
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: script } });
   }
 
+  const appendLine = useCallback((kind: OutputLine["kind"], text: string) => {
+    append({ id: ++lineId.current, kind, text });
+  }, [append]);
   const log = useCallback((kind: OutputLine["kind"], text: string) => {
-    setOutput((lines) => [...lines, { id: ++lineId.current, kind, text }]);
-  }, []);
+    if (kind === "skip") {
+      sqlplus.spool?.lines.push(text);
+      appendLine(kind, text);
+    } else printSqlplus(sqlplus, (line, level) => appendLine(level ?? "info", line), text, kind);
+  }, [appendLine, sqlplus]);
 
   function targets(): { list: ScriptStatement[]; script: boolean } {
     const editor = view.current;
@@ -216,10 +244,12 @@ export function SqlWindow({
       setAlert("Selecciona una sentencia SQL");
       return;
     }
+    const sql = panelSql(list[0].text);
+    if (sql === null) return;
     setPlanning(true);
     setAlert("");
     try {
-      setPlan(await api.sqlExplain(sessionId, list[0].text));
+      setPlan(await api.sqlExplain(sessionId, sql));
       setPlanSelection(null);
       setTab("plan");
     } catch (error) {
@@ -229,70 +259,167 @@ export function SqlWindow({
     }
   }
 
-  function runConsoleCommand(source: string) {
+  function panelSql(text: string): string | null {
+    const substitutions: Record<string, string> = Object.create(null);
+    for (const variable of findVariables(text)) {
+      if (variable.kind !== "subst") continue;
+      const value = values[variable.key]?.value;
+      if (!value) {
+        setAlert(`Falta el valor de &${variable.name}`);
+        return null;
+      }
+      substitutions[variable.key] = value;
+    }
+    return applySubstitutions(text, substitutions);
+  }
+
+  function runConsoleCommand(source: string): boolean {
     const [keyword, ...words] = source.replace(/;$/, "").trim().split(/\s+/);
     const syntax = words.join(" ").toUpperCase();
     switch (keyword.toUpperCase()) {
       case "PROMPT":
         log("output", source.slice(keyword.length).trimStart());
-        return;
+        return true;
       case "REM":
       case "REMARK":
-        return;
+        return true;
       case "CLEAR":
-        if (syntax === "SCREEN") { setOutput([]); return; }
+        if (syntax === "SCREEN") { clearOutput(); return true; }
         break;
       case "SET":
-        if (/^(ECHO|SERVEROUTPUT) (ON|OFF)$/.test(syntax)) {
-          const option = syntax.startsWith("ECHO") ? "echo" : "serverOutput";
-          commandOptions.current[option] = syntax.endsWith("ON");
-          return;
+        if (/^ECHO (ON|OFF)$/.test(syntax)) {
+          echo.current = syntax.endsWith("ON");
+          return true;
         }
         break;
     }
-    log("skip", `Comando no admitido: ${keyword.toUpperCase()}`);
+    return false;
   }
 
-  async function run(list: ScriptStatement[], entered = false, exportQuery = false) {
+  async function consoleQuery(result: Extract<ExecOutcome["result"], { kind: "Query" }>) {
+    const limit = 500;
+    const rows = result.page.rows.slice(0, limit);
+    let cursorOpen = result.page.more;
+    let reportedMore = cursorOpen || result.page.rows.length > limit;
+    try {
+      while (cursorOpen && rows.length < limit && !stopFetchRef.current) {
+        const size = Math.min(100, limit - rows.length);
+        const page = await api.sqlFetch(sessionId, result.cursor, size);
+        rows.push(...page.rows.slice(0, size));
+        cursorOpen = page.more;
+        reportedMore = cursorOpen || page.rows.length > size;
+        if (!page.rows.length) break;
+      }
+    } finally {
+      if (cursorOpen) await api.sqlFetch(sessionId, result.cursor, 0);
+    }
+    formatTable(result.columns, rows, sqlplus.settings).forEach((line) => log("output", line));
+    const { feedback } = sqlplus.settings;
+    if (stopFetchRef.current) log("info", "Ejecución cancelada");
+    else if (reportedMore) log("info", `Se muestran ${rows.length} filas. Hay más.`);
+    else if (feedback === true || (typeof feedback === "number" && rows.length >= feedback)) {
+      log("info", feedbackLine(rows.length));
+    }
+  }
+
+  async function run(list: ScriptStatement[], entered = false, exportQuery = false, io?: ConsoleIo) {
     if (running || applying || fetchingRef.current || !list.length) return;
+    if (count && !window.confirm(pendingDiscardMessage(count))) return;
     setAlert("");
     setNotice("");
     setTestResults([]);
     setTestSelection({});
     setMarkers([]);
-    for (const statement of list) {
-      for (const variable of findVariables(statement.text)) {
-        if (variable.kind === "subst" && !values[variable.key]?.value) {
-          setAlert(`Falta el valor de &${variable.name}`);
-          return;
-        }
-      }
-    }
+    stopFetchRef.current = false;
     setRunning(true);
-    setEditSession(null);
-    setPending(emptyPending());
-    setConflicts(null);
-    setSelected(null);
+    let startedSql = false;
     let lastQuery = false;
-    try {
-      for (const statement of list) {
-        if (command && (entered || commandOptions.current.echo)) {
+    let productionApproved = environment !== "prod";
+    const promptedBinds = new Map<string, string>();
+    const ask: SqlplusCtx["ask"] = io?.ask ?? (async (name) => {
+      const value = values[name.toUpperCase()]?.value;
+      if (value) return value;
+      setAlert(`Falta el valor de &${name}`);
+      return null;
+    });
+    async function confirmWrites(statements: ScriptStatement[]): Promise<boolean> {
+      if (productionApproved || !needsConfirm(statements.filter((statement) => statement.kind !== "sqlplus"))) return true;
+      productionApproved = await new Promise<boolean>((resolve) => {
+        confirmation.current = resolve;
+        setConfirming(true);
+      });
+      return productionApproved;
+    }
+
+    async function executeStatements(statements: ScriptStatement[], script?: SqlplusCtx["script"]): Promise<boolean> {
+      if (!await confirmWrites(statements)) return false;
+      let nestedSucceeded = true;
+      const context: SqlplusCtx = {
+        print: (line, kind) => appendLine(kind ?? "info", line),
+        ask,
+        query: (sql, binds = []) => {
+          setGrid((current) => current?.more ? { ...current, more: false } : current);
+          return api.sqlExecute(sessionId, sql, binds);
+        },
+        readFile: api.readScriptFile,
+        writeFile: api.writeSpoolFile,
+        runScript: async (source, child) => {
+          nestedSucceeded = await executeStatements(splitScript(source), child);
+        },
+        script,
+      };
+      for (const statement of statements) {
+        if (command && ((entered && !script) || echo.current)) {
           log("info", `SQL> ${statement.text}${statement.kind === "sql" ? ";" : ""}`);
         }
         if (statement.kind === "sqlplus") {
-          if (command) runConsoleCommand(statement.text);
-          else log("skip", `Omitido (SQL*Plus): ${statement.text}`);
+          if (command && runConsoleCommand(statement.text)) continue;
+          const parsed = statement.command ?? parseSqlplus(statement.text);
+          try {
+            if (parsed) await runSqlplus(parsed, sqlplus, context);
+          } catch (error) {
+            log("error", describeError(error).message);
+            setTab("output");
+            return false;
+          }
+          if (!nestedSucceeded) return false;
           continue;
         }
-        const vars = findVariables(statement.text);
-        const substitutions = Object.fromEntries(
-          vars.filter((v) => v.kind === "subst").map((v) => [v.key, values[v.key]?.value ?? ""]),
-        );
-        const sql = applySubstitutions(statement.text, substitutions);
-        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
-        const binds = vars.filter((v) => v.kind === "bind" && !outputs.some((output) => output.name === v.key)).map((v) => ({
-          name: v.name, value: values[v.key]?.value || null, kind: values[v.key]?.kind ?? ("Text" as BindKind),
-        }));
+        const sql = await substituteDefines(statement.text, sqlplus, ask);
+        if (sql === null) return false;
+        if (sql !== statement.text && !await confirmWrites([{ ...statement, text: sql }])) return false;
+        const vars = findVariables(sql).filter((variable) => variable.kind === "bind");
+        const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.key === output.name)) ?? [];
+        const assigned = statement.kind === "plsql" ? assignedBinds(sql) : new Set<string>();
+        const binds: BindValue[] = [];
+        for (const variable of vars) {
+          if (outputs.some((output) => output.name === variable.key)) continue;
+          const declared = sqlplus.vars.get(variable.key);
+          if (declared && assigned.has(variable.key)) {
+            outputs.push({ name: variable.key, label: variable.name, kind: declared.type });
+            continue;
+          }
+          const entry = values[variable.key];
+          if (declared || entry) {
+            binds.push({ name: variable.name, value: declared ? declared.value : entry.value || null, kind: declared?.type ?? entry.kind });
+            continue;
+          }
+          if (!io) {
+            setAlert(`Falta el valor de :${variable.name}`);
+            return false;
+          }
+          const value = promptedBinds.get(variable.key) ?? await io.ask(`:${variable.name}`);
+          if (value === null) return false;
+          promptedBinds.set(variable.key, value);
+          binds.push({ name: variable.name, value: value || null, kind: "Text" });
+        }
+        if (!startedSql) {
+          startedSql = true;
+          setEditSession(null);
+          setPending(emptyPending());
+          setConflicts(null);
+          setSelected(null);
+        }
         let outcome: ExecOutcome;
         try {
           setFetchError(null);
@@ -301,48 +428,79 @@ export function SqlWindow({
             ? api.sqlExecute(sessionId, sql, binds, undefined, outputs)
             : api.sqlExecute(sessionId, sql, binds));
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
+          if (outcome.result.kind === "Failed") {
+            if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
+            onTransaction(outcome.transaction);
+            if (createdObject(sql)) sqlplus.lastCreated = sql;
+            throw { Db: outcome.result.error };
+          }
         } catch (error) {
           const detail = describeError(error);
           setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: false }, ...h]);
           if (detail.code === CANCELLED) {
             log("info", "Ejecución cancelada");
           } else {
-            log("error", detail.message.startsWith(detail.code ?? "\u0000") || !detail.code
-              ? detail.message : `${detail.code} ${detail.message}`);
-            const at = statement.from + (detail.offset ?? 0);
-            setMarkers([{ from: at, to: at + 1, message: detail.message }]);
+            const location = locateError(sql, detail);
+            formatConsoleError(detail.code, detail.message, location).forEach((line) => log("error", line));
+            const editor = view.current;
+            if (location && editor && !script && sql === statement.text &&
+                editor.state.sliceDoc(statement.from, statement.to) === statement.text) {
+              const lines = sql.split("\n");
+              const beforeLine = lines.slice(0, location.line - 1).reduce((sum, line) => sum + line.length + 1, 0);
+              const column = Array.from(location.snippet).slice(0, location.column - 1).join("").length;
+              const at = statement.from + beforeLine + column;
+              setMarkers([{ from: at, to: Math.min(at + 1, editor.state.doc.length), message: detail.message }]);
+              editor.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at) });
+            }
           }
           setTab("output");
-          return;
+          return false;
         }
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
-        if (!command || commandOptions.current.serverOutput) outcome.output.forEach((line) => log("output", line));
-        if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
+        if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
+        if (createdObject(sql)) sqlplus.lastCreated = sql;
+        if (outcome.test_outputs?.length) {
+          for (const output of outcome.test_outputs) {
+            const variable = sqlplus.vars.get(output.name.toUpperCase());
+            if (variable && output.kind === "Scalar") variable.value = output.value;
+          }
+          if (testSettings) setTestResults(outcome.test_outputs);
+        }
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
           const result = { cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false };
-          setGrid(result);
-          if (exportQuery) await exportRows(result);
           setSummary(null);
           if (command) {
-            const rows = page.rows.map((row) => row.map((value) => (value ?? "NULL").replace(/\r?\n/g, " ")));
-            const widths = columns.map((column, i) => rows.reduce((size, row) => Math.max(size, row[i].length), column.name.length));
-            const line = (cells: string[]) => cells.map((value, i) => value.padEnd(widths[i])).join("  ").trimEnd();
-            log("output", line(columns.map((column) => column.name)));
-            log("output", line(widths.map((width) => "-".repeat(width))));
-            rows.forEach((row) => log("output", line(row)));
-            if (page.more) log("info", `${page.rows.length} filas mostradas · ${formatKeys(commands.exportData.keys!)} para exportar todas`);
+            try {
+              await consoleQuery(outcome.result);
+            } catch (error) {
+              const detail = describeError(error);
+              if (detail.code === CANCELLED) log("info", "Ejecución cancelada");
+              else formatConsoleError(detail.code, detail.message, locateError(sql, detail)).forEach((line) => log("error", line));
+              return false;
+            }
+            if (stopFetchRef.current) return false;
+          } else {
+            setGrid(result);
+            if (exportQuery) await exportRows(result);
           }
           lastQuery = true;
-        } else {
-          log("info", outcome.result.message);
+        } else if (outcome.result.kind === "Done") {
+          if (sqlplus.settings.feedback !== false) log("info", outcome.result.message);
           setSummary(`${outcome.result.message} · ${outcome.elapsed_ms} ms`);
           lastQuery = false;
         }
+        if (sqlplus.settings.timing) log("info", timingLine(outcome.elapsed_ms));
       }
-      setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
+      return true;
+    }
+    try {
+      if (await executeStatements(list)) {
+        setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
+      }
     } finally {
+      flushOutput();
       setRunning(false);
     }
   }
@@ -397,7 +555,7 @@ export function SqlWindow({
     const offset = result.hiddenRowid ? 1 : 0;
     const headers = result.columns.slice(offset).map((column) => column.name);
     try {
-      const name = await api.saveProgramFile(copyGridCells([headers, ...rows.map((row) => row.slice(offset))], true),
+      const name = await api.saveProgramFile(withBom(copyGridCells(rows.map((row) => row.slice(offset)), true, { headers })),
         "csv", "resultados.csv");
       if (name) setNotice("CSV guardado");
     } catch (error) {
@@ -406,7 +564,7 @@ export function SqlWindow({
   }
 
   async function transaction(action: "commit" | "rollback") {
-    if (fetchingRef.current) return;
+    if (running || applying || fetchingRef.current) return;
     try {
       const open = action === "commit" ? await api.sqlCommit(sessionId) : await api.sqlRollback(sessionId);
       if (action === "rollback") setGrid((current) => current?.more ? { ...current, more: false } : current);
@@ -415,6 +573,8 @@ export function SqlWindow({
     } catch (error) {
       log("error", describeError(error).message);
       setTab("output");
+    } finally {
+      flushOutput();
     }
   }
 
@@ -495,6 +655,22 @@ export function SqlWindow({
     setPending((p) => ({ ...p, inserts: [...p.inserts, Array<Cell>(width).fill(null)] }));
     const firstEditable = Math.max(0, editSession.names.findIndex(Boolean));
     setSelected({ row: grid.rows.length + pending.inserts.length, col: firstEditable });
+  }
+
+  function pasteCells({ row, col }: CellPosition, matrix: string[][]): number {
+    if (!grid || !editSession) return 0;
+    let pasted = 0;
+    matrix.forEach((line, rowOffset) => {
+      const targetRow = row + rowOffset;
+      if (pending.edits[targetRow]?.kind === "delete") return;
+      line.forEach((value, colOffset) => {
+        const targetCol = col + colOffset;
+        if (!editSession.names[targetCol] || grid.columns[targetCol + 1]?.lob) return;
+        editCell({ row: targetRow, col: targetCol }, value === "" ? null : value);
+        pasted++;
+      });
+    });
+    return pasted;
   }
 
   function deleteRow() {
@@ -604,28 +780,33 @@ export function SqlWindow({
     if (view.current) action(view.current);
   };
 
+  const busy = running || fetching || applying;
+  useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
   const actions: ProgramActions = {
-    explainPlan: () => void explain(),
-    execute: () => void run(targets().list),
-    executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
-    exportData: grid && !editSession && !running && !fetching && !applying ? () => void exportRows(grid) : undefined,
-    fetchAllRows: grid?.more && !fetching && !running && !applying ? () => void fetchAll() : undefined,
+    hasPending: () => count > 0,
+    explainPlan: command ? undefined : () => void explain(),
+    execute: command ? undefined : () => void run(targets().list),
+    executeScript: command ? undefined : () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    exportData: !command && grid && !editSession && !busy ? () => void exportRows(grid) : undefined,
+    fetchAllRows: !command && grid?.more && !busy ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
     cancel: running || fetching ? () => {
-      if (fetchingRef.current) stopFetchRef.current = true;
+      if (command || fetchingRef.current) stopFetchRef.current = true;
       void api.sqlCancel(sessionId);
     } : undefined,
-    editData: grid ? () => void toggleEdit() : undefined,
+    editData: !command && grid ? () => void toggleEdit() : undefined,
     applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
-    commit: () => void transaction("commit"),
-    rollback: () => void transaction("rollback"),
-    save: () => void save(),
+    commit: busy ? undefined : () => void transaction("commit"),
+    rollback: busy ? undefined : () => void transaction("rollback"),
+    save: command ? undefined : () => void save(),
     complete: inEditor(startCompletion),
     foldBlock: inEditor(foldCode),
     unfoldBlock: inEditor(unfoldCode),
     goToLine: inEditor(gotoLine),
     find: inEditor(openFind),
     replace: inEditor(openReplace),
+    findNext: inEditor(findNextMatch),
+    findPrev: inEditor(findPrevMatch),
     comment: inEditor(toggleComment),
     duplicateLine: inEditor(copyLineDown),
     deleteLine: inEditor(deleteLine),
@@ -650,6 +831,9 @@ export function SqlWindow({
   }, []);
 
   const offset = grid?.hiddenRowid ? 1 : 0;
+  const insertSource = lastQueryRef.current?.sql;
+  const insertTarget = useMemo(() => insertSource ? editableQuery(insertSource)?.table : undefined, [insertSource]);
+  const insertTable = editSession?.target ?? insertTarget;
   const visibleColumns: SqlColumn[] = grid ? grid.columns.slice(offset) : [];
   const displayRows: Cell[][] = grid ? [
     ...grid.rows.map((row, index) => {
@@ -670,7 +854,6 @@ export function SqlWindow({
     const edit = pending.edits[row];
     return edit?.kind === "update" && col in edit.values;
   };
-  const count = pendingCount(pending);
   const rowCount = grid?.rows.length ?? 0;
   const footer = running ? null
     : grid && tab === "results"
@@ -679,6 +862,8 @@ export function SqlWindow({
 
   const variableFields = editableVariables.map((v) => {
     const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
+    const usage = activeVariables.has(`${v.kind}-${v.key}`)
+      ? "Se usa en la sentencia actual" : "Se usa en otra sentencia";
     const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
     const update = (change: Partial<typeof entry>) => {
       setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
@@ -688,7 +873,7 @@ export function SqlWindow({
       <div key={`${v.kind}-${v.key}`} className="sql-variable">
         <label>
           <span className="mono">{label}</span>
-          <input className="fld mono" aria-label={`Valor de ${label}`} value={entry.value}
+          <input className="fld mono" aria-label={`Valor de ${label}`} title={usage} value={entry.value}
             placeholder={v.kind === "bind" ? "NULL" : ""}
             onChange={(e) => update({ value: e.target.value })} />
         </label>
@@ -702,111 +887,10 @@ export function SqlWindow({
     );
   });
 
-  if (command) return (
-    <section className="sql-window" aria-label="Ventana de comando">
-      <div className="sql-terminal" ref={terminal}>
-        <div role="log" aria-label="Transcripción">
-          {output.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
-        </div>
-        {commandLines.map((line, index) => <div key={index} className="sql-line sql-line-info">
-          {index === 0 ? "SQL>" : index + 1} {line}
-        </div>)}
-        {alert && <div role="alert" className="sql-line sql-line-error">{alert}</div>}
-        {notice && <div role="status" className="sql-line">{notice}</div>}
-        {running && <div role="status" className="sql-line">Ejecutando… {key("cancel")} para detener</div>}
-        <form className="sql-command-prompt" onSubmit={async (event) => {
-          event.preventDefault();
-          const entered = prompt.trim();
-          if (running || !entered) return;
-          setPrompt("");
-          setChoice(undefined);
-          setDismissed(false);
-          if (!commandLines.length && editCommand.test(entered)) {
-            commandHistory.current.push(entered);
-            historyIndex.current = commandHistory.current.length;
-            setTab("output");
-            log("info", `SQL> ${entered}`);
-            if (!matchesEdit || !onEditObject) {
-              log("error", "Usa EDIT [esquema.]objeto.");
-              return;
-            }
-            try {
-              const name = matchesEdit[2].toUpperCase();
-              const items = candidates.length ? candidates : await api.completeObjects(
-                sessionId, matchesEdit[1]?.toUpperCase() ?? null, name, null, "edit",
-              );
-              const object = candidates.length ? items[picked] : items.find((item) => item.name === name) ?? items[0];
-              if (object) onEditObject(object);
-              else log("error", "Objeto no encontrado.");
-            } catch (error) {
-              log("error", describeError(error).message);
-            }
-            return;
-          }
-          const source = [...commandLines, entered].join("\n");
-          const statements = splitScript(source);
-          const complete = /(?:^|\n)\s*\/$/.test(entered) || statements[0]?.kind === "sqlplus" ||
-            (statements[0]?.kind === "sql" && entered.endsWith(";"));
-          if (!complete) {
-            setCommandLines((lines) => [...lines, entered]);
-            return;
-          }
-          if (statements.length) commandHistory.current.push(source);
-          historyIndex.current = commandHistory.current.length;
-          setCommandLines([]);
-          void run(statements, true);
-        }}>
-          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
-          <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="fld mono" aria-label="Comando SQL"
-            role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
-            aria-expanded={matchesEdit ? !!candidates.length : undefined}
-            aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
-            aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
-            value={prompt} readOnly={running}
-            onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-                return;
-              }
-              if (commandLines.length && event.key === "Escape") {
-                event.preventDefault();
-                setCommandLines([]);
-                setPrompt("");
-                return;
-              }
-              if (candidates.length && event.key === "Escape") {
-                event.preventDefault();
-                setDismissed(true);
-                return;
-              }
-              const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
-              if (!delta || running) return;
-              event.preventDefault();
-              if (candidates.length) {
-                const next = (picked + delta + candidates.length) % candidates.length;
-                setChoice(next);
-                document.getElementById(`${tabPrefix}-object-${next}`)?.scrollIntoView?.({ block: "nearest" });
-                return;
-              }
-              const history = commandHistory.current;
-              historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
-              setPrompt(history[historyIndex.current] ?? "");
-            }} />
-          {!!candidates.length && <div className="sql-command-objects" role="listbox" id={`${tabPrefix}-objects`} aria-label="Objetos Oracle">
-            {candidates.map((object, index) => <div key={JSON.stringify(object)} role="option"
-              id={`${tabPrefix}-object-${index}`} aria-selected={picked === index}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => { onEditObject?.(object); setPrompt(""); setChoice(undefined); }}>
-              <span>{matchesEdit?.[1] ? `${object.owner}.${object.name}` : object.name}</span><span>{object.object_type}</span>
-            </div>)}
-          </div>}
-        </form>
-
-      </div>
-    </section>
-  );
+  if (command) return <><CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
+    lines={output} running={running} alert={alert} notice={notice} log={log} onEditObject={onEditObject}
+    onRun={(source, io) => run(splitScript(source), true, false, io)} onCancel={actions.cancel} onClear={clearOutput} />
+    {confirmationDialog}</>;
 
   return (
     <section className="sql-window" aria-label="Ventana SQL">
@@ -832,7 +916,9 @@ export function SqlWindow({
             activate={() => {}}
             onView={onView}
             onSelection={setCursor}
-            onChange={(value) => {
+            onChange={(doc) => {
+              const value = doc.toString();
+              onWorkspaceChange?.(value);
               setSource(value);
               setTestResults([]);
               setMarkers([]);
@@ -935,7 +1021,7 @@ export function SqlWindow({
             </>
           )}
           {tab === "output" && output.length > 0 && (
-            <button className="ib" aria-label="Limpiar salida" title="Limpiar salida" onClick={() => setOutput([])}>
+            <button className="ib" aria-label="Limpiar salida" title="Limpiar salida" onClick={clearOutput}>
               <Trash size={15} aria-hidden />
             </button>
           )}
@@ -1007,7 +1093,10 @@ export function SqlWindow({
                   <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
                     selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
-                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} />
+                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} more={grid.more}
+                    onNotice={setNotice} onPasteCells={editSession ? pasteCells : undefined} insertTable={insertTable
+                      ? (insertTable.owner ? [insertTable.owner, insertTable.name] : [insertTable.name])
+                      : undefined} />
                 </>
               )}
         </div>
@@ -1041,6 +1130,7 @@ export function SqlWindow({
           </div>
         )}
       </div>
+      {confirmationDialog}
     </section>
   );
 }

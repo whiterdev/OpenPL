@@ -24,7 +24,9 @@ export type ErrorKind =
   | "ClientMissing"
   | "InvalidCredentials"
   | "PasswordExpired"
+  | "AccountLocked"
   | "UnknownService"
+  | "Timeout"
   | "ConnectionLost"
   | "Other";
 
@@ -48,6 +50,7 @@ export interface SqlColumn {
   name: string;
   type_name: string;
   numeric: boolean;
+  lob: boolean;
 }
 
 export interface QueryPage {
@@ -57,6 +60,7 @@ export interface QueryPage {
 
 export type ExecResult =
   | { kind: "Query"; cursor: number; columns: SqlColumn[]; page: QueryPage }
+  | { kind: "Failed"; error: DbError }
   | { kind: "Done"; message: string };
 
 export interface EditColumn {
@@ -195,10 +199,21 @@ export interface ObjectInfo {
 
 export interface ActiveConnection {
   sessionId: string;
+  profileId?: string;
   label: string;
   environment: Environment | null;
   serverVersion: string;
   compat: Compat;
+}
+
+export type WorkspaceTab =
+  | { type: "object"; object_type: ObjectType; owner: string; name: string }
+  | { type: "sql"; title: string; text: string; kind: "sql" | "test" }
+  | { type: "file"; name: string; text: string };
+
+export interface Workspace {
+  version: 1;
+  tabs: WorkspaceTab[];
 }
 
 export interface ProgramPart {

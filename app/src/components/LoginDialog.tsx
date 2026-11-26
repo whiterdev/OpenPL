@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { CheckCircle, MagnifyingGlass, Plug, Plus, WarningCircle } from "@phosphor-icons/react";
 import { api } from "../api";
 import { describeError, type ActiveConnection, type ConnectionProfile, type Environment, type Role } from "../types";
-import { commands, formatKeys } from "../keymap";
+import { useFocusTrap } from "../useFocusTrap";
 import "./LoginDialog.css";
 
 const ROLES: { id: Role; label: string }[] = [
@@ -73,6 +73,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
   const [busy, setBusy] = useState(false);
 
   const pickedId = useRef<string | null>(null);
+  const connectionAttempt = useRef<symbol | null>(null);
 
   function fail(err: unknown) {
     const d = describeError(err);
@@ -116,10 +117,16 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
     }
   }
 
+  function profileLabel() {
+    const changed = selected && (selected.user !== user.trim() || selected.db !== db.trim());
+    const label = changed && name === selected.name ? "" : name.trim();
+    return label || `${user.trim().toUpperCase()} en ${dbLabel(db)}`;
+  }
+
   function currentProfile(): ConnectionProfile {
     return {
       id: selected?.id ?? crypto.randomUUID(),
-      name: name.trim() || `${user.trim().toUpperCase()} en ${dbLabel(db)}`,
+      name: profileLabel(),
       user: user.trim(),
       db: db.trim(),
       role,
@@ -130,24 +137,37 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
 
   async function connect(e?: FormEvent) {
     e?.preventDefault();
-    if (busy) return;
+    if (connectionAttempt.current) return;
+    const attempt = Symbol();
+    connectionAttempt.current = attempt;
+    const label = profileLabel();
     setBusy(true);
     setError(null);
     try {
       const r = await api.connect({ user: user.trim(), password, db: db.trim(), role });
+      if (connectionAttempt.current !== attempt) {
+        await api.disconnect(r.session_id);
+        return;
+      }
       onConnected({
         sessionId: r.session_id,
-        label: selected?.name ?? (name.trim() || `${user.trim().toUpperCase()} en ${dbLabel(db)}`),
+        ...(selected?.user === user.trim() && selected.db === db.trim() && selected.role === role
+          ? { profileId: selected.id } : {}),
+        label,
         environment,
         serverVersion: r.server_version,
         compat: r.compat,
       });
     } catch (err) {
+      if (connectionAttempt.current !== attempt) return;
       const d = describeError(err);
       setError({ code: d.code, message: d.message });
-      setPassword("");
+      if (d.code && ["ORA-01017", "ORA-01005", "ORA-01045"].includes(d.code)) setPassword("");
     } finally {
-      setBusy(false);
+      if (connectionAttempt.current === attempt) {
+        connectionAttempt.current = null;
+        setBusy(false);
+      }
     }
   }
 
@@ -157,6 +177,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
       await api.saveProfile(p, savePassword ? password || null : null);
       pickedId.current = p.id;
       setSelected(p);
+      setName(p.name);
       setError(null);
       await reload();
     } catch (err) {
@@ -165,7 +186,7 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
   }
 
   async function deleteProfile() {
-    if (!selected) return;
+    if (!selected || !window.confirm(`¿Eliminar ${selected.name}?`)) return;
     try {
       await api.deleteProfile(selected.id);
       pickedId.current = null;
@@ -176,9 +197,18 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
     }
   }
 
+  const cancelDialog = () => {
+    if (!onCancel && !busy) return;
+    connectionAttempt.current = null;
+    setBusy(false);
+    onCancel?.();
+  };
+
+  const trap = useFocusTrap(onCancel || busy ? cancelDialog : undefined);
+
   return (
     <div className="login-backdrop">
-      <div role="dialog" aria-modal="true" aria-labelledby="login-title" className="login">
+      <div role="dialog" aria-modal="true" aria-labelledby="login-title" className="login" {...trap}>
         <aside className="login-profiles" aria-label="Perfiles guardados">
           <label className="login-search">
             <MagnifyingGlass size={14} aria-hidden />
@@ -354,14 +384,18 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
               </button>
             )}
             <span style={{ flex: 1 }} />
-            {onCancel && (
-              <button type="button" className="btn ghost" onClick={onCancel}>
+            {(onCancel || busy) && (
+              <button type="button" className="btn ghost" onClick={() => {
+                connectionAttempt.current = null;
+                setBusy(false);
+                onCancel?.();
+              }}>
                 Cancelar
               </button>
             )}
-            <button type="submit" className="btn primary" disabled={busy} title={formatKeys(commands.connect.keys!)}>
+            <button type="submit" className="btn primary" disabled={busy}>
               <Plug size={14} aria-hidden />
-              Conectar
+              {busy ? "Conectando…" : "Conectar"}
             </button>
           </div>
         </form>

@@ -1,7 +1,8 @@
 //! Ejecución de sentencias de la Ventana SQL. Corre siempre en el hilo de su sesión.
 
-use openpl_oracle::{DbConn, DbError};
-use oracle::sql_type::{Clob, OracleType, RefCursor, Timestamp, ToSql};
+use crate::value_fmt::{format_timestamp, parse_timestamp};
+use openpl_oracle::{DbConn, DbError, ErrorKind};
+use oracle::sql_type::{Clob, Nclob, OracleType, RefCursor, Timestamp, ToSql};
 use oracle::{ColumnInfo, ResultSet, Row, Statement, StatementType};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -13,6 +14,7 @@ use std::time::Instant;
 pub const PAGE_SIZE: usize = 50;
 /// Tope de líneas de DBMS_OUTPUT leídas por ejecución.
 pub const OUTPUT_LIMIT: usize = 10_000;
+const LOB_CHAR_LIMIT: usize = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum BindKind {
@@ -34,6 +36,7 @@ pub struct Column {
     pub name: String,
     pub type_name: String,
     pub numeric: bool,
+    pub lob: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +93,9 @@ pub enum ExecResult {
     },
     Done {
         message: String,
+    },
+    Failed {
+        error: DbError,
     },
 }
 
@@ -161,6 +167,15 @@ fn result_columns(columns: &[ColumnInfo]) -> Vec<Column> {
             name: c.name().to_string(),
             type_name: c.oracle_type().to_string(),
             numeric: is_numeric(c.oracle_type()),
+            lob: matches!(
+                c.oracle_type(),
+                OracleType::CLOB
+                    | OracleType::NCLOB
+                    | OracleType::Long
+                    | OracleType::BLOB
+                    | OracleType::BFILE
+                    | OracleType::LongRaw
+            ),
         })
         .collect()
 }
@@ -301,18 +316,30 @@ fn bind_param(b: &BindValue) -> Result<Box<dyn ToSql>, DbError> {
             }
             Box::new(NumberText(normalized))
         }
-        BindKind::Date => {
-            let full = if value.len() == 10 {
-                format!("{value} 00:00:00")
-            } else {
-                value.to_string()
-            };
-            Box::new(
-                full.parse::<Timestamp>()
-                    .map_err(|_| invalid("una fecha"))?,
-            )
-        }
+        BindKind::Date => Box::new(parse_timestamp(value).map_err(|_| invalid("una fecha"))?),
     })
+}
+
+fn cap_text(text: &str, cap: usize) -> (String, bool) {
+    match text.char_indices().nth(cap) {
+        Some((end, _)) => (text[..end].to_owned(), true),
+        None => (text.to_owned(), false),
+    }
+}
+
+fn read_capped_text(mut reader: impl Read, cap: usize) -> Result<String, DbError> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 8192];
+    while bytes.len() <= cap.saturating_mul(4) {
+        let count = reader
+            .read(&mut chunk)
+            .map_err(|err| DbError::from_code(None, &err.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+    }
+    Ok(cap_text(&String::from_utf8_lossy(&bytes), cap).0)
 }
 
 /// Valores de una fila como texto, con el mismo formato en la grilla y al comparar al aplicar.
@@ -324,6 +351,31 @@ pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
             cells.push(None);
         } else if let Some(label) = binary_label(t) {
             cells.push(Some(label.to_string()));
+        } else if matches!(t, OracleType::CLOB | OracleType::NCLOB | OracleType::Long) {
+            let text = match t {
+                OracleType::CLOB => value
+                    .get::<Clob>()
+                    .ok()
+                    .map(|lob| read_capped_text(lob, LOB_CHAR_LIMIT)),
+                OracleType::NCLOB => value
+                    .get::<Nclob>()
+                    .ok()
+                    .map(|lob| read_capped_text(lob, LOB_CHAR_LIMIT)),
+                _ => None,
+            };
+            let text = match text {
+                Some(text) => text?,
+                None => cap_text(&value.get::<String>()?, LOB_CHAR_LIMIT).0,
+            };
+            cells.push(Some(text));
+        } else if matches!(
+            t,
+            OracleType::Date
+                | OracleType::Timestamp(_)
+                | OracleType::TimestampTZ(_)
+                | OracleType::TimestampLTZ(_)
+        ) {
+            cells.push(Some(format_timestamp(&value.get::<Timestamp>()?, t)));
         } else {
             let text = value.get::<String>().unwrap_or_else(|_| format!("({t})"));
             cells.push(Some(text));
@@ -419,13 +471,7 @@ pub fn execute_with_outputs(
     );
     let started = Instant::now();
     let mut builder = conn.raw().statement(sql);
-    builder.fetch_array_size(page_size as u32);
-    if outputs
-        .iter()
-        .any(|bind| matches!(bind.kind, TestOutputKind::Clob))
-    {
-        builder.lob_locator();
-    }
+    builder.fetch_array_size(page_size as u32).lob_locator();
     let mut stmt = builder.build()?;
     let mut test_outputs = Vec::new();
     let result = if stmt.is_query() {
@@ -447,7 +493,18 @@ pub fn execute_with_outputs(
             page,
         }
     } else {
-        stmt.execute_named(&named)?;
+        if let Err(error) = stmt.execute_named(&named) {
+            let error = DbError::from(error);
+            if error.kind == ErrorKind::ConnectionLost {
+                return Err(error);
+            }
+            return Ok(failed_outcome(
+                error,
+                started.elapsed().as_millis() as u64,
+                read_output(conn).unwrap_or_default(),
+                in_transaction(conn).unwrap_or(false),
+            ));
+        }
         test_outputs = outputs
             .iter()
             .map(|bind| TestOutput {
@@ -475,7 +532,22 @@ pub fn execute_with_outputs(
     })
 }
 
-/// Siguiente página del cursor abierto. Un cursor ya cerrado devuelve una página vacía.
+fn failed_outcome(
+    error: DbError,
+    elapsed_ms: u64,
+    output: Vec<String>,
+    transaction: bool,
+) -> ExecOutcome {
+    ExecOutcome {
+        result: ExecResult::Failed { error },
+        elapsed_ms,
+        output,
+        transaction,
+        test_outputs: Vec::new(),
+    }
+}
+
+/// Siguiente página del cursor abierto. Un tamaño de cero libera ese cursor.
 pub fn fetch(cursor: u64, size: usize) -> Result<QueryPage, DbError> {
     CURSOR.with(|c| {
         let mut slot = c.borrow_mut();
@@ -485,6 +557,13 @@ pub fn fetch(cursor: u64, size: usize) -> Result<QueryPage, DbError> {
                 more: false,
             });
         };
+        if size == 0 {
+            *slot = None;
+            return Ok(QueryPage {
+                rows: Vec::new(),
+                more: false,
+            });
+        }
         let page = read_page(&mut open.rows, size, |row| row_cells(&row));
         if !matches!(&page, Ok(page) if page.more) {
             *slot = None;
@@ -507,6 +586,28 @@ pub fn rollback(conn: &DbConn) -> Result<bool, DbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tope_lob_cuenta_caracteres_y_respeta_utf8() {
+        assert_eq!(cap_text("A😀ñB", 3), ("A😀ñ".into(), true));
+        assert_eq!(cap_text("A😀ñ", 3), ("A😀ñ".into(), false));
+        assert_eq!(cap_text("ñ", 0), (String::new(), true));
+        assert_eq!(read_capped_text("A😀ñB".as_bytes(), 3).unwrap(), "A😀ñ");
+    }
+
+    #[test]
+    fn ejecucion_fallida_conserva_salida_y_transaccion() {
+        let error = DbError::from_code(Some("ORA-20000".into()), "Error de prueba");
+        let outcome = failed_outcome(error, 15, vec!["Antes del error".into()], true);
+        let ExecResult::Failed { error } = outcome.result else {
+            panic!("se esperaba un fallo de ejecución");
+        };
+        assert_eq!(error.code.as_deref(), Some("ORA-20000"));
+        assert_eq!(outcome.elapsed_ms, 15);
+        assert_eq!(outcome.output, ["Antes del error"]);
+        assert!(outcome.transaction);
+        assert!(outcome.test_outputs.is_empty());
+    }
 
     #[test]
     fn tipos_de_salida_tienen_buffers_explicitos() {

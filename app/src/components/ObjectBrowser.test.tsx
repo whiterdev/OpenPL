@@ -32,6 +32,24 @@ function renderBrowser(props: Partial<Parameters<typeof ObjectBrowser>[0]> = {})
 }
 
 describe("ObjectBrowser", () => {
+  test("el árbol tiene un punto de tabulación y las flechas recorren la jerarquía", async () => {
+    m.listObjects.mockResolvedValue([obj("PKG_A")]);
+    renderBrowser();
+    const tabStops = () => screen.getAllByRole("treeitem").filter((row) => row.tabIndex === 0);
+    expect(tabStops()).toHaveLength(1);
+    const packages = screen.getByRole("treeitem", { name: "Paquetes" });
+    packages.focus();
+    fireEvent.keyDown(packages, { key: "ArrowRight" });
+    const child = await screen.findByRole("treeitem", { name: "PKG_A" });
+    fireEvent.keyDown(packages, { key: "ArrowRight" });
+    expect(child).toHaveFocus();
+    fireEvent.keyDown(child, { key: "ArrowLeft" });
+    expect(packages).toHaveFocus();
+    fireEvent.keyDown(packages, { key: "ArrowLeft" });
+    expect(packages).toHaveAttribute("aria-expanded", "false");
+    expect(tabStops()).toEqual([packages]);
+  });
+
   test("Editar Spec y Body abre un borrador", async () => {
     const onOpenObject = vi.fn();
     renderBrowser({ onOpenObject });
@@ -175,7 +193,7 @@ describe("ObjectBrowser", () => {
     const menu = screen.getByRole("menu", { name: /PKG_A/ });
     expect(within(menu).getByRole("menuitem", { name: /Abrir/ })).toHaveTextContent("Enter");
     expect(within(menu).getByRole("menuitem", { name: /Probar/ })).toHaveTextContent("Ctrl T");
-    expect(within(menu).getByRole("menuitem", { name: /Refrescar/ })).toHaveTextContent("Ctrl R");
+    expect(within(menu).getByRole("menuitem", { name: /Refrescar/ })).toHaveTextContent("Ctrl Shift R");
   });
 
   test("Abrir del menú contextual llama onOpenObject y cierra el menú", async () => {

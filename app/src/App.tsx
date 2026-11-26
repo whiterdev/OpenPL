@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -29,6 +30,9 @@ import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
 import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
 import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
+import { pendingDiscardMessage } from "./gridEdits";
+import { neighbor, reorder } from "./tabs";
+import { captureWorkspace, validateWorkspace } from "./workspace";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { CommandPalette } from "./components/CommandPalette";
@@ -42,6 +46,7 @@ import {
   commands,
   formatKeys,
   handleShortcut,
+  isWebviewKey,
   matches,
   type CommandId,
 } from "./keymap";
@@ -52,6 +57,7 @@ import {
   type ObjectInfo,
   type ProgramPart,
   type SessionState,
+  type Workspace,
 } from "./types";
 import "./App.css";
 import "./components/ProgramWindow.css";
@@ -68,6 +74,7 @@ const SqlWindow = lazy(() =>
 );
 
 const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const TAB_DRAG_TYPE = "application/x-openpl-tab";
 const sqlTabActions = [
   "execute",
   "executeScript",
@@ -86,6 +93,8 @@ const sqlTabActions = [
   "goToLine",
   "find",
   "replace",
+  "findNext",
+  "findPrev",
   "comment",
   "duplicateLine",
   "deleteLine",
@@ -105,6 +114,7 @@ interface ProgramTab {
   parts?: ProgramPart[];
   error?: string;
   fileName?: string;
+  workspaceProfileId?: string;
   load?: symbol;
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
   sql?: {
@@ -116,6 +126,7 @@ interface ProgramTab {
     test?: TestSettings;
     command?: boolean;
     transaction: boolean;
+    busy?: boolean;
   };
 }
 
@@ -132,7 +143,8 @@ const commandObjectTypes = {
   TYPE: "Type", SEQUENCE: "Sequence", SYNONYM: "Synonym", INDEX: "Index",
   "JAVA SOURCE": "JavaSource", LIBRARY: "Library", CLUSTER: "Cluster",
 } satisfies Record<string, ObjectInfo["object_type"]>;
-const editorEdits = [
+// En inputs y textareas estas teclas editan o seleccionan el texto del campo, no la ventana activa.
+const fieldKeys = [
   "comment",
   "duplicateLine",
   "deleteLine",
@@ -142,7 +154,12 @@ const editorEdits = [
   "redo",
   "indent",
   "outdent",
+  "fetchAllRows",
 ] as const;
+const isFieldKey = (e: KeyboardEvent) =>
+  fieldKeys.some((id) =>
+    [commands[id].keys, ...(commands[id].alt ?? [])].some((k) => k && matches(e, k)),
+  );
 
 export default function App() {
   const [client, setClient] = useState<ClientInfo | null>(null);
@@ -167,24 +184,43 @@ export default function App() {
   };
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ message: string; kind: "info" | "error" } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const errorVisible = useRef(false);
   const [reconnectErrors, setReconnectErrors] = useState<
     Record<string, string>
   >({});
   const [programs, setPrograms] = useState<ProgramTab[]>([]);
   const [programId, setProgramId] = useState<string | null>(null);
   const programActions = useRef<ProgramActions>(null);
+  const reconnectSqlButton = useRef<HTMLButtonElement>(null);
+  const lastPing = useRef(-Infinity);
   const compileSession = useRef<string | null>(null);
   const [closing, setClosing] = useState<ProgramTab | null>(null);
   const sqlCount = useRef(0);
   const dirtyPrograms = useRef(false);
   dirtyPrograms.current = programs.some((tab) => tab.dirty);
   const openTransactions = useRef(false);
+  const gridPending = useRef<Record<string, number>>({});
+  const [workspaceOffers, setWorkspaceOffers] = useState<Record<string, Workspace>>({});
+  const workspaceReady = useRef(new Set<string>());
+  const workspaceLoading = useRef(new Set<string>());
+  const workspaceTexts = useRef(new Map<string, { toString(): string }>());
+  const workspaceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastWorkspace = useRef(new Map<string, string>());
+  const workspaceWrites = useRef<Promise<void>>(Promise.resolve());
+  const latestWorkspace = useRef({ programs, connections });
+  latestWorkspace.current = { programs, connections };
+  const saveBeforeClose = useRef<() => boolean>(() => false);
   openTransactions.current = programs.some((tab) => tab.sql?.transaction);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
+  const workspaceOffer = active?.profileId ? workspaceOffers[active.profileId] : undefined;
   const program = programs.find((tab) => tab.id === programId);
+  const tabIndex = programs.findIndex((tab) => tab.id === programId);
   const programObject = program?.object;
+  const editorSessionExists = (tab: ProgramTab) =>
+    connections.some((connection) => connection.sessionId === tab.connection?.sessionId);
   const editorConnection = program?.connection
     ? connections.find(
         (connection) => connection.sessionId === program.connection?.sessionId,
@@ -193,13 +229,20 @@ export default function App() {
   const sqlActions = program?.sql
     ? Object.fromEntries(
         sqlTabActions
-          .filter((id) => !program.sql!.command || ["exportData", "cancel", "commit", "rollback"].includes(id))
+          .filter((id) => !program.sql!.command || ["cancel", "commit", "rollback"].includes(id))
           .filter(
             (id) =>
               (id !== "commit" && id !== "rollback") ||
-              program.sql!.transaction,
+              (program.sql!.transaction && !program.sql!.busy),
           )
-          .map((id) => [id, () => programActions.current?.[id]?.()]),
+          .map((id) => [id, () => {
+            if (id === "execute" && states[program.sql!.sessionId] === "Disconnected") {
+              reconnectSqlButton.current?.focus();
+              showNotice(reconnectErrors[program.sql!.sessionId] ?? "Sesión desconectada");
+              return;
+            }
+            programActions.current?.[id]?.();
+          }]),
       )
     : {};
   const currentProgramActions = Object.fromEntries(
@@ -220,6 +263,8 @@ export default function App() {
         "cancel",
         "goToLine",
         "find",
+        "findNext",
+        "findPrev",
         "replace",
         "comment",
         "duplicateLine",
@@ -251,13 +296,15 @@ export default function App() {
             "unfoldBlock",
             "goToLine",
             "find",
+            "findNext",
+            "findPrev",
           ].includes(id)
         );
       })
       .map((id) => [id, () => programActions.current?.[id]?.()]),
   );
 
-  const actions: Partial<Record<CommandId, () => void>> = {
+  const actions: Partial<Record<CommandId, () => void | boolean>> = {
     ...currentProgramActions,
     ...sqlActions,
     newSql: active ? () => void openSql(active) : undefined,
@@ -266,35 +313,34 @@ export default function App() {
     newProgram: () => newProgram(),
     openProgram: () => void openProgram(),
     closeTab: program ? () => closeProgram(program) : undefined,
+    nextTab: programs.length > 1 ? () => setProgramId(neighbor(programs, tabIndex, 1)?.id ?? null) : undefined,
+    prevTab: programs.length > 1 ? () => setProgramId(neighbor(programs, tabIndex, -1)?.id ?? null) : undefined,
+    moveTabLeft: tabIndex > 0 ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex - 1)) : undefined,
+    moveTabRight: tabIndex >= 0 && tabIndex < programs.length - 1
+      ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex + 1)) : undefined,
     connect: () => setShowLogin(true),
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
     refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
-    reconnect: active ? () => void reconnect(active.sessionId) : undefined,
+    reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
     palette: () => setShowPalette(true),
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.
       if (matches(e, commands.copyGrid.keys!)) return;
       if (showLogin || showTheme || showPalette || inspection || draft) {
-        if (
-          matches(e, commands.explainPlan.keys!) ||
-          matches(e, commands.refreshExplorer.keys!)
-        ) {
-          e.preventDefault();
-        }
+        if (isWebviewKey(e)) e.preventDefault();
         return;
       }
       const target = e.target;
       if (
         target instanceof HTMLElement &&
-        target.closest("input, textarea, select, [contenteditable=true]") &&
-        !target.closest(".cm-content") &&
-        editorEdits.some((id) => matches(e, commands[id].keys!))
+        target.closest("input, textarea") &&
+        isFieldKey(e)
       )
         return;
       handleShortcut(e, actions);
@@ -304,22 +350,43 @@ export default function App() {
   });
 
   useEffect(() => {
-    // Sin menú del navegador: solo los campos de texto conservan copiar y pegar.
+    // Sin menú del navegador: los campos de texto conservan el nativo y el editor muestra el suyo.
     const onContext = (e: MouseEvent) => {
       if (
-        e.target instanceof HTMLElement &&
-        e.target.closest("input, textarea")
+        e.target instanceof Element &&
+        e.target.closest("input, textarea, .cm-editor")
       )
         return;
       e.preventDefault();
     };
+    // Ctrl + rueda haría zoom del webview.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    // Los botones laterales del mouse (3 y 4) navegan atrás y adelante.
+    const onSideButton = (e: MouseEvent) => {
+      if (e.button === 3 || e.button === 4) e.preventDefault();
+    };
     document.addEventListener("contextmenu", onContext);
-    return () => document.removeEventListener("contextmenu", onContext);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("mouseup", onSideButton);
+    window.addEventListener("auxclick", onSideButton);
+    return () => {
+      document.removeEventListener("contextmenu", onContext);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("mouseup", onSideButton);
+      window.removeEventListener("auxclick", onSideButton);
+    };
   }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
     const listener = getCurrentWindow().onCloseRequested((event) => {
+      const pending = Object.values(gridPending.current).reduce((total, count) => total + count, 0);
+      if (pending && !window.confirm(pendingDiscardMessage(pending))) {
+        event.preventDefault();
+        return;
+      }
       if (
         dirtyPrograms.current &&
         !window.confirm("¿Descartar los cambios sin guardar?")
@@ -335,7 +402,9 @@ export default function App() {
         )
       ) {
         event.preventDefault();
+        return;
       }
+      if (saveBeforeClose.current()) event.preventDefault();
     });
     return () => {
       void listener.then((unlisten) => unlisten());
@@ -343,19 +412,42 @@ export default function App() {
   }, []);
 
   async function disconnect(id: string) {
-    await api.disconnect(id);
+    if (
+      programs.some((tab) => tab.connection?.sessionId === id && tab.sql?.transaction) &&
+      !window.confirm("Hay transacciones abiertas. ¿Desconectar con rollback?")
+    ) return;
+    try {
+      await api.disconnect(id);
+    } catch (error) {
+      const detail = describeError(error);
+      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message, "error");
+      return;
+    }
+    setStates((current) => {
+      const next = { ...current, [id]: "Disconnected" as const };
+      for (const tab of programs) {
+        if (tab.connection?.sessionId === id && tab.sql) next[tab.sql.sessionId] = "Disconnected";
+      }
+      return next;
+    });
+    setPrograms((current) => current.map((tab) =>
+      tab.connection?.sessionId === id && tab.sql?.transaction
+        ? { ...tab, sql: { ...tab.sql, transaction: false } }
+        : tab,
+    ));
     const rest = connections.filter((c) => c.sessionId !== id);
     setConnections(rest);
     setActiveId(rest[0]?.sessionId ?? null);
     if (rest.length === 0) setShowLogin(true);
   }
 
-  async function reconnect(id: string) {
+  async function reconnect(id: string): Promise<boolean> {
     try {
       await api.reconnect(id);
       setStates((s) => ({ ...s, [id]: "Connected" }));
       setReconnectErrors(({ [id]: _old, ...rest }) => rest);
       setRefreshTick((t) => t + 1);
+      return true;
     } catch (e) {
       const d = describeError(e);
       setStates((s) => ({ ...s, [id]: "Disconnected" }));
@@ -363,17 +455,163 @@ export default function App() {
         ...r,
         [id]: d.code ? `${d.code} ${d.message}` : d.message,
       }));
+      return false;
     }
   }
+
+  async function reconnectConnection(id: string) {
+    if (!await reconnect(id)) return;
+    try {
+      await Promise.all((await api.sessionSiblings(id)).map(reconnect));
+    } catch (error) {
+      showNotice(describeError(error).message, "error");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      if (!connections.length || document.hidden || Date.now() - lastPing.current < 10_000) return;
+      lastPing.current = Date.now();
+      await Promise.all(connections.map(async ({ sessionId }) => {
+        const siblings = await api.sessionSiblings(sessionId).catch(() => []);
+        await Promise.all([sessionId, ...siblings].map(async (id) => {
+          let reason = "Conexión perdida";
+          try {
+            if (await api.sessionPing(id)) return;
+          } catch (error) {
+            reason = describeError(error).message;
+          }
+          if (cancelled) return;
+          setStates((current) => ({ ...current, [id]: "Disconnected" }));
+          setReconnectErrors((current) => ({ ...current, [id]: reason }));
+        }));
+      }));
+    }
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [connections]);
 
   const onConnectionLost = useCallback(() => {
     if (activeId) setStates((s) => ({ ...s, [activeId]: "Disconnected" }));
   }, [activeId]);
 
-  const showNotice = useCallback((message: string) => {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 2500);
+  const clearNotice = useCallback(() => {
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = undefined;
+    errorVisible.current = false;
+    setNotice(null);
   }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  const showNotice = useCallback((message: string, kind: "info" | "error" = "info") => {
+    if (kind === "info" && errorVisible.current) return;
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = undefined;
+    errorVisible.current = kind === "error";
+    setNotice({ message, kind });
+    if (kind === "info") noticeTimer.current = setTimeout(clearNotice, 2500);
+  }, [clearNotice]);
+
+  const persistWorkspaces = useCallback(() => {
+    const { programs, connections } = latestWorkspace.current;
+    const profiles = new Set(connections.map((connection) => connection.profileId));
+    const snapshots = [...profiles].flatMap((profileId) => profileId && workspaceReady.current.has(profileId)
+      ? [{ profileId, workspace: captureWorkspace(programs, profileId, workspaceTexts.current) }]
+      : []);
+    const writes = workspaceWrites.current.catch(() => {}).then(async () => {
+      for (const { profileId, workspace } of snapshots) {
+        const payload = JSON.stringify(workspace);
+        if (payload === lastWorkspace.current.get(profileId)) continue;
+        if (workspace.tabs.length || lastWorkspace.current.has(profileId)) {
+          await api.saveWorkspace(profileId, workspace);
+        }
+        lastWorkspace.current.set(profileId, payload);
+      }
+    });
+    workspaceWrites.current = writes;
+    return writes;
+  }, []);
+  const scheduleWorkspaceSave = useCallback(() => {
+    if (!workspaceReady.current.size) return;
+    clearTimeout(workspaceTimer.current);
+    workspaceTimer.current = setTimeout(() => {
+      void persistWorkspaces().catch((error) => showNotice(describeError(error).message, "error"));
+    }, 2000);
+  }, [persistWorkspaces, showNotice]);
+  useEffect(scheduleWorkspaceSave, [programs, connections, scheduleWorkspaceSave]);
+  useEffect(() => () => clearTimeout(workspaceTimer.current), []);
+  saveBeforeClose.current = () => {
+    if (!connections.some(({ profileId }) => profileId && workspaceReady.current.has(profileId))) return false;
+    clearTimeout(workspaceTimer.current);
+    void persistWorkspaces().then(() => getCurrentWindow().destroy())
+      .catch((error) => showNotice(describeError(error).message, "error"));
+    return true;
+  };
+
+  async function offerWorkspace(connection: ActiveConnection) {
+    const id = connection.profileId;
+    if (!id || workspaceReady.current.has(id) || workspaceLoading.current.has(id) || workspaceOffers[id]) return;
+    workspaceLoading.current.add(id);
+    try {
+      const saved = await api.loadWorkspace(id);
+      const workspace = saved && validateWorkspace(saved);
+      if (saved && !workspace) throw new Error("Espacio de trabajo inválido.");
+      if (workspace?.tabs.length) {
+        lastWorkspace.current.set(id, JSON.stringify(workspace));
+        setWorkspaceOffers((all) => ({ ...all, [id]: workspace }));
+      } else {
+        workspaceReady.current.add(id);
+        scheduleWorkspaceSave();
+      }
+    } catch (error) {
+      showNotice(describeError(error).message, "error");
+    } finally {
+      workspaceLoading.current.delete(id);
+    }
+  }
+
+  async function resolveWorkspace(connection: ActiveConnection, workspace: Workspace, restore: boolean) {
+    const id = connection.profileId;
+    if (!id || workspaceLoading.current.has(id)) return;
+    workspaceLoading.current.add(id);
+    try {
+      if (restore) {
+        const remaining: Workspace["tabs"] = [];
+        for (const tab of workspace.tabs) {
+          if (tab.type === "object") {
+            await onOpenObject({ ...tab, status: "Valid", last_ddl_time: "" }, "view", connection);
+          } else if (tab.type === "sql") {
+            const test = tab.kind === "test" ? { bindKinds: {}, outputs: [] } : undefined;
+            if (!await openSql(connection, tab.text, false, false, test, false, tab.title)) remaining.push(tab);
+          } else await openFileContent(tab.name, tab.text, connection);
+        }
+        if (remaining.length) {
+          setWorkspaceOffers((all) => ({ ...all, [id]: { ...workspace, tabs: remaining } }));
+          return;
+        }
+      } else {
+        await api.clearWorkspace(id);
+        lastWorkspace.current.delete(id);
+      }
+      setWorkspaceOffers(({ [id]: _resolved, ...rest }) => rest);
+      workspaceReady.current.add(id);
+      scheduleWorkspaceSave();
+    } catch (error) {
+      showNotice(describeError(error).message, "error");
+    } finally {
+      workspaceLoading.current.delete(id);
+    }
+  }
+
+  function rememberWorkspaceText(id: string, doc: { toString(): string }) {
+    workspaceTexts.current.set(id, doc);
+    scheduleWorkspaceSave();
+  }
 
   function updateProgram(
     id: string,
@@ -387,6 +625,22 @@ export default function App() {
           : tab,
       ),
     );
+  }
+
+  // Un aviso estable por pestaña; si el estado no cambia, la app no vuelve a renderizar.
+  const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>());
+  function dirtyHandler(id: string) {
+    let handler = dirtyHandlers.current.get(id);
+    if (!handler) {
+      handler = (dirty: boolean) =>
+        setPrograms((tabs) =>
+          tabs.some((tab) => tab.id === id && tab.dirty !== dirty)
+            ? tabs.map((tab) => (tab.id === id ? { ...tab, dirty } : tab))
+            : tabs,
+        );
+      dirtyHandlers.current.set(id, handler);
+    }
+    return handler;
   }
 
   function addProgram(tab: ProgramTab) {
@@ -414,38 +668,62 @@ export default function App() {
   async function openProgram() {
     try {
       const file = await api.openProgramFile();
-      if (!file) return;
-      const name = file.name.toLowerCase();
-      if (name.endsWith(".tst")) {
-        if (!active) throw new Error("Conéctate para abrir la prueba.");
-        const { source, bindKinds, outputs } = parseTestFile(file.source);
-        await openSql(active, source, false, false, { bindKinds, outputs, fileName: file.name });
-        return;
-      }
-      const kind = name.endsWith(".pks")
-        ? "PACKAGE"
-        : name.endsWith(".pkb")
-          ? "PACKAGE BODY"
-          : "SQL";
-      addProgram({
-        id: crypto.randomUUID(),
-        label: file.name,
-        fileName: file.name,
-        readOnly: false,
-        dirty: false,
-        parts: [
-          {
-            kind,
-            source: file.source.replace(/\r\n?/g, "\n"),
-            last_ddl_time: null,
-            diagnostics: [],
-          },
-        ],
-      });
+      if (file) await openFileContent(file.name, file.source);
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
+
+  async function openFileContent(fileName: string, contents: string, connection = active) {
+    const name = fileName.toLowerCase();
+    if (name.endsWith(".tst")) {
+      if (!connection) throw new Error("Conéctate para abrir la prueba.");
+      const { source, bindKinds, outputs } = parseTestFile(contents);
+      await openSql(connection, source, false, false, { bindKinds, outputs, fileName });
+      return;
+    }
+    const kind = name.endsWith(".pks") ? "PACKAGE" : name.endsWith(".pkb") ? "PACKAGE BODY" : "SQL";
+    addProgram({
+      id: crypto.randomUUID(),
+      label: fileName,
+      fileName,
+      workspaceProfileId: connection?.profileId,
+      readOnly: false,
+      dirty: false,
+      parts: [{ kind, source: contents.replace(/\r\n?/g, "\n"), last_ddl_time: null, diagnostics: [] }],
+    });
+  }
+
+  useLayoutEffect(() => {
+    function fileDrag(event: DragEvent) {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    }
+    async function openDroppedFiles(files: File[]) {
+      for (const file of files) {
+        if (!/\.(?:sql|pks|pkb|tst)$/i.test(file.name)) {
+          showNotice(`Tipo no admitido: ${file.name}`, "error");
+          continue;
+        }
+        try {
+          await openFileContent(file.name, await file.text());
+        } catch (error) {
+          showNotice(describeError(error).message, "error");
+        }
+      }
+    }
+    function drop(event: DragEvent) {
+      const transfer = event.dataTransfer;
+      if (!transfer?.types.includes("Files")) return;
+      event.preventDefault();
+      void openDroppedFiles(Array.from(transfer.files));
+    }
+    window.addEventListener("dragover", fileDrag);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", fileDrag);
+      window.removeEventListener("drop", drop);
+    };
+  });
 
   async function openSql(
     connection: ActiveConnection,
@@ -467,11 +745,14 @@ export default function App() {
         dirty: false,
         sql: { sessionId, initial, run: !!run, exportOnOpen: run === "export", edit, test, command, transaction: false },
       });
+      return true;
     } catch (error) {
       const detail = describeError(error);
       showNotice(
         detail.code ? `${detail.code} ${detail.message}` : detail.message,
+        "error",
       );
+      return false;
     }
   }
 
@@ -498,7 +779,7 @@ export default function App() {
           bindKinds: draft.bindKinds, outputs: draft.outputs, routine: { path, signature, overloaded },
         });
       } catch (error) {
-        showNotice(describeError(error).message);
+        showNotice(describeError(error).message, "error");
       }
     }
     try {
@@ -513,7 +794,7 @@ export default function App() {
         })) });
       }
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
@@ -538,12 +819,14 @@ export default function App() {
         label: name, run: () => void testRoutine(connection, object, name, x, y),
       })) });
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
   function removeTab(tab: ProgramTab) {
-    if (tab.sql) void api.sqlClose(tab.sql.sessionId);
+    delete gridPending.current[tab.id];
+    workspaceTexts.current.delete(tab.id);
+    if (tab.sql) void api.sqlClose(tab.sql.sessionId).catch((error) => showNotice(describeError(error).message, "error"));
     setPrograms((all) => {
       const index = all.findIndex((item) => item.id === tab.id);
       const remaining = all.filter((item) => item.id !== tab.id);
@@ -570,11 +853,15 @@ export default function App() {
       setClosing(null);
       showNotice(
         detail.code ? `${detail.code} ${detail.message}` : detail.message,
+        "error",
       );
     }
   }
 
   function closeProgram(tab: ProgramTab) {
+    const pending = gridPending.current[tab.id] ??
+      (tab.id === programId && programActions.current?.hasPending?.() ? 1 : 0);
+    if (pending && !window.confirm(pendingDiscardMessage(pending))) return;
     if (tab.sql?.transaction) {
       setClosing(tab);
       return;
@@ -593,6 +880,7 @@ export default function App() {
       return;
     }
     const index = programs.findIndex((item) => item.id === tab.id);
+    workspaceTexts.current.delete(tab.id);
     const remaining = programs.filter((item) => item.id !== tab.id);
     setPrograms(remaining);
     if (programId === tab.id)
@@ -613,7 +901,7 @@ export default function App() {
           const ddl = await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name);
           await openSql(connection, ddl);
         } catch (error) {
-          showNotice(describeError(error).message);
+          showNotice(describeError(error).message, "error");
         }
       } else {
         setInspection({ object, sessionId: connection.sessionId, mode: "describe" });
@@ -701,8 +989,8 @@ export default function App() {
       compileSession.current = null;
       try {
         await api.sqlClose(id);
-      } catch {
-        // La sesión hermana ya pudo cerrarse; el resultado de la compilación es lo que importa.
+      } catch (error) {
+        showNotice(describeError(error).message, "error");
       }
     }
   }
@@ -746,7 +1034,7 @@ export default function App() {
     },
     {
       label: "Buscar",
-      items: [run("find"), run("replace"), "sep", run("palette")],
+      items: [run("find"), run("replace"), run("findNext"), run("findPrev"), "sep", run("palette")],
     },
     {
       label: "Ver",
@@ -757,6 +1045,11 @@ export default function App() {
         run("foldBlock"),
         run("unfoldBlock"),
         run("compareProgram"),
+        "sep",
+        run("nextTab"),
+        run("prevTab"),
+        run("moveTabLeft"),
+        run("moveTabRight"),
         "sep",
         run("customizeUi"),
       ],
@@ -849,7 +1142,7 @@ export default function App() {
           states={states}
           onSelect={setActiveId}
           onDisconnect={(id) => void disconnect(id)}
-          onReconnect={(id) => void reconnect(id)}
+          onReconnect={(id) => void reconnectConnection(id)}
           reconnectError={activeId ? reconnectErrors[activeId] : undefined}
           onNew={() => setShowLogin(true)}
         />
@@ -940,6 +1233,11 @@ export default function App() {
           />
         )}
         <main className="workspace">
+          {active && workspaceOffer && <div className="workspace-restore" role="status">
+            <span>Restaurar {workspaceOffer.tabs.length} {workspaceOffer.tabs.length === 1 ? "pestaña" : "pestañas"}</span>
+            <button className="btn" onClick={() => void resolveWorkspace(active, workspaceOffer, true)}>Restaurar</button>
+            <button className="btn" onClick={() => void resolveWorkspace(active, workspaceOffer, false)}>Descartar</button>
+          </div>}
           {!active && !program && (
             <div className="empty">
               <p>Sin conexión</p>
@@ -969,6 +1267,22 @@ export default function App() {
                   <div
                     key={tab.id}
                     className={`program-tab ${tab.connection?.environment ? `env-${tab.connection.environment}` : ""}`}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id);
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(event) => {
+                      if (event.dataTransfer.types.includes(TAB_DRAG_TYPE)) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+                      event.preventDefault();
+                      const from = event.dataTransfer.getData(TAB_DRAG_TYPE);
+                      setPrograms((current) => reorder(current,
+                        current.findIndex((item) => item.id === from),
+                        current.findIndex((item) => item.id === tab.id)));
+                    }}
                   >
                     <button
                       aria-pressed={tab.id === programId}
@@ -996,6 +1310,20 @@ export default function App() {
                 >
                   {tab.sql ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
+                      {states[tab.sql.sessionId] === "Disconnected" && (
+                        <div>
+                          <span role="status" title={reconnectErrors[tab.sql.sessionId]}>
+                            {editorSessionExists(tab) ? "Sesión caída" : "Sesión desconectada"}
+                          </span>
+                          {editorSessionExists(tab) && (
+                            <button className="btn" aria-label="Reconectar sesión SQL"
+                              ref={tab.id === programId ? reconnectSqlButton : undefined}
+                              onClick={() => void reconnect(tab.sql!.sessionId)}>
+                              Reconectar
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}
@@ -1015,7 +1343,17 @@ export default function App() {
                         editOnOpen={tab.sql.edit}
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
-                        onDirty={(dirty) => updateProgram(tab.id, { dirty })}
+                        onDirty={dirtyHandler(tab.id)}
+                        onWorkspaceChange={tab.connection?.profileId && !tab.sql.command
+                          ? (text) => rememberWorkspaceText(tab.id, text) : undefined}
+                        onPendingChange={(count) => { gridPending.current[tab.id] = count; }}
+                        onBusy={(busy) => setPrograms((all) => {
+                          const current = all.find((item) => item.id === tab.id);
+                          if (!current?.sql || !!current.sql.busy === busy) return all;
+                          return all.map((item) => item.id === tab.id && item.sql
+                            ? { ...item, sql: { ...item.sql, busy } }
+                            : item);
+                        })}
                         onTransaction={(open) =>
                           setPrograms((all) =>
                             all.map((item) =>
@@ -1085,7 +1423,9 @@ export default function App() {
                             : undefined
                         }
                         ref={tab.id === programId ? programActions : undefined}
-                        onDirty={(dirty) => updateProgram(tab.id, { dirty })}
+                        onDirty={dirtyHandler(tab.id)}
+                        onWorkspaceChange={tab.workspaceProfileId
+                          ? (doc) => rememberWorkspaceText(tab.id, doc) : undefined}
                       />
                     </Suspense>
                   ) : tab.error ? (
@@ -1106,8 +1446,10 @@ export default function App() {
             />
           )}
           {notice && (
-            <div className="toast" role="status">
-              {notice}
+            <div className="toast" role={notice.kind === "error" ? "alert" : "status"}>
+              <span>{notice.message}</span>
+              {notice.kind === "error" && <button type="button" className="ib"
+                aria-label="Cerrar aviso" title="Cerrar aviso" onClick={clearNotice}><X size={14} /></button>}
             </div>
           )}
         </main>
@@ -1148,6 +1490,7 @@ export default function App() {
             setActiveId(c.sessionId);
             setStates((s) => ({ ...s, [c.sessionId]: "Connected" }));
             setShowLogin(false);
+            void offerWorkspace(c);
           }}
         />
       )}

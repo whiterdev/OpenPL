@@ -4,6 +4,7 @@ pub mod commands;
 pub mod state;
 
 use openpl_core::session::{OracleConnector, SessionManager};
+use openpl_core::workspace::WorkspaceStore;
 use openpl_core::{KeyringStore, ProfileStore};
 use state::{AppSettings, AppState};
 use std::path::Path;
@@ -18,6 +19,7 @@ pub fn run() {
 
     let state = AppState {
         profiles: ProfileStore::new(ProfileStore::default_path()),
+        workspaces: WorkspaceStore::new(WorkspaceStore::default_dir()),
         secrets: Arc::new(KeyringStore),
         sessions: SessionManager::new(Arc::new(OracleConnector)),
         client_version: Box::new(move || match &init_error {
@@ -29,6 +31,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::client_info,
@@ -37,10 +41,15 @@ pub fn run() {
             commands::save_profile,
             commands::delete_profile,
             commands::stored_password,
+            commands::load_workspace,
+            commands::save_workspace,
+            commands::clear_workspace,
             commands::connect,
             commands::disconnect,
             commands::reconnect,
             commands::session_state,
+            commands::session_siblings,
+            commands::session_ping,
             commands::list_objects,
             commands::routine_overloads,
             commands::object_ddl,
@@ -61,6 +70,8 @@ pub fn run() {
             commands::program_source,
             commands::open_program_file,
             commands::save_program_file,
+            commands::read_script_file,
+            commands::write_spool_file,
             commands::recompile,
         ])
         .run(tauri::generate_context!())

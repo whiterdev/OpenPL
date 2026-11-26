@@ -48,4 +48,15 @@ describe("StartupCheck", () => {
     render(<StartupCheck onReady={onReady} />);
     await vi.waitFor(() => expect(onReady).toHaveBeenCalledWith(info));
   });
+
+  test("muestra el error al guardar la carpeta y permite reintentar", async () => {
+    m.clientInfo.mockResolvedValue(missing);
+    m.setClientDir.mockRejectedValueOnce({ Io: "No se pudo guardar la carpeta" }).mockResolvedValueOnce();
+    render(<StartupCheck onReady={vi.fn()} />);
+    const save = await screen.findByRole("button", { name: "Guardar" });
+    await userEvent.click(save);
+    expect(await screen.findByText("No se pudo guardar la carpeta")).toBeVisible();
+    await userEvent.click(save);
+    expect(await screen.findByText("Reinicie OpenPL")).toBeVisible();
+  });
 });

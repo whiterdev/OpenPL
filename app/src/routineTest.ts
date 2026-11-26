@@ -48,7 +48,7 @@ const reserved = new Set(`ACCESS ADD ALL ALTER AND ANY AS ASC AT AUDIT BEGIN BET
   SUBTYPE SUCCESSFUL SYNC TABAUTH TABLE THEN TO TRIGGER TYPE UID UNION UNIQUE UPDATE USER VALIDATE VALUES
   VARCHAR VARCHAR2 VIEW VIEWS WHEN WHENEVER WHERE WITH`.split(/\s+/));
 const ordinary = (name: string) => /^[A-Z][A-Z0-9_$#]*$/.test(name) && !reserved.has(name);
-const identifier = (name: string) => ordinary(name) ? name : `"${name.replace(/"/g, '""')}"`;
+export const identifier = (name: string) => ordinary(name) ? name : `"${name.replace(/"/g, '""')}"`;
 
 function outputKind(type: string): TestOutputBind["kind"] {
   switch (type) {

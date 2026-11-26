@@ -1,0 +1,15 @@
+.cell-viewer {
+    width: min(720px, calc(100vw - 40px));
+}
+
+.cell-viewer textarea {
+    display: block;
+    resize: vertical;
+    width: 100%;
+    height: min(45vh, 360px);
+    min-height: 64px;
+}
+
+.cell-viewer [role="alert"] {
+    color: var(--err);
+}

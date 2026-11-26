@@ -10,6 +10,7 @@ vi.mock("../api", () => ({
     listProfiles: vi.fn(),
     storedPassword: vi.fn(),
     connect: vi.fn(),
+    disconnect: vi.fn(),
     saveProfile: vi.fn(),
     deleteProfile: vi.fn(),
   },
@@ -51,6 +52,7 @@ describe("LoginDialog", () => {
     await vi.waitFor(() =>
       expect(onConnected).toHaveBeenCalledWith({
         sessionId: "s1",
+        profileId: perfil.id,
         label: "HR en DEV",
         environment: "dev",
         serverVersion: "12.1.0",
@@ -81,6 +83,32 @@ describe("LoginDialog", () => {
     expect(screen.getByText("Usuario o contraseña incorrectos.")).toBeInTheDocument();
     expect(screen.getByLabelText("Usuario")).toHaveValue("HR");
     expect(screen.getByLabelText("Contraseña")).toHaveValue("");
+  });
+
+  test("un error de conexión conserva la contraseña", async () => {
+    m.connect.mockRejectedValue({ Db: { code: "ORA-12170", message: "Tiempo agotado" } });
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await llenar();
+    await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
+    expect(await screen.findByText("ORA-12170")).toBeVisible();
+    expect(screen.getByLabelText("Contraseña")).toHaveValue("clave");
+  });
+
+  test("cancelar cierra la sesión si la conexión se completa después", async () => {
+    let resolve!: (value: typeof ok) => void;
+    m.connect.mockReturnValue(new Promise((done) => { resolve = done; }));
+    m.disconnect.mockResolvedValue();
+    const onConnected = vi.fn();
+    const onCancel = vi.fn();
+    render(<LoginDialog onConnected={onConnected} onCancel={onCancel} />);
+    await llenar();
+    await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
+    expect(screen.getByRole("button", { name: /Conectando/ })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    resolve(ok);
+    await vi.waitFor(() => expect(m.disconnect).toHaveBeenCalledWith("s1"));
+    expect(onConnected).not.toHaveBeenCalled();
   });
 
   test("elegir perfil guardado completa campos y contraseña guardada", async () => {
@@ -186,5 +214,28 @@ describe("LoginDialog", () => {
     await userEvent.click(await screen.findByRole("button", { name: /HR en DEV/ }));
     expect(screen.getByRole("radio", { name: "Alias TNS" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Alias")).toHaveValue("PRODALIAS");
+  });
+
+  test("Tab cicla dentro del diálogo y Escape cierra devolviendo el foco", async () => {
+    const opener = document.body.appendChild(document.createElement("button"));
+    opener.textContent = "Abrir login";
+    opener.focus();
+    const onCancel = vi.fn();
+    const { unmount } = render(<LoginDialog onConnected={vi.fn()} onCancel={onCancel} />);
+    await screen.findByRole("button", { name: /HR en DEV/ });
+
+    const search = screen.getByRole("textbox", { name: "Buscar perfil" });
+    const connect = screen.getByRole("button", { name: "Conectar" });
+    search.focus();
+    await userEvent.tab({ shift: true });
+    expect(connect).toHaveFocus();
+    await userEvent.tab();
+    expect(search).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
   });
 });

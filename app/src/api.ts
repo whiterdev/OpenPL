@@ -1,5 +1,6 @@
 // Envoltorios tipados de los comandos Tauri.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import * as tauriClipboard from "@tauri-apps/plugin-clipboard-manager";
 import type { EditorReference } from "./editorReference";
 import type { RoutineOverload, TestOutputBind } from "./routineTest";
 import type {
@@ -22,6 +23,7 @@ import type {
   ProgramPart,
   Scope,
   SessionState,
+  Workspace,
 } from "./types";
 
 export const api = {
@@ -35,12 +37,22 @@ export const api = {
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),
   storedPassword: (id: string) =>
     invoke<string | null>("stored_password", { id }),
+  loadWorkspace: (profileId: string) =>
+    invoke<Workspace | null>("load_workspace", { profileId }),
+  saveWorkspace: (profileId: string, workspace: Workspace) =>
+    invoke<void>("save_workspace", { profileId, workspace }),
+  clearWorkspace: (profileId: string) =>
+    invoke<void>("clear_workspace", { profileId }),
   connect: (params: ConnectParams) =>
     invoke<ConnectResult>("connect", { params }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
   reconnect: (sessionId: string) => invoke<void>("reconnect", { sessionId }),
   sessionState: (sessionId: string) =>
     invoke<SessionState>("session_state", { sessionId }),
+  sessionSiblings: (sessionId: string) =>
+    invoke<string[]>("session_siblings", { sessionId }),
+  sessionPing: (sessionId: string) =>
+    invoke<boolean>("session_ping", { sessionId }),
   listObjects: (
     sessionId: string,
     scope: Scope,
@@ -142,6 +154,10 @@ export const api = {
     invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),
+  readScriptFile: (path: string) =>
+    invoke<{ name: string; path: string; source: string }>("read_script_file", { path }),
+  writeSpoolFile: (path: string, text: string) =>
+    invoke<string>("write_spool_file", { path, text }),
   recompile: (
     sessionId: string,
     objectType: ObjectType,
@@ -154,4 +170,12 @@ export const api = {
       owner,
       name,
     }),
+};
+
+// En el navegador (vite dev sin Tauri) no existe el plugin.
+export const clipboard = {
+  readText: (): Promise<string> =>
+    isTauri() ? tauriClipboard.readText() : navigator.clipboard.readText(),
+  writeText: (text: string): Promise<void> =>
+    isTauri() ? tauriClipboard.writeText(text) : navigator.clipboard.writeText(text),
 };

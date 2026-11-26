@@ -1,6 +1,7 @@
 //! Estado compartido de la app y preferencias persistentes.
 
 use openpl_core::session::{Connector, OracleConnector, SessionManager};
+use openpl_core::workspace::WorkspaceStore;
 use openpl_core::{CoreError, ProfileStore, SecretStore};
 use openpl_oracle::{DbError, DbVersion};
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,7 @@ pub type VersionFn = Box<dyn Fn() -> Result<DbVersion, DbError> + Send + Sync>;
 
 pub struct AppState<C: Connector = OracleConnector> {
     pub profiles: ProfileStore,
+    pub workspaces: WorkspaceStore,
     pub secrets: Arc<dyn SecretStore>,
     pub sessions: SessionManager<C>,
     pub client_version: VersionFn,

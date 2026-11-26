@@ -1,5 +1,7 @@
 // Divide un script en sentencias para la Ventana SQL. Las posiciones son del texto original.
 
+import { parseSqlplus, type SqlplusCommand } from "./sqlplus";
+
 export type StatementKind = "sql" | "plsql" | "sqlplus";
 
 export interface ScriptStatement {
@@ -8,44 +10,9 @@ export interface ScriptStatement {
   text: string;
   from: number;
   to: number;
+  command?: SqlplusCommand;
 }
 
-const SQLPLUS = new Set([
-  "SET",
-  "PROMPT",
-  "SPOOL",
-  "DEFINE",
-  "UNDEFINE",
-  "SHOW",
-  "EXEC",
-  "EXECUTE",
-  "VARIABLE",
-  "VAR",
-  "PRINT",
-  "COLUMN",
-  "COL",
-  "CONNECT",
-  "CONN",
-  "DISCONNECT",
-  "WHENEVER",
-  "ACCEPT",
-  "PAUSE",
-  "REM",
-  "REMARK",
-  "CLEAR",
-  "BREAK",
-  "COMPUTE",
-  "TTITLE",
-  "BTITLE",
-  "DESC",
-  "DESCRIBE",
-  "HOST",
-  "START",
-  "EXIT",
-  "QUIT",
-  "TIMING",
-  "SPO",
-]);
 const PLSQL_UNITS =
   /^(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE|LIBRARY|JAVA)\b/;
 const CLOSERS: Record<string, string> = {
@@ -56,7 +23,7 @@ const CLOSERS: Record<string, string> = {
 };
 
 /** Si en `i` empieza un literal o comentario, devuelve dónde termina; si no, -1. */
-function skipOpaque(source: string, i: number): number {
+export function skipOpaque(source: string, i: number): number {
   const c = source[i];
   const next = source[i + 1];
   if (c === "-" && next === "-") {
@@ -68,15 +35,16 @@ function skipOpaque(source: string, i: number): number {
     return end < 0 ? source.length : end + 2;
   }
   if (
-    (c === "q" || c === "Q") &&
-    next === "'" &&
-    i + 2 < source.length &&
+    /[qn]/i.test(c ?? "") &&
     !/[\w$#]/.test(source[i - 1] ?? "")
   ) {
-    const open = source[i + 2];
-    const close = CLOSERS[open] ?? open;
-    const end = source.indexOf(`${close}'`, i + 3);
-    return end < 0 ? source.length : end + 2;
+    const quote = c.toLowerCase() === "n" && /q/i.test(next ?? "") ? i + 2 : i + 1;
+    if (source[quote] === "'" && quote + 1 < source.length && /q/i.test(source[quote - 1])) {
+      const open = source[quote + 1];
+      const close = CLOSERS[open] ?? open;
+      const end = source.indexOf(`${close}'`, quote + 2);
+      return end < 0 ? source.length : end + 2;
+    }
   }
   if (c === "'" || c === '"') {
     let j = i + 1;
@@ -149,16 +117,25 @@ export function splitScript(source: string): ScriptStatement[] {
 
     const start = i;
     const head = firstWords(source, start);
-    const firstWord = /^[A-Z_$#]+/.exec(head)?.[0] ?? "";
-    if (source[start] === "@" || SQLPLUS.has(firstWord)) {
-      const end = source.indexOf("\n", start);
-      const stop = end < 0 ? source.length : end;
-      push("sqlplus", start, stop);
+    const lineEnd = source.indexOf("\n", start);
+    const stop = lineEnd < 0 ? source.length : lineEnd;
+    const command = parseSqlplus(source.slice(start, stop));
+    if (command) {
+      const to = trimEnd(source, start, stop);
+      if (command.kind === "exec") {
+        out.push({ kind: "plsql", text: command.block, from: start, to });
+      } else {
+        out.push({ kind: "sqlplus", text: source.slice(start, to), from: start, to, command });
+      }
       i = stop;
       continue;
     }
 
     const plsql = isPlsqlStart(head);
+    const container = /^CREATE (?:OR REPLACE )?(?:(?:NON)?EDITIONABLE )?(?:PACKAGE\b|TYPE BODY\b)/.test(head);
+    const words = /[\w$#]+/y;
+    let depth = 0;
+    let endOfBlock = false;
     let j = start;
     let end = source.length;
     let next = source.length;
@@ -181,6 +158,36 @@ export function splitScript(source: string): ScriptStatement[] {
         next = j + 1;
         break;
       }
+      if (plsql) {
+        if (source[j] === ";" && endOfBlock) {
+          end = next = j + 1;
+          break;
+        }
+        words.lastIndex = j;
+        const token = words.exec(source)?.[0]?.toUpperCase();
+        if (token) {
+          j = words.lastIndex;
+          if (endOfBlock) continue;
+          if (token === "BEGIN" || token === "CASE") depth += 1;
+          if (token === "END") {
+            let following = j;
+            while (following < source.length) {
+              if (/\s/.test(source[following])) following += 1;
+              else if (source.startsWith("--", following) || source.startsWith("/*", following))
+                following = skipOpaque(source, following);
+              else break;
+            }
+            words.lastIndex = following;
+            const suffix = words.exec(source)?.[0]?.toUpperCase();
+            if (suffix === "IF" || suffix === "LOOP" || suffix === "CASE") j = words.lastIndex;
+            if (suffix !== "IF" && suffix !== "LOOP") {
+              depth -= 1;
+              endOfBlock = depth <= (container ? -1 : 0);
+            }
+          }
+          continue;
+        }
+      }
       j += 1;
     }
     push(plsql ? "plsql" : "sql", start, end);
@@ -189,15 +196,10 @@ export function splitScript(source: string): ScriptStatement[] {
   return out;
 }
 
-/** La sentencia que contiene `position`, o la última que termina antes; si no hay, la primera. */
+/** Un espacio entre sentencias pertenece a la siguiente. */
 export function statementAt(
   list: ScriptStatement[],
   position: number,
 ): ScriptStatement | null {
-  let best: ScriptStatement | null = null;
-  for (const statement of list) {
-    if (statement.from <= position) best = statement;
-    else break;
-  }
-  return best ?? list[0] ?? null;
+  return list.find((statement) => position <= statement.to) ?? null;
 }

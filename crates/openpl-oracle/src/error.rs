@@ -7,7 +7,9 @@ pub enum ErrorKind {
     ClientMissing,
     InvalidCredentials,
     PasswordExpired,
+    AccountLocked,
     UnknownService,
+    Timeout,
     ConnectionLost,
     Other,
 }
@@ -29,9 +31,11 @@ pub fn classify(code: &str) -> ErrorKind {
         "DPI-1047" | "DPI-1072" => ErrorKind::ClientMissing,
         "ORA-01017" | "ORA-01005" | "ORA-01045" => ErrorKind::InvalidCredentials,
         "ORA-28001" => ErrorKind::PasswordExpired,
-        "ORA-12154" | "ORA-12514" | "ORA-12541" | "ORA-12505" | "ORA-12545" | "ORA-12170" => {
+        "ORA-28000" => ErrorKind::AccountLocked,
+        "ORA-12154" | "ORA-12514" | "ORA-12541" | "ORA-12505" | "ORA-12545" => {
             ErrorKind::UnknownService
         }
+        "ORA-12170" => ErrorKind::Timeout,
         "ORA-03113" | "ORA-03114" | "ORA-03135" | "ORA-02396" | "ORA-00028" | "ORA-01012"
         | "ORA-12537" | "ORA-12547" | "ORA-12571" | "DPI-1080" | "DPI-1010" => {
             ErrorKind::ConnectionLost
@@ -66,8 +70,10 @@ impl DbError {
         let message = match kind {
             ErrorKind::InvalidCredentials => "Usuario o contraseña incorrectos.".to_string(),
             ErrorKind::PasswordExpired => {
-                "La contraseña expiró; cámbiela con otra herramienta.".to_string()
+                "Clave vencida. Cámbiala y vuelve a conectar.".to_string()
             }
+            ErrorKind::AccountLocked => "Cuenta bloqueada.".to_string(),
+            ErrorKind::Timeout => "No se alcanzó el servidor.".to_string(),
             ErrorKind::ClientMissing if code.as_deref() == Some("DPI-1072") => {
                 "La versión del cliente Oracle no es compatible; instale Instant Client 19 o 21."
                     .to_string()
@@ -144,10 +150,25 @@ mod tests {
             Some("ORA-28001".into()),
             "ORA-28001: the password has expired",
         );
-        assert_eq!(
-            e.message,
-            "La contraseña expiró; cámbiela con otra herramienta."
+        assert_eq!(e.kind, ErrorKind::PasswordExpired);
+        assert_eq!(e.message, "Clave vencida. Cámbiala y vuelve a conectar.");
+    }
+
+    #[test]
+    fn timeout_y_cuenta_bloqueada_tienen_categoria_y_mensaje() {
+        let timeout = DbError::from_code(
+            Some("ORA-12170".into()),
+            "ORA-12170: TNS:Connect timeout occurred",
         );
+        assert_eq!(timeout.kind, ErrorKind::Timeout);
+        assert_eq!(timeout.message, "No se alcanzó el servidor.");
+
+        let locked = DbError::from_code(
+            Some("ORA-28000".into()),
+            "ORA-28000: The account is locked.",
+        );
+        assert_eq!(locked.kind, ErrorKind::AccountLocked);
+        assert_eq!(locked.message, "Cuenta bloqueada.");
     }
 
     #[test]

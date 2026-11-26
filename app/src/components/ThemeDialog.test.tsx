@@ -136,6 +136,28 @@ describe("ThemeDialog", () => {
     expect(screen.getAllByText(/Texto sobre Fondo del editor/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Guardar" })).toBeEnabled();
   });
+
+  test("Tab cicla dentro del diálogo de temas y Escape devuelve el foco", async () => {
+    const opener = document.body.appendChild(document.createElement("button"));
+    opener.textContent = "Abrir temas";
+    opener.focus();
+    const onClose = vi.fn();
+    const { unmount } = render(<ThemeDialog onClose={onClose} />);
+
+    const first = screen.getByRole("radio", { name: /Grafito/ });
+    const save = screen.getByRole("button", { name: "Guardar" });
+    expect(first).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(save).toHaveFocus();
+    await userEvent.tab();
+    expect(first).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
 });
 
 describe("toggleThemeMode", () => {

@@ -3,6 +3,7 @@
 use crate::state::{AppSettings, AppState};
 use openpl_core::catalog::{ObjectInfo, ObjectType, Scope};
 use openpl_core::session::{Connector, SessionId, SessionState};
+use openpl_core::workspace::Workspace;
 use openpl_core::{ConnectionProfile, CoreError};
 use openpl_oracle::{Compat, ConnectParams, DbError};
 use serde::Serialize;
@@ -89,7 +90,16 @@ pub async fn connect_impl<C: Connector>(
     params: ConnectParams,
 ) -> Result<ConnectResult, CoreError> {
     let client = (st.client_version)()?;
-    let id = st.sessions.open(params).await?;
+    let id = tokio::time::timeout(std::time::Duration::from_secs(20), st.sessions.open(params))
+        .await
+        .map_err(|_| {
+            CoreError::Db(DbError {
+                code: None,
+                kind: openpl_oracle::ErrorKind::Timeout,
+                message: "No se alcanzó el servidor.".to_string(),
+                offset: None,
+            })
+        })??;
     let session = st.sessions.get(id)?;
     let server = session.run(|c| Ok(C::server_version(c))).await?;
     let compat = openpl_oracle::check_compat(client, server);
@@ -127,6 +137,17 @@ pub fn session_state_impl<C: Connector>(
     Ok(st.sessions.get(id)?.state())
 }
 
+pub fn session_siblings_impl<C: Connector>(st: &AppState<C>, id: SessionId) -> Vec<SessionId> {
+    st.sessions.siblings(id)
+}
+
+pub async fn session_ping_impl<C: Connector>(
+    st: &AppState<C>,
+    id: SessionId,
+) -> Result<bool, CoreError> {
+    st.sessions.get(id)?.ping().await
+}
+
 pub async fn list_objects_impl(
     st: &AppState,
     id: SessionId,
@@ -157,6 +178,40 @@ pub fn set_client_dir(st: St<'_>, dir: Option<String>) -> Result<(), CoreError> 
 #[tauri::command]
 pub fn list_profiles(st: St<'_>) -> Result<Vec<ConnectionProfile>, CoreError> {
     list_profiles_impl(&st)
+}
+
+fn load_workspace_impl<C: Connector>(
+    st: &AppState<C>,
+    profile_id: Uuid,
+) -> Result<Option<Workspace>, CoreError> {
+    st.workspaces.load(profile_id)
+}
+
+fn save_workspace_impl<C: Connector>(
+    st: &AppState<C>,
+    profile_id: Uuid,
+    workspace: &Workspace,
+) -> Result<(), CoreError> {
+    st.workspaces.save(profile_id, workspace)
+}
+
+fn clear_workspace_impl<C: Connector>(st: &AppState<C>, profile_id: Uuid) -> Result<(), CoreError> {
+    st.workspaces.clear(profile_id)
+}
+
+#[tauri::command]
+pub fn load_workspace(st: St<'_>, profile_id: Uuid) -> Result<Option<Workspace>, CoreError> {
+    load_workspace_impl(&st, profile_id)
+}
+
+#[tauri::command]
+pub fn save_workspace(st: St<'_>, profile_id: Uuid, workspace: Workspace) -> Result<(), CoreError> {
+    save_workspace_impl(&st, profile_id, &workspace)
+}
+
+#[tauri::command]
+pub fn clear_workspace(st: St<'_>, profile_id: Uuid) -> Result<(), CoreError> {
+    clear_workspace_impl(&st, profile_id)
 }
 
 #[tauri::command]
@@ -196,6 +251,16 @@ pub async fn reconnect(st: St<'_>, session_id: SessionId) -> Result<(), CoreErro
 #[tauri::command]
 pub fn session_state(st: St<'_>, session_id: SessionId) -> Result<SessionState, CoreError> {
     session_state_impl(&st, session_id)
+}
+
+#[tauri::command]
+pub fn session_siblings(st: St<'_>, session_id: SessionId) -> Vec<SessionId> {
+    session_siblings_impl(&st, session_id)
+}
+
+#[tauri::command]
+pub async fn session_ping(st: St<'_>, session_id: SessionId) -> Result<bool, CoreError> {
+    session_ping_impl(&st, session_id).await
 }
 
 #[tauri::command]
@@ -534,6 +599,101 @@ fn replace_program_file(path: &std::path::Path, source: &str) -> std::io::Result
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct ScriptFile {
+    name: String,
+    path: String,
+    source: String,
+}
+
+fn sqlplus_path(
+    input: &str,
+    documents: Option<&std::path::Path>,
+    extension: &str,
+) -> Result<std::path::PathBuf, CoreError> {
+    use std::path::Path;
+
+    let path = Path::new(input.trim());
+    if path.file_name().is_none() {
+        return Err(CoreError::Io("Indica un nombre de archivo.".into()));
+    }
+    let mut resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        documents
+            .ok_or_else(|| CoreError::Io("No se encontró la carpeta Documentos.".into()))?
+            .join(path)
+    };
+    if resolved.extension().is_none() {
+        resolved.set_extension(extension);
+    }
+    Ok(resolved)
+}
+
+fn read_script_file_impl(
+    input: &str,
+    documents: Option<&std::path::Path>,
+) -> Result<ScriptFile, CoreError> {
+    use std::io::Read;
+
+    const LIMIT: u64 = 2 * 1024 * 1024;
+    let path = sqlplus_path(input, documents, "sql")?;
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| CoreError::Io(format!("No se pudo abrir el script: {error}")))?;
+    if !metadata.is_file() {
+        return Err(CoreError::Io("Selecciona un archivo de script.".into()));
+    }
+    if metadata.len() > LIMIT {
+        return Err(CoreError::Io("El script supera 2 MiB.".into()));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)?
+        .take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| CoreError::Io(format!("No se pudo leer el script: {error}")))?;
+    if bytes.len() as u64 > LIMIT {
+        return Err(CoreError::Io("El script supera 2 MiB.".into()));
+    }
+    Ok(ScriptFile {
+        name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        path: path.to_string_lossy().into_owned(),
+        source: String::from_utf8_lossy(&bytes).into_owned(),
+    })
+}
+
+fn write_spool_file_impl(
+    input: &str,
+    text: &str,
+    documents: Option<&std::path::Path>,
+) -> Result<String, CoreError> {
+    let path = sqlplus_path(input, documents, "lst")?;
+    let extension = path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "lst" | "log" | "txt" | "csv" | "sql") {
+        return Err(CoreError::Io("Extensión de salida inválida.".into()));
+    }
+    replace_program_file(&path, text)
+        .map_err(|error| CoreError::Io(format!("No se pudo guardar la salida: {error}")))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn read_script_file(path: String) -> Result<ScriptFile, CoreError> {
+    read_script_file_impl(&path, dirs::document_dir().as_deref())
+}
+
+#[tauri::command]
+pub async fn write_spool_file(path: String, text: String) -> Result<String, CoreError> {
+    write_spool_file_impl(&path, &text, dirs::document_dir().as_deref())
+}
+
 #[tauri::command]
 pub async fn recompile(
     st: St<'_>,
@@ -551,6 +711,54 @@ pub async fn recompile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_ipc_usa_el_perfil_indicado() {
+        let (_dir, state) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
+        let profile = Uuid::new_v4();
+        let workspace = Workspace {
+            version: 1,
+            tabs: Vec::new(),
+        };
+        save_workspace_impl(&state, profile, &workspace).unwrap();
+        assert_eq!(
+            load_workspace_impl(&state, profile).unwrap(),
+            Some(workspace)
+        );
+        assert!(load_workspace_impl(&state, Uuid::new_v4())
+            .unwrap()
+            .is_none());
+        clear_workspace_impl(&state, profile).unwrap();
+        assert!(load_workspace_impl(&state, profile).unwrap().is_none());
+    }
+
+    #[test]
+    fn archivos_sqlplus_extensiones_tope_y_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        std::fs::write(base.join("demo.sql"), b"SELECT \xff").unwrap();
+        let script = read_script_file_impl("demo", Some(base)).unwrap();
+        assert_eq!(script.name, "demo.sql");
+        assert_eq!(script.path, base.join("demo.sql").to_string_lossy());
+        assert_eq!(script.source, "SELECT �");
+        let path = write_spool_file_impl("salida", "primera", Some(base)).unwrap();
+        assert_eq!(path, base.join("salida.lst").to_string_lossy());
+        write_spool_file_impl("salida.lst", "segunda", Some(base)).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "segunda");
+        assert!(write_spool_file_impl("salida.exe", "x", Some(base))
+            .unwrap_err()
+            .to_string()
+            .contains("Extensión"));
+        std::fs::File::create(base.join("enorme.sql"))
+            .unwrap()
+            .set_len(2 * 1024 * 1024 + 1)
+            .unwrap();
+        assert!(read_script_file_impl("enorme.sql", Some(base))
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("2 MiB"));
+    }
     use openpl_core::session::fake::FakeConnector;
     use openpl_core::session::SessionManager;
     use openpl_core::{Environment, MemoryStore, ProfileStore};
@@ -578,6 +786,7 @@ mod tests {
             sessions: SessionManager::new(Arc::new(FakeConnector::new(server))),
             client_version: Box::new(move || client.clone()),
             settings_path: dir.path().join("settings.json"),
+            workspaces: openpl_core::workspace::WorkspaceStore::new(dir.path().join("workspace")),
         };
         (dir, st)
     }
@@ -685,5 +894,117 @@ mod tests {
             client_info_impl(&st).lib_dir.as_deref(),
             Some("C:\\oracle\\ic19")
         );
+    }
+
+    struct SlowConnector {
+        gate: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        dropped: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    struct SlowConn(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Drop for SlowConn {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl Connector for SlowConnector {
+        type Conn = SlowConn;
+        fn connect(&self, _p: &ConnectParams) -> Result<SlowConn, DbError> {
+            let (lock, cv) = &*self.gate;
+            let mut ready = lock.lock().unwrap();
+            while !*ready {
+                ready = cv.wait(ready).unwrap();
+            }
+            Ok(SlowConn(self.dropped.clone()))
+        }
+        fn server_version(_conn: &SlowConn) -> DbVersion {
+            DbVersion::new(19, 0, 0)
+        }
+    }
+
+    #[tokio::test]
+    async fn connect_tardio_da_timeout_y_cierra_sesion_si_llega() {
+        tokio::time::pause();
+        let dir = tempfile::tempdir().unwrap();
+        let gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let dropped = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let st = Arc::new(AppState {
+            profiles: ProfileStore::new(dir.path().join("connections.json")),
+            secrets: Arc::new(MemoryStore::default()),
+            sessions: SessionManager::new(Arc::new(SlowConnector {
+                gate: gate.clone(),
+                dropped: dropped.clone(),
+            })),
+            client_version: Box::new(|| Ok(DbVersion::new(19, 21, 0))),
+            settings_path: dir.path().join("settings.json"),
+            workspaces: openpl_core::workspace::WorkspaceStore::new(dir.path().join("workspace")),
+        });
+
+        let st_task = st.clone();
+        let mut task = tokio::spawn(async move { connect_impl(&st_task, params()).await });
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+
+        tokio::time::advance(std::time::Duration::from_secs(21)).await;
+        let err = (&mut task).await.unwrap().unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::Db(ref d)
+                if d.kind == ErrorKind::Timeout && d.message == "No se alcanzó el servidor."
+        ));
+        assert!(st.sessions.is_empty());
+
+        {
+            let (lock, cv) = &*gate;
+            *lock.lock().unwrap() = true;
+            cv.notify_all();
+        }
+        for _ in 0..50 {
+            if dropped.load(std::sync::atomic::Ordering::SeqCst) == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(dropped.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(st.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn siblings_ping_y_reconnect_por_hermana() {
+        let (_d, st) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
+        let main = connect_impl(&st, params()).await.unwrap().session_id;
+        let sibling = sql_open_impl(&st, main).await.unwrap();
+        assert_eq!(session_siblings_impl(&st, main), vec![sibling]);
+        assert!(session_ping_impl(&st, sibling).await.unwrap());
+
+        // Simular caída de la hermana y reconexión por su propio id.
+        let _ = st
+            .sessions
+            .get(sibling)
+            .unwrap()
+            .run(|_| -> Result<(), DbError> {
+                Err(DbError::from_code(
+                    Some("ORA-03113".into()),
+                    "ORA-03113: end-of-file",
+                ))
+            })
+            .await;
+        assert_eq!(
+            session_state_impl(&st, sibling).unwrap(),
+            SessionState::Disconnected
+        );
+        assert!(!session_ping_impl(&st, sibling).await.unwrap());
+
+        reconnect_impl(&st, sibling).await.unwrap();
+        assert_eq!(
+            session_state_impl(&st, sibling).unwrap(),
+            SessionState::Connected
+        );
+        assert!(session_ping_impl(&st, sibling).await.unwrap());
+
+        disconnect_impl(&st, main);
+        assert!(st.sessions.is_empty());
     }
 }

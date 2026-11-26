@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import { useMemo, type KeyboardEvent, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { ArrowDown, ArrowUp, Asterisk, CaretDown, CaretRight, TextAa, TextAUnderline, X } from "@phosphor-icons/react";
@@ -33,23 +33,51 @@ export const openFind: Command = (view) => openWithReplace(view, false);
 /** Ctrl+H: abre la barra con la fila Reemplazar visible (salvo en solo lectura). */
 export const openReplace: Command = (view) => openWithReplace(view, true);
 
+function stepMatch(view: EditorView, step: Command) {
+  if (!getSearchQuery(view.state).search) return openWithReplace(view, false);
+  return step(view);
+}
+
+/** F3: busca la siguiente coincidencia, o abre la barra si no hay consulta. */
+export const findNextMatch: Command = (view) => stepMatch(view, findNext);
+
+/** Shift+F3: busca la coincidencia anterior, o abre la barra si no hay consulta. */
+export const findPrevMatch: Command = (view) => stepMatch(view, findPrevious);
+
 interface Count {
   total: number;
   current: number;
 }
 
-function countMatches(state: EditorState, query: SearchQuery): Count {
-  const { from, to } = state.selection.main;
+interface MatchIndex {
+  ranges: Array<{ from: number; to: number }>;
+  overflow: boolean;
+}
+
+function collectMatches(state: EditorState, query: SearchQuery): MatchIndex {
   const cursor = query.getCursor(state);
-  let total = 0;
-  let current = 0;
-  for (let step = cursor.next(); !step.done && total < MAX_COUNT; step = cursor.next()) {
-    total++;
-    if (step.value.from === from && step.value.to === to) current = total;
+  const ranges: Array<{ from: number; to: number }> = [];
+  for (let step = cursor.next(); !step.done && ranges.length < MAX_COUNT; step = cursor.next()) {
+    ranges.push({ from: step.value.from, to: step.value.to });
   }
   // El tope corta la cuenta; si queda algo después, se informa con "+".
-  if (total === MAX_COUNT && !cursor.next().done) total = MAX_COUNT + 1;
-  return { total, current };
+  const overflow = ranges.length === MAX_COUNT && !cursor.next().done;
+  return { ranges, overflow };
+}
+
+function currentMatchIndex(ranges: MatchIndex["ranges"], from: number, to: number) {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid].from < from) lo = mid + 1;
+    else hi = mid;
+  }
+  while (lo < ranges.length && ranges[lo].from === from) {
+    if (ranges[lo].to === to) return lo + 1;
+    lo++;
+  }
+  return 0;
 }
 
 function counterText(query: SearchQuery, count: Count | null) {
@@ -75,7 +103,17 @@ function IconButton(props: { label: string; onClick: () => void; children: React
 function SearchBar({ view, state }: { view: EditorView; state: EditorState }) {
   const query = getSearchQuery(state);
   const showReplace = state.field(replaceOpen, false) && !state.readOnly;
-  const count = query.valid ? countMatches(state, query) : null;
+  const index = useMemo(
+    () => (query.valid && query.search ? collectMatches(state, query) : null),
+    [state.doc, query.search, query.caseSensitive, query.wholeWord, query.regexp, query.literal, query.valid],
+  );
+  const { from, to } = state.selection.main;
+  const count: Count | null = index
+    ? {
+        total: index.overflow ? MAX_COUNT + 1 : index.ranges.length,
+        current: currentMatchIndex(index.ranges, from, to),
+      }
+    : null;
 
   const change = (spec: Partial<Pick<SearchQuery, "search" | "replace" | "caseSensitive" | "wholeWord" | "regexp">>) => {
     view.dispatch({
@@ -185,9 +223,10 @@ function createSearchPanel(view: EditorView): Panel {
       field?.select();
     },
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.startState.readOnly !== update.state.readOnly
-        || getSearchQuery(update.startState) !== getSearchQuery(update.state)
-        || update.startState.field(replaceOpen, false) !== update.state.field(replaceOpen, false)) {
+      const searchChanged = getSearchQuery(update.startState) !== getSearchQuery(update.state);
+      const selectionMatters = update.selectionSet && !!getSearchQuery(update.state).search;
+      if (update.docChanged || selectionMatters || update.startState.readOnly !== update.state.readOnly
+        || searchChanged || update.startState.field(replaceOpen, false) !== update.state.field(replaceOpen, false)) {
         draw(update.state);
       }
     },

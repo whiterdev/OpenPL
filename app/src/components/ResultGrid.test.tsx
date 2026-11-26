@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { ResultGrid } from "./ResultGrid";
+import { useState } from "react";
+import { ResultGrid, type CellPosition } from "./ResultGrid";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { copyGridCells, gridTotal } from "../gridSelection";
 
 const columns: SqlColumn[] = [
-  { name: "ID", type_name: "NUMBER", numeric: true },
-  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false },
+  { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
+  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false, lob: false },
 ];
 const rows: Cell[][] = [["1", "Ana"], ["2", "Luis"]];
 
@@ -20,6 +21,39 @@ function grid(queryKey = 1, onSelect = vi.fn()) {
 }
 
 const header = () => screen.getAllByRole("row")[0] as HTMLElement;
+
+test("Ctrl+A en la grilla selecciona las filas cargadas", () => {
+  const onSelect = vi.fn();
+  render(grid(1, onSelect));
+  const scroll = screen.getByRole("presentation");
+  scroll.focus();
+  expect(fireEvent.keyDown(scroll, { key: "a", ctrlKey: true })).toBe(false);
+  expect(onSelect).toHaveBeenCalledWith({ row: 0, col: 0, scope: "all" });
+});
+
+test("Shift con clic y flechas extiende mientras Ctrl agrega otra celda", () => {
+  function Grid() {
+    const [selected, onSelect] = useState<CellPosition | null>(null);
+    return <ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+      editable={null} selected={selected} onSelect={onSelect} onEdit={vi.fn()} fetching={false} fetchError={null} />;
+  }
+  render(<Grid />);
+  const id = screen.getByRole("gridcell", { name: "ID 1" });
+  const name = screen.getByRole("gridcell", { name: "NOMBRE Ana" });
+  const last = screen.getByRole("gridcell", { name: "NOMBRE Luis" });
+  fireEvent.mouseDown(id);
+  fireEvent.mouseUp(window);
+  fireEvent.mouseDown(name, { shiftKey: true });
+  fireEvent.mouseUp(window);
+  expect(id).toHaveAttribute("aria-selected", "true");
+  expect(name).toHaveAttribute("aria-selected", "true");
+  fireEvent.mouseDown(last, { ctrlKey: true });
+  fireEvent.mouseUp(window);
+  expect(last).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("gridcell", { name: "ID 2" })).toHaveAttribute("aria-selected", "false");
+  fireEvent.keyDown(screen.getByRole("presentation"), { key: "ArrowLeft", shiftKey: true });
+  expect(screen.getByRole("gridcell", { name: "ID 2" })).toHaveAttribute("aria-selected", "true");
+});
 
 test("la esquina selecciona las filas cargadas y el numero selecciona una fila", () => {
   const onSelect = vi.fn();
@@ -54,6 +88,66 @@ test("el menu muestra totales numericos de la seleccion", () => {
   fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Limpiar todos" }));
   expect(footer).not.toBeInTheDocument();
+});
+
+test("el tooltip de celda solo aparece cuando el contenido desborda", () => {
+  render(grid());
+  const cell = screen.getByRole("gridcell", { name: "NOMBRE Ana" });
+  Object.defineProperty(cell, "clientWidth", { value: 24 });
+  Object.defineProperty(cell, "scrollWidth", { value: 25, configurable: true });
+  fireEvent.mouseEnter(cell);
+  expect(cell).toHaveAttribute("title", "Ana");
+  Object.defineProperty(cell, "scrollWidth", { value: 24 });
+  fireEvent.mouseLeave(cell);
+  fireEvent.mouseEnter(cell);
+  expect(cell).not.toHaveAttribute("title");
+});
+
+test("un total indica cuando quedan filas por traer", () => {
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={null} selected={null} onSelect={vi.fn()} onEdit={vi.fn()} fetching={false} fetchError={null} more />);
+  fireEvent.contextMenu(screen.getByRole("columnheader", { name: "ID" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Totales de columna" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Suma" }));
+  expect(screen.getByRole("rowheader", { name: "Total parcial" })).toHaveAttribute("title", "Parcial, 2 filas cargadas");
+});
+
+test("Shift Espacio abre el visor y Escape vuelve a la grilla", () => {
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={null} selected={{ row: 0, col: 1 }} onSelect={vi.fn()} onEdit={vi.fn()}
+    fetching={false} fetchError={null} />);
+  const scroll = screen.getByRole("presentation");
+  scroll.focus();
+  fireEvent.keyDown(scroll, { key: " ", shiftKey: true });
+  const dialog = screen.getByRole("dialog", { name: "NOMBRE" });
+  const value = within(dialog).getByRole("textbox", { name: "Valor" });
+  expect(value).toHaveValue("Ana");
+  expect(value).toHaveFocus();
+  fireEvent.keyDown(value, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(scroll).toHaveFocus();
+});
+
+test("Escape cancela la edición y pegar TSV recorta al rango disponible", () => {
+  const onEdit = vi.fn();
+  const onPasteCells = vi.fn();
+  const onNotice = vi.fn();
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={[true, true]} selected={{ row: 1, col: 1 }} onSelect={vi.fn()} onEdit={onEdit}
+    onPasteCells={onPasteCells} onNotice={onNotice} fetching={false} fetchError={null} />);
+  const scroll = screen.getByRole("presentation");
+  fireEvent.keyDown(scroll, { key: "F2" });
+  const editing = screen.getByRole("textbox", { name: "Editar NOMBRE" });
+  fireEvent.change(editing, { target: { value: "descartar" } });
+  fireEvent.keyDown(editing, { key: "Escape" });
+  expect(onEdit).not.toHaveBeenCalled();
+  fireEvent.keyDown(scroll, { key: "F2" });
+  fireEvent.paste(screen.getByRole("textbox", { name: "Editar NOMBRE" }), {
+    clipboardData: { getData: () => '"Nueva\tcelda"\tsobra\r\notra\tfila' },
+  });
+  expect(onPasteCells).toHaveBeenCalledExactlyOnceWith({ row: 1, col: 1 }, [["Nueva\tcelda"]]);
+  expect(onNotice).toHaveBeenCalledWith("Se pegaron 1 de 4 celdas");
+  expect(onEdit).not.toHaveBeenCalled();
 });
 
 test("CSV escapa comas y comillas y la suma conserva decimales exactos", () => {

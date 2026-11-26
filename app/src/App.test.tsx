@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeAll, expect, test, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
+import { Profiler } from "react";
 import App from "./App";
 import { api } from "./api";
 
@@ -33,6 +34,40 @@ test("Ctrl K busca y ejecuta una acción disponible", async () => {
   expect(screen.queryByRole("dialog", { name: "Buscar comando" })).not.toBeInTheDocument();
 });
 
+test("soltar un archivo abre su contenido y soltar texto conserva el comportamiento nativo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  expect(fireEvent.drop(window, { dataTransfer: { types: ["text/plain"], files: [] } })).toBe(true);
+  expect(fireEvent.drop(window, {
+    dataTransfer: { types: ["Files"], files: [{ name: "demo.sql", text: async () => "select 1 from dual" }] },
+  })).toBe(false);
+  expect(await screen.findByRole("button", { name: "demo.sql" })).toBeVisible();
+  fireEvent.drop(window, {
+    dataTransfer: { types: ["Files"], files: [{ name: "demo.zip", text: async () => "" }] },
+  });
+  expect(await screen.findByText("Tipo no admitido: demo.zip")).toBeVisible();
+});
+
+test("Ctrl Tab cambia de pestaña y Ctrl Shift RePág la reordena", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.drop(window, { dataTransfer: { types: ["Files"], files: [
+    { name: "uno.sql", text: async () => "select 1 from dual" },
+    { name: "dos.sql", text: async () => "select 2 from dual" },
+  ] } });
+  const two = await screen.findByRole("button", { name: "dos.sql" });
+  const one = screen.getByRole("button", { name: "uno.sql" });
+  expect(two).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+  expect(one).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "Tab", ctrlKey: true, shiftKey: true });
+  expect(two).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "PageUp", ctrlKey: true, shiftKey: true });
+  expect(screen.getAllByRole("button", { name: /^(dos|uno)\.sql$/ })).toEqual([two, one]);
+});
+
 const windowEvents = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
@@ -50,14 +85,22 @@ vi.mock("./api", () => ({
     openProgramFile: vi.fn(),
     saveProgramFile: vi.fn(),
     listProfiles: vi.fn(async () => []),
+    loadWorkspace: vi.fn(),
+    saveWorkspace: vi.fn(async () => {}),
+    clearWorkspace: vi.fn(async () => {}),
     connect: vi.fn(),
+    disconnect: vi.fn(),
+    reconnect: vi.fn(),
+    sessionSiblings: vi.fn(async (): Promise<string[]> => []),
+    sessionPing: vi.fn(async () => true),
     listObjects: vi.fn(),
     programSource: vi.fn(),
     routineOverloads: vi.fn(),
     completeObjects: vi.fn(),
     sqlOpen: vi.fn(),
-    sqlClose: vi.fn(),
+    sqlClose: vi.fn(async () => {}),
     sqlExecute: vi.fn(),
+    sqlFetch: vi.fn(),
     sqlCommit: vi.fn(),
     sqlRollback: vi.fn(),
     sqlCancel: vi.fn(),
@@ -65,6 +108,32 @@ vi.mock("./api", () => ({
     sqlApply: vi.fn(),
   },
 }));
+
+test("tipear en un programa ya modificado no vuelve a renderizar la app", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue({
+    name: "demo.pks",
+    source: "PACKAGE demo AS\nEND;",
+  });
+  let commits = 0;
+  render(
+    <Profiler id="app" onRender={() => { commits += 1; }}>
+      <App />
+    </Profiler>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n" }, userEvent: "input.type" }));
+  await screen.findByRole("button", { name: /demo\.pks \*/ });
+
+  commits = 0;
+  for (const insert of ["-", "-", " ", "x"]) {
+    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert }, userEvent: "input.type" }));
+  }
+  expect(commits).toBe(0);
+});
 
 test("permite editar y guardar un archivo local desde el flujo normal", async () => {
   windowEvents.close.mockResolvedValue(() => {});
@@ -264,6 +333,106 @@ test("bloquea el menú del navegador salvo en campos de texto", async () => {
   );
 });
 
+function press(target: EventTarget, init: KeyboardEventInit) {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+async function openNewProgram() {
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(
+    within(screen.getByRole("main")).getByRole("button", { name: /Nuevo programa/ }),
+  );
+  const editor = await screen.findByRole("textbox", { name: "Fuente" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  return { editor, view };
+}
+
+test("Ctrl A en el editor llega a CodeMirror y selecciona todo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const { editor, view } = await openNewProgram();
+  act(() => view.dispatch({ changes: { from: 0, insert: "SELECT 1\nFROM dual" } }));
+  press(editor, { key: "a", ctrlKey: true });
+  expect(view.state.doc.length).toBeGreaterThan(0);
+  expect(view.state.selection.main.from).toBe(0);
+  expect(view.state.selection.main.to).toBe(view.state.doc.length);
+});
+
+test("en un campo de texto las teclas de edición y selección son las nativas", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  render(<App />);
+  await connectAs();
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
+  await screen.findByRole("textbox", { name: "SQL" });
+  const filter = screen.getByRole("textbox", { name: "Filtrar objetos" });
+  const native: KeyboardEventInit[] = [
+    { key: "a", ctrlKey: true },
+    { key: "z", ctrlKey: true },
+    { key: "y", ctrlKey: true },
+    { key: "Z", ctrlKey: true, shiftKey: true },
+    { key: "End", ctrlKey: true, shiftKey: true },
+  ];
+  for (const init of native) {
+    expect(press(filter, init), JSON.stringify(init)).toBe(false);
+  }
+});
+
+test("las teclas del webview se bloquean con y sin diálogo abierto", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  const user = await screen.findByLabelText("Usuario");
+  expect(press(user, { key: "a", ctrlKey: true })).toBe(false);
+  const webview: KeyboardEventInit[] = [
+    { key: "r", ctrlKey: true },
+    { key: "R", ctrlKey: true, shiftKey: true },
+    { key: "F5" },
+    { key: "p", ctrlKey: true },
+    { key: "u", ctrlKey: true },
+    { key: "I", ctrlKey: true, shiftKey: true },
+    { key: "F12" },
+  ];
+  for (const init of webview) {
+    expect(press(user, init), `diálogo ${JSON.stringify(init)}`).toBe(true);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  for (const init of webview) {
+    expect(press(document.body, init), JSON.stringify(init)).toBe(true);
+  }
+});
+
+test("Ctrl rueda no hace zoom", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  await screen.findByRole("button", { name: "Cancelar" });
+  expect(fireEvent.wheel(document.body, { ctrlKey: true, deltaY: -100 })).toBe(false);
+  expect(fireEvent.wheel(document.body, { deltaY: -100 })).toBe(true);
+});
+
+test("los botones laterales del mouse no navegan", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  await screen.findByRole("button", { name: "Cancelar" });
+  for (const button of [3, 4]) {
+    expect(fireEvent.mouseUp(document.body, { button }), `mouseup ${button}`).toBe(false);
+    const aux = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button });
+    expect(fireEvent(document.body, aux), `auxclick ${button}`).toBe(false);
+  }
+  expect(fireEvent.mouseUp(document.body, { button: 0 })).toBe(true);
+});
+
+test("dentro del editor el menú contextual lo decide el editor", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const { editor } = await openNewProgram();
+  expect(fireEvent.contextMenu(editor.closest(".cm-editor")!)).toBe(true);
+  expect(fireEvent.contextMenu(document.querySelector(".titlebar")!)).toBe(false);
+});
+
 test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   render(<App />);
@@ -335,6 +504,29 @@ async function connectAs(service = "DEV") {
   fireEvent.click(dialog.getByRole("button", { name: "Conectar" }));
   await waitFor(() => expect(user).not.toBeInTheDocument());
 }
+
+test("reconectar un perfil ofrece restaurar SQL sin ejecutarlo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listProfiles).mockResolvedValueOnce([{
+    id: "11111111-1111-1111-1111-111111111111", name: "HR en DEV", user: "HR",
+    db: "db.example.com:1521/DEV", role: "Normal", environment: "dev", save_password: false,
+  }]);
+  vi.mocked(api.loadWorkspace).mockResolvedValueOnce({ version: 1, tabs: [
+    { type: "sql", kind: "sql", title: "Consulta guardada", text: "SELECT 1 FROM DUAL" },
+  ] });
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.connect).mockResolvedValueOnce({ session_id: "s1", server_version: "12.1.0", compat: { kind: "Supported" } });
+  vi.mocked(api.sqlExecute).mockClear();
+  render(<App />);
+  const login = within(await screen.findByRole("dialog", { name: "Conectar a Oracle" }));
+  fireEvent.click(await login.findByRole("button", { name: /^HR en DEV/ }));
+  fireEvent.click(login.getByRole("button", { name: "Conectar" }));
+  expect(await screen.findByText("Restaurar 1 pestaña")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Restaurar" }));
+  expect(await screen.findByRole("textbox", { name: "SQL" })).toHaveTextContent("SELECT 1 FROM DUAL");
+  expect(api.loadWorkspace).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111");
+  expect(api.sqlExecute).not.toHaveBeenCalled();
+});
 
 test("abre una prueba desde Nuevo y reabre un .tst sin ejecutarlo", async () => {
   windowEvents.close.mockResolvedValue(() => {});
@@ -416,7 +608,84 @@ test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella"
   expect(api.sqlCommit).toHaveBeenCalledWith("w1");
 });
 
-test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", async () => {
+async function openSqlWithResults() {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w5");
+  vi.mocked(api.sqlExecute).mockReset().mockResolvedValue({
+    result: {
+      kind: "Query",
+      cursor: 7,
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
+      page: { rows: [["1"]], more: true },
+    },
+    elapsed_ms: 1,
+    output: [],
+    transaction: false,
+  });
+  vi.mocked(api.sqlFetch).mockReset().mockResolvedValue({ rows: [["2"]], more: false });
+  render(<App />);
+  await connectAs();
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "SELECT id\nFROM t" } }));
+  view.focus();
+  await act(async () => {
+    press(editor, { key: "F8" });
+  });
+  const grid = await screen.findByRole("grid", { name: "Resultados" });
+  return { editor, view, grid };
+}
+
+test("Ctrl Shift End en el editor selecciona hasta el final y no trae todas", async () => {
+  const { editor, view } = await openSqlWithResults();
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  act(() => {
+    press(editor, { key: "End", ctrlKey: true, shiftKey: true });
+  });
+  expect(view.state.selection.main.anchor).toBe(0);
+  expect(view.state.selection.main.head).toBe(view.state.doc.length);
+  await act(async () => {});
+  expect(api.sqlFetch).not.toHaveBeenCalled();
+});
+
+test.each(["grilla", "fuera del editor"])("Ctrl Shift End en %s trae todas", async (place) => {
+  const { grid } = await openSqlWithResults();
+  const target = place === "grilla" ? grid : document.body;
+  await act(async () => {
+    press(target, { key: "End", ctrlKey: true, shiftKey: true });
+  });
+  await waitFor(() => expect(api.sqlFetch).toHaveBeenCalledWith("w5", 7, expect.anything()));
+});
+
+test("desde el editor las teclas de la app siguen actuando y Tab queda en el editor", async () => {
+  const { editor, view } = await openSqlWithResults();
+  expect(api.sqlExecute).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    press(editor, { key: "Enter", ctrlKey: true });
+  });
+  await waitFor(() => expect(api.sqlExecute).toHaveBeenCalledTimes(2));
+
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  act(() => {
+    expect(press(editor, { key: "Tab" })).toBe(true);
+  });
+  expect(view.state.doc.toString()).not.toBe("SELECT id\nFROM t");
+  expect(api.sqlExecute).toHaveBeenCalledTimes(2);
+  act(() => {
+    expect(press(editor, { key: "z", ctrlKey: true })).toBe(true);
+  });
+  expect(view.state.doc.toString()).toBe("SELECT id\nFROM t");
+
+  act(() => {
+    expect(press(editor, { key: "f", ctrlKey: true })).toBe(true);
+  });
+  expect(document.querySelector(".editor-search-bar")).toBeInTheDocument();
+});
+
+test.each(["cerrar", "desconectar"])("%s con transacción SQL abierta pide confirmación", async (action) => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.listObjects).mockResolvedValue([]);
   vi.mocked(api.sqlOpen).mockResolvedValue("w2");
@@ -430,9 +699,8 @@ test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", asyn
   vi.mocked(api.sqlClose).mockResolvedValue();
   render(<App />);
   await connectAs();
-  await act(async () => {
-    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
   const editor = await screen.findByRole("textbox", { name: "SQL" });
   const view = EditorView.findFromDOM(
     editor.closest<HTMLElement>(".cm-editor")!,
@@ -447,6 +715,27 @@ test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", asyn
   });
   await screen.findByText("Transacción abierta");
 
+  if (action === "desconectar") {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const disconnect = () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Desconectar" }));
+    };
+    try {
+      disconnect();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(api.disconnect).not.toHaveBeenCalled();
+      confirm.mockReturnValue(true);
+      vi.mocked(api.disconnect).mockResolvedValue();
+      disconnect();
+      expect(await screen.findByText("Sesión desconectada")).toBeVisible();
+      expect(editor).toBeInTheDocument();
+    } finally {
+      confirm.mockRestore();
+    }
+    return;
+  }
+
   fireEvent.click(screen.getByRole("button", { name: /^Cerrar SQL 1/ }));
   let dialog = within(
     screen.getByRole("dialog", { name: "Transacción abierta" }),
@@ -459,6 +748,30 @@ test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", asyn
   await waitFor(() => expect(editor).not.toBeInTheDocument());
   expect(api.sqlRollback).toHaveBeenCalledWith("w2");
   expect(api.sqlClose).toHaveBeenCalledWith("w2");
+});
+
+test("al recuperar el foco detecta una sesión SQL caída y permite reconectarla", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w2");
+  vi.mocked(api.sessionSiblings).mockResolvedValueOnce(["w2"]);
+  vi.mocked(api.sessionPing).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  vi.mocked(api.reconnect).mockResolvedValue();
+  render(<App />);
+  await connectAs();
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  await screen.findByRole("textbox", { name: "SQL" });
+  fireEvent.focus(window);
+  expect(await screen.findByText("Sesión caída")).toBeVisible();
+  fireEvent.focus(window);
+  expect(api.sessionPing).toHaveBeenCalledTimes(2);
+  await waitFor(() => {
+    fireEvent.keyDown(window, { key: "F8" });
+    expect(screen.getByRole("button", { name: "Reconectar sesión SQL" })).toHaveFocus();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Reconectar sesión SQL" }));
+  await waitFor(() => expect(screen.queryByText("Sesión caída")).toBeNull());
+  expect(api.reconnect).toHaveBeenCalledExactlyOnceWith("w2");
 });
 
 test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
@@ -477,7 +790,7 @@ test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
     result: {
       kind: "Query",
       cursor: 1,
-      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
       page: { rows: [["1"]], more: false },
     },
     elapsed_ms: 1,
@@ -529,7 +842,7 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
       result: {
         kind: "Query",
         cursor: 1,
-        columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+        columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
         page: { rows: [["1"]], more: false },
       },
       elapsed_ms: 1,
@@ -541,8 +854,8 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
         kind: "Query",
         cursor: 2,
         columns: [
-          { name: "OPENPL$ROWID", type_name: "ROWID", numeric: false },
-          { name: "ID", type_name: "NUMBER", numeric: true },
+          { name: "OPENPL$ROWID", type_name: "ROWID", numeric: false, lob: false },
+          { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
         ],
         page: { rows: [["AAA1", "1"]], more: false },
       },
@@ -556,6 +869,7 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
     fireEvent.keyDown(window, { key: "n", ctrlKey: true, shiftKey: true });
     const prompt = await screen.findByRole("textbox", { name: "Comando SQL" });
     expect(prompt).toHaveFocus();
+    expect(press(prompt, { key: "a", ctrlKey: true })).toBe(false);
     fireEvent.change(prompt, { target: { value: "EDIT CLIENTES" } });
     fireEvent.keyDown(prompt, { key: "Enter" });
     expect(await screen.findByRole("button", { name: "HR.CLIENTES" })).toBeVisible();
@@ -576,6 +890,23 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
   if (entry === "consola") {
     fireEvent.click(screen.getByRole("button", { name: /^Comando \d+$/ }));
     expect(screen.getByRole("textbox", { name: "Comando SQL" })).toHaveFocus();
+  } else {
+    fireEvent.doubleClick(screen.getByRole("gridcell", { name: "ID 1" }));
+    const input = screen.getByRole("textbox", { name: "Editar ID" });
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("1 pendiente");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Cerrar HR.CLIENTES" }));
+      expect(confirm).toHaveBeenCalledWith("Hay 1 cambio sin aplicar. ¿Descartar?");
+      expect(screen.getByRole("button", { name: "HR.CLIENTES" })).toBeVisible();
+      const preventDefault = vi.fn();
+      windowEvents.close.mock.calls.slice(-1)[0]?.[0]({ preventDefault });
+      expect(preventDefault).toHaveBeenCalledOnce();
+    } finally {
+      confirm.mockRestore();
+    }
   }
 });
 

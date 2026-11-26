@@ -1,7 +1,14 @@
+import { afterEach, expect, test, vi } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { foldable } from "@codemirror/language";
-import { expect, test } from "vitest";
+import { EditorView } from "@codemirror/view";
+import { foldable, foldGutter } from "@codemirror/language";
+import { programFoldRanges } from "./programStructure";
 import { programFolding } from "./programFolding";
+
+vi.mock("./programStructure", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./programStructure")>();
+  return { ...actual, programFoldRanges: vi.fn(actual.programFoldRanges) };
+});
 
 function foldedLines(source: string, opener: string) {
   const state = EditorState.create({
@@ -114,4 +121,51 @@ test("recalcula el plegado cuando el borrador cambia", () => {
     changes: { from: initial.doc.line(3).from, to: initial.doc.length },
   });
   expect(foldable(edit.state, 0, 5)).toBeNull();
+});
+
+test("un rango cuyo inicio o fin cae en texto borrado deja de plegar sin romper", () => {
+  const source = "BEGIN\n  IF a THEN\n    x := 1;\n    NULL;\n  END IF;\nEND;";
+  const state = EditorState.create({ doc: source, extensions: [programFolding] });
+  const sinInicio = state.update({
+    changes: { from: source.indexOf("IF a"), to: source.indexOf("\n    x") },
+  }).state;
+  expect(foldable(sinInicio, sinInicio.doc.line(2).from, sinInicio.doc.line(2).to)).toBeNull();
+  expect(foldable(sinInicio, 0, 5)).not.toBeNull();
+  const vacio = state.update({ changes: { from: 0, to: source.length } }).state;
+  expect(foldable(vacio, 0, 0)).toBeNull();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  document.body.innerHTML = "";
+});
+
+test("tipear en un paquete grande no recalcula el plegado por tecla y lo recalcula tras la pausa", () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const source = `BEGIN\n${"  IF a THEN\n    NULL;\n  END IF;\n".repeat(6667)}END;`;
+  const view = new EditorView({
+    parent: document.body,
+    state: EditorState.create({ doc: source, extensions: [programFolding, foldGutter()] }),
+  });
+  const calls = vi.mocked(programFoldRanges);
+  calls.mockClear();
+
+  const typed = "  LOOP\n    NULL;\n  END LOOP;\n";
+  let at = view.state.doc.line(2).from;
+  for (const key of typed) {
+    view.dispatch({ changes: { from: at, insert: key }, selection: { anchor: at + 1 } });
+    at += 1;
+  }
+  const loop = () => view.state.doc.line(2);
+  expect(calls).not.toHaveBeenCalled();
+  expect(foldable(view.state, loop().from, loop().to)).toBeNull();
+  expect(foldable(view.state, view.state.doc.line(5).from, view.state.doc.line(5).to)).not.toBeNull();
+
+  vi.advanceTimersByTime(149);
+  expect(calls).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(1);
+  expect(calls).toHaveBeenCalledTimes(1);
+  const range = foldable(view.state, loop().from, loop().to);
+  expect(range && view.state.doc.lineAt(range.to + 1).text.trim()).toBe("END LOOP;");
+  view.destroy();
 });

@@ -3,6 +3,12 @@ import type { RowChange } from "./types";
 
 export type Cell = string | null;
 
+export function pendingDiscardMessage(count: number): string {
+  return count === 1
+    ? "Hay 1 cambio sin aplicar. ¿Descartar?"
+    : `Hay ${count} cambios sin aplicar. ¿Descartar?`;
+}
+
 export type RowEdit =
   { kind: "update"; values: Record<number, Cell> } | { kind: "delete" };
 
