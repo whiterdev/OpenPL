@@ -7,6 +7,7 @@ import { createdObject } from "../sqlplusQueries";
 import { feedbackLine, formatTable } from "../sqlplusFormat";
 import { printSqlplus, runSqlplus, substituteDefines, timingLine, type SqlplusCtx } from "../sqlplusRun";
 import { parseSqlplus } from "../sqlplus";
+import { needsConfirm } from "../sqlRisk";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -81,6 +82,36 @@ const EDITOR_SHARE = { initial: 70, min: 20, max: 85, step: 4 };
 const clampEditorShare = (share: number) => Math.max(EDITOR_SHARE.min, Math.min(EDITOR_SHARE.max, Math.round(share)));
 const FETCH_ALL = 1000;
 const CANCELLED = "ORA-01013";
+
+function ConfirmExecution({ complete }: { complete: (approved: boolean) => void }) {
+  const id = useId();
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    cancel.current?.focus();
+    return () => { if (previous instanceof HTMLElement) previous.focus(); };
+  }, []);
+  return (
+    <div className="dialog-backdrop">
+      <div role="dialog" aria-modal="true" aria-labelledby={id} className="dialog"
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape") complete(false);
+          else if (event.key === "Tab") {
+            event.preventDefault();
+            Array.from(event.currentTarget.querySelectorAll("button"))
+              .find((button) => button !== document.activeElement)?.focus();
+          }
+        }}>
+        <h2 id={id}>Producción. ¿Ejecutar?</h2>
+        <div className="dialog-actions">
+          <button type="button" className="btn primary" onClick={() => complete(true)}>Ejecutar</button>
+          <button type="button" className="btn" ref={cancel} onClick={() => complete(false)}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 const KINDS: { id: BindKind; label: string }[] = [
   { id: "Text", label: "Texto" }, { id: "Number", label: "Número" }, { id: "Date", label: "Fecha" },
 ];
@@ -99,6 +130,14 @@ export function SqlWindow({
   const view = useRef<EditorView | null>(null);
   const tabPrefix = useId();
   const [source, setSource] = useState(initialSql);
+  const [confirming, setConfirming] = useState(false);
+  const confirmation = useRef<((approved: boolean) => void) | null>(null);
+  useEffect(() => () => { confirmation.current?.(false); }, []);
+  const confirmationDialog = confirming && <ConfirmExecution complete={(approved) => {
+    confirmation.current?.(approved);
+    confirmation.current = null;
+    setConfirming(false);
+  }} />;
   const [cursor, setCursor] = useState(0);
   const [running, setRunning] = useState(false);
   const hasTestVariables = !!testSettings;
@@ -263,6 +302,7 @@ export function SqlWindow({
     setRunning(true);
     let startedSql = false;
     let lastQuery = false;
+    let productionApproved = environment !== "prod";
     const promptedBinds = new Map<string, string>();
     const ask: SqlplusCtx["ask"] = io?.ask ?? (async (name) => {
       const value = values[name.toUpperCase()]?.value;
@@ -270,8 +310,17 @@ export function SqlWindow({
       setAlert(`Falta el valor de &${name}`);
       return null;
     });
+    async function confirmWrites(statements: ScriptStatement[]): Promise<boolean> {
+      if (productionApproved || !needsConfirm(statements.filter((statement) => statement.kind !== "sqlplus"))) return true;
+      productionApproved = await new Promise<boolean>((resolve) => {
+        confirmation.current = resolve;
+        setConfirming(true);
+      });
+      return productionApproved;
+    }
 
     async function executeStatements(statements: ScriptStatement[], script?: SqlplusCtx["script"]): Promise<boolean> {
+      if (!await confirmWrites(statements)) return false;
       let nestedSucceeded = true;
       const context: SqlplusCtx = {
         print: (line, kind) => appendLine(kind ?? "info", line),
@@ -306,6 +355,7 @@ export function SqlWindow({
         }
         const sql = await substituteDefines(statement.text, sqlplus, ask);
         if (sql === null) return false;
+        if (sql !== statement.text && !await confirmWrites([{ ...statement, text: sql }])) return false;
         const vars = findVariables(sql).filter((variable) => variable.kind === "bind");
         const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.key === output.name)) ?? [];
         const assigned = statement.kind === "plsql" ? assignedBinds(sql) : new Set<string>();
@@ -780,9 +830,10 @@ export function SqlWindow({
     );
   });
 
-  if (command) return <CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
+  if (command) return <><CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
     lines={output} running={running} alert={alert} notice={notice} log={log} onEditObject={onEditObject}
-    onRun={(source, io) => run(splitScript(source), true, false, io)} onCancel={actions.cancel} onClear={clearOutput} />;
+    onRun={(source, io) => run(splitScript(source), true, false, io)} onCancel={actions.cancel} onClear={clearOutput} />
+    {confirmationDialog}</>;
 
   return (
     <section className="sql-window" aria-label="Ventana SQL">
@@ -1018,6 +1069,7 @@ export function SqlWindow({
           </div>
         )}
       </div>
+      {confirmationDialog}
     </section>
   );
 }

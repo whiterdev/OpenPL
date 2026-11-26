@@ -451,6 +451,17 @@ test("VARIABLE recibe un bind de salida, PRINT lo muestra y SELECT lo reutiliza"
   expect(screen.getByText("ID = 7")).toBeInTheDocument();
 });
 
+test("producción confirma una sola vez el script con escrituras, antes de ejecutarlo", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+  const { ref } = setup("SELECT 1 FROM DUAL;\nUPDATE t SET id = 1;\nEXEC p(1)", { environment: "prod" });
+  await act(async () => ref.current!.executeScript!());
+  const dialog = screen.getByRole("dialog", { name: "Producción. ¿Ejecutar?" });
+  expect(execute).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Ejecutar" })); });
+  expect(execute).toHaveBeenCalledTimes(3);
+  expect(screen.queryByRole("dialog", { name: "Producción. ¿Ejecutar?" })).not.toBeInTheDocument();
+});
+
 test("pide y envía los valores de las variables", async () => {
   const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
   const { ref } = setup("select * from &tabla where ciudad = :ciudad and alta > :desde");
