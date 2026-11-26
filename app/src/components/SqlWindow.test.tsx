@@ -157,6 +157,19 @@ test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => 
   expect(screen.getByRole("tabpanel", { name: "Plan" })).toHaveTextContent("TABLE ACCESS");
 });
 
+test("el panel muestra todo el script y F5 sustituye solo en la sentencia activa", async () => {
+  const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({ columns: [], page: { rows: [], more: false } });
+  const { ref } = setup("SELECT * FROM &tabla;\nSELECT :id FROM DUAL;");
+  const variables = within(screen.getByRole("complementary", { name: "Variables" }));
+  const table = variables.getByRole("textbox", { name: "Valor de &tabla" });
+  const id = variables.getByRole("textbox", { name: "Valor de :id" });
+  expect(table).toHaveAccessibleDescription("Se usa en la sentencia actual");
+  expect(id).toHaveAccessibleDescription("Se usa en otra sentencia");
+  fireEvent.change(table, { target: { value: "clientes" } });
+  await act(async () => ref.current!.explainPlan!());
+  expect(explain).toHaveBeenCalledExactlyOnceWith("w1", "SELECT * FROM clientes");
+});
+
 test("la consola admite otro comando durante la ejecución y lo ejecuta después", async () => {
   let finish!: () => void;
   const first = new Promise<ReturnType<typeof query>>((resolve) => {

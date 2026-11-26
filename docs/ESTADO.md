@@ -45,7 +45,8 @@
   El brief 41 usa Ctrl+C para copiar o cancelar, Ctrl+L para limpiar y conserva
   Ctrl+A nativo en el prompt. El brief 42 publica salida por lotes, ubica errores
   y deshabilita Commit y Rollback durante operaciones SQL. TypeScript y 594 tests
-  en verde. Sigue el brief 43.
+  en verde. El brief 43 lista las variables del script y sustituye valores al pedir
+  el plan de ejecución. TypeScript y 595 tests en verde. Sigue el brief 44.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

@@ -145,7 +145,11 @@ export function SqlWindow({
 
   const statements = useMemo(() => splitScript(source), [source]);
   const current = statementAt(statements, cursor);
-  const variables = useMemo(() => findVariables(current?.text ?? ""), [current?.text]);
+  const variables = useMemo(() => findVariables(source), [source]);
+  const activeVariables = useMemo(
+    () => new Set(findVariables(current?.text ?? "").map((variable) => `${variable.kind}-${variable.key}`)),
+    [current?.text],
+  );
   const editableVariables = variables.filter((variable) =>
     variable.kind !== "bind" || !declaredOutputs?.some((output) => output.name === variable.key));
 
@@ -184,10 +188,12 @@ export function SqlWindow({
       setAlert("Selecciona una sentencia SQL");
       return;
     }
+    const sql = panelSql(list[0].text);
+    if (sql === null) return;
     setPlanning(true);
     setAlert("");
     try {
-      setPlan(await api.sqlExplain(sessionId, list[0].text));
+      setPlan(await api.sqlExplain(sessionId, sql));
       setPlanSelection(null);
       setTab("plan");
     } catch (error) {
@@ -195,6 +201,20 @@ export function SqlWindow({
     } finally {
       setPlanning(false);
     }
+  }
+
+  function panelSql(text: string): string | null {
+    const substitutions: Record<string, string> = Object.create(null);
+    for (const variable of findVariables(text)) {
+      if (variable.kind !== "subst") continue;
+      const value = values[variable.key]?.value;
+      if (!value) {
+        setAlert(`Falta el valor de &${variable.name}`);
+        return null;
+      }
+      substitutions[variable.key] = value;
+    }
+    return applySubstitutions(text, substitutions);
   }
 
   function runConsoleCommand(source: string) {
@@ -228,14 +248,8 @@ export function SqlWindow({
     setTestResults([]);
     setTestSelection({});
     setMarkers([]);
-    for (const statement of list) {
-      for (const variable of findVariables(statement.text)) {
-        if (variable.kind === "subst" && !values[variable.key]?.value) {
-          setAlert(`Falta el valor de &${variable.name}`);
-          return;
-        }
-      }
-    }
+    const prepared = list.map((statement) => ({ statement, sql: panelSql(statement.text) }));
+    if (prepared.some(({ sql }) => sql === null)) return;
     setRunning(true);
     setEditSession(null);
     setPending(emptyPending());
@@ -243,7 +257,8 @@ export function SqlWindow({
     setSelected(null);
     let lastQuery = false;
     try {
-      for (const statement of list) {
+      for (const { statement, sql } of prepared) {
+        if (sql === null) continue;
         if (command && (entered || commandOptions.current.echo)) {
           log("info", `SQL> ${statement.text}${statement.kind === "sql" ? ";" : ""}`);
         }
@@ -253,10 +268,6 @@ export function SqlWindow({
           continue;
         }
         const vars = findVariables(statement.text);
-        const substitutions = Object.fromEntries(
-          vars.filter((v) => v.kind === "subst").map((v) => [v.key, values[v.key]?.value ?? ""]),
-        );
-        const sql = applySubstitutions(statement.text, substitutions);
         const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
         const binds = vars.filter((v) => v.kind === "bind" && !outputs.some((output) => output.name === v.key)).map((v) => ({
           name: v.name, value: values[v.key]?.value || null, kind: values[v.key]?.kind ?? ("Text" as BindKind),
@@ -665,6 +676,8 @@ export function SqlWindow({
 
   const variableFields = editableVariables.map((v) => {
     const label = `${v.kind === "bind" ? ":" : "&"}${v.name}`;
+    const usage = activeVariables.has(`${v.kind}-${v.key}`)
+      ? "Se usa en la sentencia actual" : "Se usa en otra sentencia";
     const entry = values[v.key] ?? { value: "", kind: "Text" as BindKind };
     const update = (change: Partial<typeof entry>) => {
       setValues((all) => ({ ...all, [v.key]: { ...entry, ...change } }));
@@ -674,7 +687,7 @@ export function SqlWindow({
       <div key={`${v.kind}-${v.key}`} className="sql-variable">
         <label>
           <span className="mono">{label}</span>
-          <input className="fld mono" aria-label={`Valor de ${label}`} value={entry.value}
+          <input className="fld mono" aria-label={`Valor de ${label}`} title={usage} value={entry.value}
             placeholder={v.kind === "bind" ? "NULL" : ""}
             onChange={(e) => update({ value: e.target.value })} />
         </label>
