@@ -39,7 +39,8 @@ Si el diseño y `docs/ESTADO.md` se contradicen, manda `docs/ESTADO.md` (registr
    definir un atajo en otro lado.
 8. Oracle **12.1** o superior; Instant Client **19 o 21** recomendado. Nada que dependa de 12.2+
    o 18c+ sin comprobar la versión del servidor.
-9. Sin telemetría ni llamadas de red salvo a la base de datos.
+9. Sin telemetría. Red: solo la base de datos y el chequeo de actualizaciones (lee `latest.json`
+   de GitHub, sin datos del usuario).
 10. Licencia `Apache-2.0 OR MIT`; toda dependencia debe ser compatible.
 
 ## Preparar el entorno

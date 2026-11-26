@@ -555,6 +555,11 @@ producto; estas decisiones son posteriores y mandan sobre él:
    de AG Grid: sin dependencia nueva y con el estilo del tema. Se revisa en el incremento 2 si la
    edición lo exige.
 10. Variables `:x` y `&x` en un panel al costado del editor (mockup v2), no en un diálogo previo.
+11. **Versión y actualizador (WAL-114, en curso):** una sola versión semver, hoy `1.0.0-beta.5`,
+    en `Cargo.toml`, `app/package.json`, `app/package-lock.json` y `tauri.conf.json`; el test
+    `la_version_es_la_misma_en_todos_lados` (`app/src-tauri/src/lib.rs`) falla si no coinciden.
+    La regla 9 de AGENTS.md admite, además de la base, el chequeo de actualizaciones: lee
+    `latest.json` de GitHub, sin datos del usuario. El actualizador en sí sigue pendiente.
 
 ## Pendiente inmediato
 
