@@ -8,6 +8,8 @@ export interface MenuItemDef {
   label?: string;
   /** Sin `run`, el comando aparece deshabilitado (aún no disponible). */
   run?: () => void;
+  /** Motivo mostrado en `title` cuando el ítem está deshabilitado. */
+  reason?: string;
 }
 
 export interface MenuDef {
@@ -15,10 +17,64 @@ export interface MenuDef {
   items: (MenuItemDef | "sep")[];
 }
 
+function disabledReason(item: MenuItemDef): string {
+  if (item.reason) return item.reason;
+  if (commands[item.command].pending) return "Próximamente";
+  return "No disponible en el contexto actual";
+}
+
 export function MenuBar({ menus }: { menus: MenuDef[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const ref = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const menusRef = useRef(menus);
+  menusRef.current = menus;
+  const openRef = useRef(open);
+  openRef.current = open;
+
+  useEffect(() => {
+    let altPending = false;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Alt") {
+        const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
+        altPending =
+          !modal &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.shiftKey &&
+          !e.repeat &&
+          !e.getModifierState?.("AltGraph");
+        return;
+      }
+      altPending = false;
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key !== "Alt" || !altPending) return;
+      altPending = false;
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.getModifierState?.("AltGraph")) return;
+      e.preventDefault();
+      if (openRef.current !== null) {
+        setOpen(null);
+        trigger.current?.focus();
+        return;
+      }
+      const first = menusRef.current[0];
+      if (!first) return;
+      trigger.current = ref.current?.querySelector<HTMLButtonElement>(".menubar-btn") ?? null;
+      setOpen(first.label);
+    };
+    const cancelAlt = () => { altPending = false; };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    window.addEventListener("mousedown", cancelAlt);
+    window.addEventListener("blur", cancelAlt);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mousedown", cancelAlt);
+      window.removeEventListener("blur", cancelAlt);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -31,7 +87,8 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
       trigger.current?.focus();
     };
     const menu = ref.current?.querySelector('[role="menu"]');
-    menu?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const firstItem = menu?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+    (firstItem ?? trigger.current)?.focus();
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
     return () => {
@@ -40,9 +97,22 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
     };
   }, [open]);
 
+  function switchMenu(index: number, keepOpen: boolean) {
+    const target = menus[index];
+    if (!target) return;
+    const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".menubar-btn") ?? []);
+    const btn = buttons[index] ?? null;
+    trigger.current = btn;
+    if (keepOpen) {
+      setOpen(target.label);
+    } else {
+      btn?.focus();
+    }
+  }
+
   return (
     <nav className="menubar" aria-label="Menú principal" ref={ref}>
-      {menus.map((m) => (
+      {menus.map((m, menuIndex) => (
         <div key={m.label} className="menubar-slot">
           <button
             className={`menubar-btn ${open === m.label ? "open" : ""}`}
@@ -58,10 +128,20 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
               setOpen(m.label);
             }}
             onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                event.preventDefault();
+                const delta = event.key === "ArrowRight" ? 1 : -1;
+                switchMenu((menuIndex + delta + menus.length) % menus.length, open !== null);
+                return;
+              }
               if (event.key !== "ArrowDown") return;
               event.preventDefault();
               trigger.current = event.currentTarget;
-              setOpen(m.label);
+              if (open === m.label) {
+                ref.current?.querySelector('[role="menu"]')?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+              } else {
+                setOpen(m.label);
+              }
             }}
           >
             {m.label}
@@ -69,6 +149,12 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
           {open === m.label && (
             <div role="menu" aria-label={m.label} className="menu menubar-menu"
               onKeyDown={(event) => {
+                if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  const delta = event.key === "ArrowRight" ? 1 : -1;
+                  switchMenu((menuIndex + delta + menus.length) % menus.length, true);
+                  return;
+                }
                 const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
                 if (!step) return;
                 const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
@@ -86,6 +172,7 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
                     role="menuitem"
                     className="menu-item"
                     disabled={!it.run}
+                    title={!it.run ? disabledReason(it) : undefined}
                     onClick={() => {
                       setOpen(null);
                       it.run?.();

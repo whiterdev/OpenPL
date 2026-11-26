@@ -63,3 +63,91 @@ test("el menú principal se recorre con flechas y Escape devuelve el foco", () =
   expect(trigger).toHaveFocus();
   expect(trigger).toHaveAttribute("aria-expanded", "false");
 });
+
+test("Alt solo abre el primer menú y Alt+otra tecla no actúa", () => {
+  render(<MenuBar menus={menus()} />);
+
+  // Alt+S (otra tecla mientras Alt está presionado) no abre la barra.
+  fireEvent.keyDown(document, { key: "Alt", altKey: true });
+  fireEvent.keyDown(document, { key: "s", altKey: true });
+  fireEvent.keyUp(document, { key: "s", altKey: false });
+  fireEvent.keyUp(document, { key: "Alt", altKey: false });
+  expect(screen.queryByRole("menu")).toBeNull();
+
+  // Alt solo (keydown + keyup sin otra tecla) abre el primer menú y enfoca la barra.
+  fireEvent.keyDown(document, { key: "Alt", altKey: true });
+  fireEvent.keyUp(document, { key: "Alt", altKey: false });
+  expect(screen.getByRole("menu", { name: "Archivo" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Archivo" })).toHaveFocus();
+
+  // Alt solo de nuevo cierra el menú abierto.
+  fireEvent.keyDown(document, { key: "Alt", altKey: true });
+  fireEvent.keyUp(document, { key: "Alt", altKey: false });
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("Alt no abre la barra si hay un diálogo modal abierto", () => {
+  render(
+    <>
+      <MenuBar menus={menus()} />
+      <div role="dialog" aria-modal="true" />
+    </>,
+  );
+  fireEvent.keyDown(document, { key: "Alt", altKey: true });
+  fireEvent.keyUp(document, { key: "Alt", altKey: false });
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("flechas izquierda y derecha cambian entre menús abiertos", () => {
+  const onRun = vi.fn();
+  render(
+    <MenuBar
+      menus={[
+        { label: "Archivo", items: [{ command: "save", run: onRun }] },
+        { label: "Editar", items: [{ command: "undo", run: onRun }] },
+        { label: "Buscar", items: [{ command: "find", run: onRun }] },
+      ]}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Archivo" }));
+  expect(screen.getByRole("menuitem", { name: /Guardar/ })).toHaveFocus();
+
+  fireEvent.keyDown(screen.getByRole("menu", { name: "Archivo" }), { key: "ArrowRight" });
+  expect(screen.getByRole("menu", { name: "Editar" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: /Deshacer/ })).toHaveFocus();
+
+  fireEvent.keyDown(screen.getByRole("menu", { name: "Editar" }), { key: "ArrowLeft" });
+  expect(screen.getByRole("menu", { name: "Archivo" })).toBeInTheDocument();
+
+  // Envolvente circular hacia la izquierda.
+  fireEvent.keyDown(screen.getByRole("menu", { name: "Archivo" }), { key: "ArrowLeft" });
+  expect(screen.getByRole("menu", { name: "Buscar" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: /Buscar/ })).toHaveFocus();
+});
+
+test("los ítems deshabilitados muestran el motivo en title", () => {
+  render(
+    <MenuBar
+      menus={[
+        {
+          label: "Sesión",
+          items: [
+            { command: "connect", run: vi.fn() },
+            { command: "commit" },
+            { command: "disconnect", reason: "Sin conexión" },
+          ],
+        },
+      ]}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
+  expect(screen.getByRole("menuitem", { name: /Conectar/ })).not.toHaveAttribute("title");
+  const commit = screen.getByRole("menuitem", { name: /Commit/ });
+  expect(commit).toBeDisabled();
+  expect(commit).toHaveAttribute("title", expect.stringMatching(/\S/));
+  const disconnect = screen.getByRole("menuitem", { name: /Desconectar/ });
+  expect(disconnect).toBeDisabled();
+  expect(disconnect).toHaveAttribute("title", "Sin conexión");
+});
