@@ -4,6 +4,12 @@
 
 ## Resumen
 
+- Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
+  hermanas, las cierra con la conexión principal y expone su listado y ping a la interfaz.
+  Se verificaron el ping con sesión ocupada y la reconexión individual con conexiones simuladas.
+  Pasaron formato, Clippy, tests Rust, TypeScript y 473 tests de frontend el 2026-11-26.
+  La integración visual y la comprobación contra Oracle quedan pendientes.
+
 - Ctrl+C conserva la copia nativa del texto de paquetes. La grilla permite elegir un total por columna y lo muestra alineado en su pie. Los cálculos usan las filas cargadas.
 
 - El prompt recupera el foco al entrar a la consola. `EDIT` sobre una tabla abre una pestaña de datos con edición habilitada.

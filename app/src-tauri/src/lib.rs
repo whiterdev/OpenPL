@@ -43,6 +43,8 @@ pub fn run() {
             commands::disconnect,
             commands::reconnect,
             commands::session_state,
+            commands::session_siblings,
+            commands::session_ping,
             commands::list_objects,
             commands::routine_overloads,
             commands::object_ddl,

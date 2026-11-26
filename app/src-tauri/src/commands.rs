@@ -136,6 +136,17 @@ pub fn session_state_impl<C: Connector>(
     Ok(st.sessions.get(id)?.state())
 }
 
+pub fn session_siblings_impl<C: Connector>(st: &AppState<C>, id: SessionId) -> Vec<SessionId> {
+    st.sessions.siblings(id)
+}
+
+pub async fn session_ping_impl<C: Connector>(
+    st: &AppState<C>,
+    id: SessionId,
+) -> Result<bool, CoreError> {
+    st.sessions.get(id)?.ping().await
+}
+
 pub async fn list_objects_impl(
     st: &AppState,
     id: SessionId,
@@ -205,6 +216,16 @@ pub async fn reconnect(st: St<'_>, session_id: SessionId) -> Result<(), CoreErro
 #[tauri::command]
 pub fn session_state(st: St<'_>, session_id: SessionId) -> Result<SessionState, CoreError> {
     session_state_impl(&st, session_id)
+}
+
+#[tauri::command]
+pub fn session_siblings(st: St<'_>, session_id: SessionId) -> Vec<SessionId> {
+    session_siblings_impl(&st, session_id)
+}
+
+#[tauri::command]
+pub async fn session_ping(st: St<'_>, session_id: SessionId) -> Result<bool, CoreError> {
+    session_ping_impl(&st, session_id).await
 }
 
 #[tauri::command]
@@ -767,6 +788,43 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert_eq!(dropped.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(st.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn siblings_ping_y_reconnect_por_hermana() {
+        let (_d, st) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
+        let main = connect_impl(&st, params()).await.unwrap().session_id;
+        let sibling = sql_open_impl(&st, main).await.unwrap();
+        assert_eq!(session_siblings_impl(&st, main), vec![sibling]);
+        assert!(session_ping_impl(&st, sibling).await.unwrap());
+
+        // Simular caída de la hermana y reconexión por su propio id.
+        let _ = st
+            .sessions
+            .get(sibling)
+            .unwrap()
+            .run(|_| -> Result<(), DbError> {
+                Err(DbError::from_code(
+                    Some("ORA-03113".into()),
+                    "ORA-03113: end-of-file",
+                ))
+            })
+            .await;
+        assert_eq!(
+            session_state_impl(&st, sibling).unwrap(),
+            SessionState::Disconnected
+        );
+        assert!(!session_ping_impl(&st, sibling).await.unwrap());
+
+        reconnect_impl(&st, sibling).await.unwrap();
+        assert_eq!(
+            session_state_impl(&st, sibling).unwrap(),
+            SessionState::Connected
+        );
+        assert!(session_ping_impl(&st, sibling).await.unwrap());
+
+        disconnect_impl(&st, main);
         assert!(st.sessions.is_empty());
     }
 }

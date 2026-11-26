@@ -4,7 +4,7 @@ use crate::CoreError;
 use openpl_oracle::{ConnectParams, DbConn, DbError, DbVersion, ErrorKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -29,6 +29,9 @@ pub trait Connector: Send + Sync + 'static {
     fn interrupter(_conn: &Self::Conn) -> Option<Interrupter> {
         None
     }
+    fn ping(_conn: &Self::Conn) -> Result<(), DbError> {
+        Ok(())
+    }
 }
 
 pub struct OracleConnector;
@@ -47,12 +50,31 @@ impl Connector for OracleConnector {
             let _ = raw.break_execution();
         }))
     }
+    fn ping(conn: &DbConn) -> Result<(), DbError> {
+        conn.ping()
+    }
 }
 
 type Job<T> = Box<dyn FnOnce(&mut Option<T>) + Send>;
 
 const CONNECTED: u8 = 0;
 const DISCONNECTED: u8 = 1;
+
+/// Marca un trabajo activo en el hilo de la sesión para que `ping` no se encole detrás.
+struct BusyGuard(Arc<AtomicUsize>);
+
+impl BusyGuard {
+    fn enter(counter: &Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter.clone())
+    }
+}
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 /// Una conexión viva en su propio hilo. Al soltarla, el hilo termina y libera la conexión.
 pub struct Session<C: Connector> {
@@ -61,6 +83,7 @@ pub struct Session<C: Connector> {
     connector: Arc<C>,
     params: ConnectParams,
     interrupter: Arc<Mutex<Option<Interrupter>>>,
+    active_jobs: Arc<AtomicUsize>,
 }
 
 impl<C: Connector> Session<C> {
@@ -100,6 +123,7 @@ impl<C: Connector> Session<C> {
             connector,
             params,
             interrupter,
+            active_jobs: Arc::default(),
         })
     }
 
@@ -144,7 +168,9 @@ impl<C: Connector> Session<C> {
             return Err(CoreError::Disconnected);
         }
         let (otx, orx) = oneshot::channel();
+        let guard = BusyGuard::enter(&self.active_jobs);
         self.send(Box::new(move |conn: &mut Option<C::Conn>| {
+            let _busy = guard;
             let r = match conn.as_ref() {
                 Some(c) => f(c),
                 None => Err(DbError::from_code(
@@ -165,13 +191,32 @@ impl<C: Connector> Session<C> {
         }
     }
 
+    /// Comprueba la conexión en el hilo de la sesión; si está ocupada devuelve `true` sin encolar.
+    pub async fn ping(&self) -> Result<bool, CoreError> {
+        if self.state() == SessionState::Disconnected {
+            return Ok(false);
+        }
+        if self.active_jobs.load(Ordering::SeqCst) > 0 {
+            return Ok(true);
+        }
+        match self.run(|c| C::ping(c)).await {
+            Ok(()) => Ok(true),
+            Err(_) => {
+                self.state.store(DISCONNECTED, Ordering::SeqCst);
+                Ok(false)
+            }
+        }
+    }
+
     /// Vuelve a conectar con los mismos parámetros, en el mismo hilo.
     pub async fn reconnect(&self) -> Result<(), CoreError> {
         let (otx, orx) = oneshot::channel();
         let connector = self.connector.clone();
         let params = self.params.clone();
         let interrupter = self.interrupter.clone();
+        let guard = BusyGuard::enter(&self.active_jobs);
         self.send(Box::new(move |slot: &mut Option<C::Conn>| {
+            let _busy = guard;
             *slot = None;
             let r = connector.connect(&params).map(|c| {
                 *interrupter.lock().unwrap() = C::interrupter(&c);
@@ -189,6 +234,8 @@ impl<C: Connector> Session<C> {
 pub struct SessionManager<C: Connector> {
     connector: Arc<C>,
     sessions: RwLock<HashMap<SessionId, Arc<Session<C>>>>,
+    children: RwLock<HashMap<SessionId, Vec<SessionId>>>,
+    parents: RwLock<HashMap<SessionId, SessionId>>,
 }
 
 impl<C: Connector> SessionManager<C> {
@@ -196,6 +243,8 @@ impl<C: Connector> SessionManager<C> {
         Self {
             connector,
             sessions: RwLock::new(HashMap::new()),
+            children: RwLock::new(HashMap::new()),
+            parents: RwLock::new(HashMap::new()),
         }
     }
 
@@ -212,7 +261,30 @@ impl<C: Connector> SessionManager<C> {
     /// Abre otra sesión con los parámetros de `id` (ventanas con transacción propia).
     pub async fn open_sibling(&self, id: SessionId) -> Result<SessionId, CoreError> {
         let params = self.get(id)?.params().clone();
-        self.open(params).await
+        let child = self.open(params).await?;
+        let sessions = self.sessions.read().unwrap();
+        if !sessions.contains_key(&id) {
+            drop(sessions);
+            self.close(child);
+            return Err(CoreError::SessionNotFound);
+        }
+        self.children
+            .write()
+            .unwrap()
+            .entry(id)
+            .or_default()
+            .push(child);
+        self.parents.write().unwrap().insert(child, id);
+        Ok(child)
+    }
+
+    pub fn siblings(&self, parent: SessionId) -> Vec<SessionId> {
+        self.children
+            .read()
+            .unwrap()
+            .get(&parent)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get(&self, id: SessionId) -> Result<Arc<Session<C>>, CoreError> {
@@ -225,7 +297,24 @@ impl<C: Connector> SessionManager<C> {
     }
 
     pub fn close(&self, id: SessionId) {
-        self.sessions.write().unwrap().remove(&id);
+        let mut to_close = vec![id];
+        let mut sessions = self.sessions.write().unwrap();
+        let mut children = self.children.write().unwrap();
+        let mut parents = self.parents.write().unwrap();
+
+        if let Some(parent) = parents.remove(&id) {
+            if let Some(list) = children.get_mut(&parent) {
+                list.retain(|&c| c != id);
+            }
+        }
+
+        while let Some(cur) = to_close.pop() {
+            sessions.remove(&cur);
+            parents.remove(&cur);
+            if let Some(kids) = children.remove(&cur) {
+                to_close.extend(kids);
+            }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -242,12 +331,16 @@ pub mod fake {
     pub struct FakeConn {
         pub server: DbVersion,
         interrupts: Arc<AtomicUsize>,
+        pings: Arc<AtomicUsize>,
+        fail_ping: Arc<AtomicBool>,
     }
 
     pub struct FakeConnector {
         pub server: DbVersion,
         pub connects: AtomicUsize,
         pub interrupts: Arc<AtomicUsize>,
+        pub pings: Arc<AtomicUsize>,
+        fail_ping: Arc<AtomicBool>,
     }
 
     impl FakeConnector {
@@ -256,7 +349,13 @@ pub mod fake {
                 server,
                 connects: AtomicUsize::new(0),
                 interrupts: Arc::default(),
+                pings: Arc::default(),
+                fail_ping: Arc::default(),
             }
+        }
+
+        pub fn set_fail_ping(&self, fail: bool) {
+            self.fail_ping.store(fail, Ordering::SeqCst);
         }
     }
 
@@ -267,6 +366,8 @@ pub mod fake {
             Ok(FakeConn {
                 server: self.server,
                 interrupts: self.interrupts.clone(),
+                pings: self.pings.clone(),
+                fail_ping: self.fail_ping.clone(),
             })
         }
         fn server_version(conn: &FakeConn) -> DbVersion {
@@ -277,6 +378,16 @@ pub mod fake {
             Some(Arc::new(move || {
                 count.fetch_add(1, Ordering::SeqCst);
             }))
+        }
+        fn ping(conn: &FakeConn) -> Result<(), DbError> {
+            conn.pings.fetch_add(1, Ordering::SeqCst);
+            if conn.fail_ping.load(Ordering::SeqCst) {
+                return Err(DbError::from_code(
+                    Some("ORA-03113".into()),
+                    "ORA-03113: end-of-file on communication channel",
+                ));
+            }
+            Ok(())
         }
     }
 }
@@ -380,8 +491,70 @@ mod tests {
             2
         );
         assert_eq!(mgr.get(sibling).unwrap().params().user, "u");
+        assert_eq!(mgr.siblings(id), vec![sibling]);
         mgr.close(id);
-        assert!(mgr.get(sibling).is_ok());
+        assert!(matches!(mgr.get(sibling), Err(CoreError::SessionNotFound)));
+        assert!(mgr.siblings(id).is_empty());
+        assert!(mgr.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cerrar_una_hermana_solo_saca_esa_de_siblings() {
+        let mgr = SessionManager::new(Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0))));
+        let parent = mgr.open(params()).await.unwrap();
+        let s1 = mgr.open_sibling(parent).await.unwrap();
+        let s2 = mgr.open_sibling(parent).await.unwrap();
+        assert_eq!(mgr.siblings(parent), vec![s1, s2]);
+        mgr.close(s1);
+        assert_eq!(mgr.siblings(parent), vec![s2]);
+        assert!(mgr.get(parent).is_ok());
+        mgr.close(parent);
+        assert!(mgr.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ping_marca_desconectada_si_falla_y_no_encola_si_esta_ocupada() {
+        let connector = Arc::new(FakeConnector::new(DbVersion::new(19, 0, 0)));
+        let mgr = SessionManager::new(connector.clone());
+        let id = mgr.open(params()).await.unwrap();
+        let session = mgr.get(id).unwrap();
+
+        assert!(session.ping().await.unwrap());
+        assert_eq!(connector.pings.load(Ordering::SeqCst), 1);
+
+        // Sesión ocupada: ping devuelve true sin encolar ni ejecutar ping.
+        let gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let gate_job = gate.clone();
+        let busy_session = session.clone();
+        let job = tokio::spawn(async move {
+            busy_session
+                .run(move |_| {
+                    entered_tx.send(()).unwrap();
+                    let (l, cv) = &*gate_job;
+                    let mut done = l.lock().unwrap();
+                    while !*done {
+                        done = cv.wait(done).unwrap();
+                    }
+                    Ok(())
+                })
+                .await
+        });
+        entered_rx.await.unwrap();
+        assert!(session.ping().await.unwrap());
+        assert_eq!(connector.pings.load(Ordering::SeqCst), 1);
+        {
+            let (l, cv) = &*gate;
+            *l.lock().unwrap() = true;
+            cv.notify_all();
+        }
+        job.await.unwrap().unwrap();
+
+        // Ping que falla marca la sesión como desconectada y devuelve false.
+        connector.set_fail_ping(true);
+        assert!(!session.ping().await.unwrap());
+        assert_eq!(session.state(), SessionState::Disconnected);
+        assert!(!session.ping().await.unwrap());
     }
 
     #[tokio::test]

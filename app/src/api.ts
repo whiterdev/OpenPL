@@ -42,6 +42,10 @@ export const api = {
   reconnect: (sessionId: string) => invoke<void>("reconnect", { sessionId }),
   sessionState: (sessionId: string) =>
     invoke<SessionState>("session_state", { sessionId }),
+  sessionSiblings: (sessionId: string) =>
+    invoke<string[]>("session_siblings", { sessionId }),
+  sessionPing: (sessionId: string) =>
+    invoke<boolean>("session_ping", { sessionId }),
   listObjects: (
     sessionId: string,
     scope: Scope,
