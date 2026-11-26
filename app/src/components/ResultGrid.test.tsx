@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { ResultGrid } from "./ResultGrid";
+import { useState } from "react";
+import { ResultGrid, type CellPosition } from "./ResultGrid";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { copyGridCells, gridTotal } from "../gridSelection";
@@ -28,6 +29,30 @@ test("Ctrl+A en la grilla selecciona las filas cargadas", () => {
   scroll.focus();
   expect(fireEvent.keyDown(scroll, { key: "a", ctrlKey: true })).toBe(false);
   expect(onSelect).toHaveBeenCalledWith({ row: 0, col: 0, scope: "all" });
+});
+
+test("Shift con clic y flechas extiende mientras Ctrl agrega otra celda", () => {
+  function Grid() {
+    const [selected, onSelect] = useState<CellPosition | null>(null);
+    return <ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+      editable={null} selected={selected} onSelect={onSelect} onEdit={vi.fn()} fetching={false} fetchError={null} />;
+  }
+  render(<Grid />);
+  const id = screen.getByRole("gridcell", { name: "ID 1" });
+  const name = screen.getByRole("gridcell", { name: "NOMBRE Ana" });
+  const last = screen.getByRole("gridcell", { name: "NOMBRE Luis" });
+  fireEvent.mouseDown(id);
+  fireEvent.mouseUp(window);
+  fireEvent.mouseDown(name, { shiftKey: true });
+  fireEvent.mouseUp(window);
+  expect(id).toHaveAttribute("aria-selected", "true");
+  expect(name).toHaveAttribute("aria-selected", "true");
+  fireEvent.mouseDown(last, { ctrlKey: true });
+  fireEvent.mouseUp(window);
+  expect(last).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("gridcell", { name: "ID 2" })).toHaveAttribute("aria-selected", "false");
+  fireEvent.keyDown(screen.getByRole("presentation"), { key: "ArrowLeft", shiftKey: true });
+  expect(screen.getByRole("gridcell", { name: "ID 2" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("la esquina selecciona las filas cargadas y el numero selecciona una fila", () => {

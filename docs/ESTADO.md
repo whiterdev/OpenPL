@@ -30,7 +30,8 @@
   lectura. El brief 27 implementa scripts anidados y SPOOL con un contexto inyectado.
   El brief 28 serializa TSV, CSV e INSERT para copiar y permite leer TSV entrecomillado.
   El brief 29 mueve la celda con RePág y AvPág y la mantiene visible al desplazarse.
-  TypeScript y 578 tests en verde. Sigue el brief 30.
+  El brief 30 agrega selección de rangos, columna y copia de la selección. Ctrl+A
+  selecciona las filas cargadas. TypeScript y 580 tests en verde. Sigue el brief 31.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

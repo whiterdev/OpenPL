@@ -1,4 +1,43 @@
 export interface GridPoint { row: number; col: number }
+export interface GridRange { anchor: GridPoint; focus: GridPoint }
+export interface GridSelection extends GridPoint {
+  scope?: "row" | "all";
+  ranges?: GridRange[];
+}
+
+export function selectRange(selection: GridSelection, focus: GridPoint, mode: "extend" | "add"): GridSelection {
+  const ranges = selection.ranges ?? [{ anchor: selection, focus: selection }];
+  const last = ranges[ranges.length - 1];
+  return {
+    ...focus,
+    ranges: mode === "add"
+      ? [...ranges, { anchor: focus, focus }]
+      : [...ranges.slice(0, -1), { anchor: last.anchor, focus }],
+  };
+}
+
+export function inSelection(selection: GridSelection | null, row: number, col: number): boolean {
+  if (!selection) return false;
+  if (selection.scope === "all") return true;
+  if (selection.scope === "row") return selection.row === row;
+  if (!selection.ranges) return selection.row === row && selection.col === col;
+  return selection.ranges.some(({ anchor, focus }) =>
+    row >= Math.min(anchor.row, focus.row) && row <= Math.max(anchor.row, focus.row) &&
+    col >= Math.min(anchor.col, focus.col) && col <= Math.max(anchor.col, focus.col),
+  );
+}
+
+export function selectedCells<T>(rows: T[][], selection: GridSelection): T[][] {
+  if (selection.scope === "all") return rows;
+  if (!selection.scope && !selection.ranges) {
+    const row = rows[selection.row];
+    return row ? [row.slice(selection.col, selection.col + 1)] : [];
+  }
+  return rows.flatMap((row, index) => {
+    const cells = row.filter((_, col) => inSelection(selection, index, col));
+    return cells.length ? [cells] : [];
+  });
+}
 
 interface GridBounds { rows: number; cols: number; page: number }
 interface GridKey { key: string; ctrlKey?: boolean; metaKey?: boolean }
