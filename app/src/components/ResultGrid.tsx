@@ -4,7 +4,7 @@ import { Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phospho
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
-import { copyGridCells, gridTotal, type GridTotal } from "../gridSelection";
+import { copyGridCells, gridTotal, parseTsv, type GridTotal } from "../gridSelection";
 import { inSelection, moveCell, selectedCells, selectRange, type GridSelection } from "../gridNav";
 import { ContextMenu } from "./ContextMenu";
 
@@ -23,6 +23,8 @@ interface Props {
   selected: CellPosition | null;
   onSelect: (position: CellPosition) => void;
   onEdit: (position: CellPosition, value: Cell) => void;
+  onPasteCells?: (position: CellPosition, matrix: string[][]) => void;
+  onNotice?: (message: string) => void;
   scrollRef?: RefObject<HTMLDivElement | null>;
   fetching: boolean;
   fetchError: string | null;
@@ -56,6 +58,7 @@ export function ResultGrid(props: Props) {
   const scroll = props.scrollRef ?? localScroll;
   const drag = useRef<GridSelection | null>(null);
   const [editing, setEditing] = useState<{ position: CellPosition; value: string } | null>(null);
+  const editClosed = useRef(false);
   const [menu, setMenu] = useState<{ x: number; y: number; column: number; totals?: boolean } | null>(null);
   const [totalsFor, setTotalsFor] = useState<{ queryKey: number; columns: Record<number, GridTotal> } | null>(null);
   const [copyError, setCopyError] = useState(false);
@@ -90,13 +93,18 @@ export function ResultGrid(props: Props) {
   const canEdit = (p: CellPosition) => !fetching && !!editable?.[p.col] && status[p.row] !== "delete";
   const startEdit = (p: CellPosition, initial?: string) => {
     if (!canEdit(p)) return;
+    editClosed.current = false;
     setEditing({ position: p, value: initial ?? rows[p.row][p.col] ?? "" });
   };
-  const commit = () => {
-    if (!editing) return;
-    onEdit(editing.position, editing.value === "" ? null : editing.value);
+  const closeEditor = () => {
+    editClosed.current = true;
     setEditing(null);
     scroll.current?.focus();
+  };
+  const commit = () => {
+    if (!editing || editClosed.current) return;
+    closeEditor();
+    onEdit(editing.position, editing.value === "" ? null : editing.value);
   };
   const move = (row: number, col: number) => {
     onSelect({ row: Math.max(0, Math.min(rows.length - 1, row)), col: Math.max(0, Math.min(columns.length - 1, col)) });
@@ -282,11 +290,21 @@ export function ResultGrid(props: Props) {
                         <input className="sql-cell-input" aria-label={`Editar ${column.name}`} autoFocus value={editing.value}
                           onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                           onBlur={commit}
+                          onPaste={(event) => {
+                            if (!props.onPasteCells) return;
+                            event.preventDefault();
+                            const matrix = parseTsv(event.clipboardData.getData("text/plain"));
+                            const clipped = matrix.slice(0, rows.length - row).map((line) => line.slice(0, columns.length - col));
+                            const count = (lines: string[][]) => lines.reduce((sum, line) => sum + line.length, 0);
+                            closeEditor();
+                            props.onPasteCells({ row, col }, clipped);
+                            props.onNotice?.(`Se pegaron ${count(clipped)} de ${count(matrix)} celdas`);
+                          }}
                           onKeyDown={(e) => {
                             if (matches(e, commands.fetchAllRows.keys!)) { e.stopPropagation(); }
                             else if (e.key === "Enter") { e.preventDefault(); commit(); move(row + 1, col); }
                             else if (e.key === "Tab") { e.preventDefault(); commit(); move(row, col + (e.shiftKey ? -1 : 1)); }
-                            else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); scroll.current?.focus(); }
+                            else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeEditor(); }
                           }} />
                       ) : value === null ? <span className="sql-null">NULL</span> : value}
                     </div>

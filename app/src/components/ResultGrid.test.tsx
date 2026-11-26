@@ -90,6 +90,28 @@ test("el menu muestra totales numericos de la seleccion", () => {
   expect(footer).not.toBeInTheDocument();
 });
 
+test("Escape cancela la edición y pegar TSV recorta al rango disponible", () => {
+  const onEdit = vi.fn();
+  const onPasteCells = vi.fn();
+  const onNotice = vi.fn();
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={[true, true]} selected={{ row: 1, col: 1 }} onSelect={vi.fn()} onEdit={onEdit}
+    onPasteCells={onPasteCells} onNotice={onNotice} fetching={false} fetchError={null} />);
+  const scroll = screen.getByRole("presentation");
+  fireEvent.keyDown(scroll, { key: "F2" });
+  const editing = screen.getByRole("textbox", { name: "Editar NOMBRE" });
+  fireEvent.change(editing, { target: { value: "descartar" } });
+  fireEvent.keyDown(editing, { key: "Escape" });
+  expect(onEdit).not.toHaveBeenCalled();
+  fireEvent.keyDown(scroll, { key: "F2" });
+  fireEvent.paste(screen.getByRole("textbox", { name: "Editar NOMBRE" }), {
+    clipboardData: { getData: () => '"Nueva\tcelda"\tsobra\r\notra\tfila' },
+  });
+  expect(onPasteCells).toHaveBeenCalledExactlyOnceWith({ row: 1, col: 1 }, [["Nueva\tcelda"]]);
+  expect(onNotice).toHaveBeenCalledWith("Se pegaron 1 de 4 celdas");
+  expect(onEdit).not.toHaveBeenCalled();
+});
+
 test("CSV escapa comas y comillas y la suma conserva decimales exactos", () => {
   expect(copyGridCells([["1", 'A,"B"'], ["2", null]], true)).toBe('1,"A,""B"""\r\n2,');
   expect(copyGridCells([["1", "Ana"], ["2", null]], false)).toBe("1\tAna\n2\t");
