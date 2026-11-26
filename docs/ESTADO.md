@@ -41,7 +41,8 @@
   salida anterior. El brief 38 conserva la sangría, admite Shift+Enter y evita
   duplicados consecutivos en el historial. TypeScript y 589 tests en verde.
   El brief 39 encola comandos ingresados durante la ejecución y muestra segundos
-  transcurridos. TypeScript y 590 tests en verde. Sigue el brief 40.
+  transcurridos. El brief 40 admite pegado multilínea y preguntas de sustitución.
+  TypeScript y 592 tests en verde. Sigue el brief 41.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

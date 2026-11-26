@@ -4,6 +4,7 @@ import { createRef } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ROWID_COLUMN } from "../sqlEdit";
 import { SqlWindow } from "./SqlWindow";
+import { CommandConsole, type ConsoleIo } from "./CommandConsole";
 import type { ProgramActions } from "./ProgramWindow";
 import { api } from "../api";
 import type { ExecOutcome } from "../types";
@@ -176,6 +177,37 @@ test("la consola admite otro comando durante la ejecución y lo ejecuta después
   expect(execute).toHaveBeenCalledTimes(1);
   await act(async () => { finish(); });
   await waitFor(() => expect(execute).toHaveBeenNthCalledWith(2, "w1", "SELECT 2 FROM DUAL", []));
+});
+
+test("pegar varias líneas de consola ejecuta las completas y deja la continuación", async () => {
+  const execute = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+  setup("", { command: true });
+  const prompt = screen.getByLabelText("Comando SQL");
+  await act(async () => {
+    fireEvent.paste(prompt, { clipboardData: { getData: () => "SELECT 1 FROM DUAL;\r\nSELECT 2 FROM DUAL;\r\nBEGIN" } });
+  });
+  await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+  expect(screen.getByText("SQL> BEGIN")).toBeVisible();
+});
+
+test("io.ask consume una respuesta sin ejecutar otro comando y Escape la cancela", async () => {
+  const answers: (string | null)[] = [];
+  const onRun = vi.fn(async (_source: string, io: ConsoleIo) => { answers.push(await io.ask("cliente")); });
+  render(<CommandConsole sessionId="w1" tabPrefix="prompt-test" active lines={[]} running={false}
+    alert={null} notice={null} log={vi.fn()} onRun={onRun} />);
+  const prompt = screen.getByLabelText("Comando SQL");
+  const submit = async (value: string) => {
+    fireEvent.change(prompt, { target: { value } });
+    await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  };
+  await submit("SELECT &cliente FROM DUAL;");
+  expect(screen.getByText("Ingrese valor para cliente:")).toBeVisible();
+  await submit("Ana");
+  expect(answers).toEqual(["Ana"]);
+  expect(onRun).toHaveBeenCalledTimes(1);
+  await submit("SELECT &cliente FROM DUAL;");
+  fireEvent.keyDown(prompt, { key: "Escape" });
+  await waitFor(() => expect(answers).toEqual(["Ana", null]));
 });
 
 test("exporta CSV con encabezado y todas las páginas del cursor", async () => {

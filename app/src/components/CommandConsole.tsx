@@ -22,8 +22,6 @@ interface Props {
   onRun(source: string, io: ConsoleIo): Promise<void>;
 }
 
-const io: ConsoleIo = { ask: async () => null };
-
 export interface OutputLine {
   id: number;
   kind: "info" | "output" | "error" | "skip";
@@ -48,6 +46,28 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
     return () => window.removeEventListener("focus", focus);
   }, [active]);
   const [prompt, setPrompt] = useState("");
+  const [question, setQuestion] = useState<string | null>(null);
+  const answer = useRef<{ resolve: (value: string | null) => void; draft: string } | null>(null);
+  useEffect(() => () => {
+    answer.current?.resolve(null);
+    answer.current = null;
+  }, []);
+  const io: ConsoleIo = {
+    ask: (name) => new Promise((resolve) => {
+      answer.current = { resolve, draft: commandInput.current?.value ?? "" };
+      setQuestion(name);
+      setPrompt("");
+      if (active) commandInput.current?.focus({ preventScroll: true });
+    }),
+  };
+  function finishQuestion(value: string | null) {
+    if (!answer.current) return;
+    const pending = answer.current;
+    answer.current = null;
+    setQuestion(null);
+    setPrompt(pending.draft);
+    pending.resolve(value);
+  }
   useLayoutEffect(() => {
     const input = commandInput.current;
     if (!input) return;
@@ -58,8 +78,8 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   const [suggestions, setSuggestions] = useState<{ prompt: string; items: CompletionObject[] }>();
   const [choice, setChoice] = useState<number>();
   const [dismissed, setDismissed] = useState(false);
-  const matchesEdit = commandLines.length ? null : prompt.trim().match(editTarget);
-  const candidates = suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
+  const matchesEdit = question || commandLines.length ? null : prompt.trim().match(editTarget);
+  const candidates = matchesEdit && suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
   const exact = candidates.findIndex((object) => object.name === matchesEdit?.[2].toUpperCase());
   const picked = choice ?? Math.max(0, exact);
   useLayoutEffect(() => {
@@ -68,7 +88,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   }, [lines, commandLines, running, suggestions, dismissed, prompt]);
   useEffect(() => {
     const target = prompt.trim().match(editTarget);
-    if (commandLines.length || !target) return;
+    if (question || commandLines.length || !target) return;
     let current = true;
     const timer = setTimeout(() => {
       void api.completeObjects(sessionId, target[1]?.toUpperCase() ?? null, target[2].toUpperCase(), null, "edit")
@@ -76,7 +96,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
         .catch(() => { if (current) setSuggestions(undefined); });
     }, 120);
     return () => { current = false; clearTimeout(timer); };
-  }, [commandLines.length, prompt, sessionId]);
+  }, [commandLines.length, prompt, question, sessionId]);
   const commandHistory = useRef<string[]>([]);
   const historyIndex = useRef(0);
   const draft = useRef("");
@@ -97,6 +117,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
 
   async function processLine({ entered, selected }: (typeof queue)[number]) {
     const trimmed = entered.trim();
+    if (!trimmed && !commandLines.length) return;
     if (!commandLines.length && editCommand.test(trimmed)) {
       remember(entered);
       log("info", `SQL> ${entered}`);
@@ -167,13 +188,19 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
         {running && <div role="status" className="sql-line">Ejecutando {elapsed} s · {key()} para detener</div>}
         <form className="sql-command-prompt" onSubmit={(event) => {
           event.preventDefault();
+          if (answer.current) {
+            finishQuestion(prompt);
+            return;
+          }
           if (!prompt.trim()) return;
           enqueue(prompt, candidates[picked]);
           setPrompt("");
           setChoice(undefined);
           setDismissed(false);
         }}>
-          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? String(commandLines.length + 1).padStart(3) : "SQL>"}</label>
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{question !== null
+            ? `Ingrese valor para ${question}:`
+            : commandLines.length ? String(commandLines.length + 1).padStart(3) : "SQL>"}</label>
           <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="mono" aria-label="Comando SQL"
             role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
@@ -181,10 +208,30 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
             aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
             value={prompt}
             onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
+            onPaste={(event) => {
+              const text = event.clipboardData.getData("text/plain");
+              if (question !== null || !/[\r\n]/.test(text)) return;
+              event.preventDefault();
+              const input = event.currentTarget;
+              const combined = input.value.slice(0, input.selectionStart) + text + input.value.slice(input.selectionEnd);
+              const entries = combined.replace(/(?:\r\n|\r|\n)$/, "").split(/\r\n|\r|\n/);
+              setQueue((items) => [...items, ...entries.map((entered) => ({ entered }))]);
+              setPrompt("");
+              setChoice(undefined);
+              setDismissed(false);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
+                return;
+              }
+              if (question !== null) {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  finishQuestion(null);
+                }
                 return;
               }
               if (commandLines.length && event.key === "Escape") {
