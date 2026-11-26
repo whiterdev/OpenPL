@@ -301,6 +301,11 @@ export function SqlWindow({
             ? api.sqlExecute(sessionId, sql, binds, undefined, outputs)
             : api.sqlExecute(sessionId, sql, binds));
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
+          if (outcome.result.kind === "Failed") {
+            outcome.output.forEach((line) => log("output", line));
+            onTransaction(outcome.transaction);
+            throw { Db: outcome.result.error };
+          }
         } catch (error) {
           const detail = describeError(error);
           setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: false }, ...h]);
@@ -335,7 +340,7 @@ export function SqlWindow({
             if (page.more) log("info", `${page.rows.length} filas mostradas · ${formatKeys(commands.exportData.keys!)} para exportar todas`);
           }
           lastQuery = true;
-        } else {
+        } else if (outcome.result.kind === "Done") {
           log("info", outcome.result.message);
           setSummary(`${outcome.result.message} · ${outcome.elapsed_ms} ms`);
           lastQuery = false;

@@ -262,6 +262,20 @@ test("un error marca la posición, va a Salida y detiene el script", async () =>
   await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).not.toBeNull());
 });
 
+test("conserva DBMS_OUTPUT y la transacción de un bloque fallido", async () => {
+  const exec = vi.spyOn(api, "sqlExecute").mockResolvedValueOnce({
+    result: { kind: "Failed", error: { code: "ORA-20000", kind: "Other", message: "Error de prueba" } },
+    elapsed_ms: 3, output: ["Antes del error"], transaction: true,
+  });
+  const { ref, onTransaction } = setup("begin null; end;\n/\nselect 1 from dual;");
+  await act(async () => ref.current!.executeScript!());
+  const output = within(screen.getByRole("tabpanel", { name: "Salida" }));
+  expect(output.getByText("Antes del error")).toBeVisible();
+  expect(output.getByText("ORA-20000 Error de prueba")).toBeVisible();
+  expect(onTransaction).toHaveBeenLastCalledWith(true);
+  expect(exec).toHaveBeenCalledTimes(1);
+});
+
 test("el script omite SQL*Plus, junta DBMS_OUTPUT y avisa la transacción", async () => {
   const exec = vi.spyOn(api, "sqlExecute")
     .mockResolvedValueOnce({ result: { kind: "Done", message: "1 fila actualizada" }, elapsed_ms: 3, output: [], transaction: true })

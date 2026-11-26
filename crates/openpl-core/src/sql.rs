@@ -1,6 +1,6 @@
 //! Ejecución de sentencias de la Ventana SQL. Corre siempre en el hilo de su sesión.
 
-use openpl_oracle::{DbConn, DbError};
+use openpl_oracle::{DbConn, DbError, ErrorKind};
 use oracle::sql_type::{Clob, OracleType, RefCursor, Timestamp, ToSql};
 use oracle::{ColumnInfo, ResultSet, Row, Statement, StatementType};
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,9 @@ pub enum ExecResult {
     },
     Done {
         message: String,
+    },
+    Failed {
+        error: DbError,
     },
 }
 
@@ -447,7 +450,18 @@ pub fn execute_with_outputs(
             page,
         }
     } else {
-        stmt.execute_named(&named)?;
+        if let Err(error) = stmt.execute_named(&named) {
+            let error = DbError::from(error);
+            if error.kind == ErrorKind::ConnectionLost {
+                return Err(error);
+            }
+            return Ok(failed_outcome(
+                error,
+                started.elapsed().as_millis() as u64,
+                read_output(conn).unwrap_or_default(),
+                in_transaction(conn).unwrap_or(false),
+            ));
+        }
         test_outputs = outputs
             .iter()
             .map(|bind| TestOutput {
@@ -473,6 +487,21 @@ pub fn execute_with_outputs(
         transaction: in_transaction(conn).unwrap_or(false),
         test_outputs,
     })
+}
+
+fn failed_outcome(
+    error: DbError,
+    elapsed_ms: u64,
+    output: Vec<String>,
+    transaction: bool,
+) -> ExecOutcome {
+    ExecOutcome {
+        result: ExecResult::Failed { error },
+        elapsed_ms,
+        output,
+        transaction,
+        test_outputs: Vec::new(),
+    }
 }
 
 /// Siguiente página del cursor abierto. Un cursor ya cerrado devuelve una página vacía.
@@ -507,6 +536,20 @@ pub fn rollback(conn: &DbConn) -> Result<bool, DbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ejecucion_fallida_conserva_salida_y_transaccion() {
+        let error = DbError::from_code(Some("ORA-20000".into()), "Error de prueba");
+        let outcome = failed_outcome(error, 15, vec!["Antes del error".into()], true);
+        let ExecResult::Failed { error } = outcome.result else {
+            panic!("se esperaba un fallo de ejecución");
+        };
+        assert_eq!(error.code.as_deref(), Some("ORA-20000"));
+        assert_eq!(outcome.elapsed_ms, 15);
+        assert_eq!(outcome.output, ["Antes del error"]);
+        assert!(outcome.transaction);
+        assert!(outcome.test_outputs.is_empty());
+    }
 
     #[test]
     fn tipos_de_salida_tienen_buffers_explicitos() {

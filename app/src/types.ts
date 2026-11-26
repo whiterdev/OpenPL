@@ -59,6 +59,7 @@ export interface QueryPage {
 
 export type ExecResult =
   | { kind: "Query"; cursor: number; columns: SqlColumn[]; page: QueryPage }
+  | { kind: "Failed"; error: DbError }
   | { kind: "Done"; message: string };
 
 export interface EditColumn {

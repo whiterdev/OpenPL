@@ -17,7 +17,9 @@
   El brief 18 cuenta las variables de todo el script y respeta las comillas alternativas.
   El brief 19 clasifica sentencias de lectura y escritura. TypeScript y 545 tests en verde.
   El brief 20 agrega el formateador tabular para la consola. Los cinco controles pasaron,
-  con 551 tests de frontend. Sigue el brief 21.
+  con 551 tests de frontend. El brief 21 conserva DBMS_OUTPUT y el estado de transacción
+  al fallar un bloque. Los cinco controles pasaron, con 552 tests de frontend.
+  Falta la prueba manual contra Oracle. Sigue el brief 22.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
