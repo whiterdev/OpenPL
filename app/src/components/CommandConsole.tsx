@@ -87,6 +87,66 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
     draft.current = "";
   }
 
+  const [queue, setQueue] = useState<{ entered: string; selected?: CompletionObject }[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  function enqueue(entered: string, selected?: CompletionObject) {
+    setQueue((items) => [...items, { entered, selected }]);
+  }
+
+  async function processLine({ entered, selected }: (typeof queue)[number]) {
+    const trimmed = entered.trim();
+    if (!commandLines.length && editCommand.test(trimmed)) {
+      remember(entered);
+      log("info", `SQL> ${entered}`);
+      const target = trimmed.match(editTarget);
+      if (!target || !onEditObject) {
+        log("error", "Usa EDIT [esquema.]objeto.");
+        return;
+      }
+      try {
+        const name = target[2].toUpperCase();
+        const items = selected ? [selected] : await api.completeObjects(
+          sessionId, target[1]?.toUpperCase() ?? null, name, null, "edit",
+        );
+        const object = selected ?? items.find((item) => item.name === name) ?? items[0];
+        if (object) onEditObject(object);
+        else log("error", "Objeto no encontrado.");
+      } catch (error) {
+        log("error", describeError(error).message);
+      }
+      return;
+    }
+    const source = [...commandLines, entered].join("\n");
+    const statements = splitScript(source);
+    const complete = /(?:^|\n)\s*\/$/.test(trimmed) || statements[0]?.kind === "sqlplus" ||
+      (statements[0]?.kind === "sql" && trimmed.endsWith(";"));
+    if (!complete) {
+      setCommandLines((lines) => [...lines, entered]);
+      return;
+    }
+    if (statements.length) remember(source);
+    setCommandLines([]);
+    await onRun(source, io);
+  }
+
+  useEffect(() => {
+    const next = queue[0];
+    if (!next || processing || running) return;
+    setProcessing(true);
+    setQueue((items) => items.slice(1));
+    void processLine(next).catch((error) => log("error", describeError(error).message))
+      .finally(() => setProcessing(false));
+  });
+
+  useEffect(() => {
+    if (!running) { setElapsed(0); return; }
+    const start = Date.now();
+    const tick = window.setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => window.clearInterval(tick);
+  }, [running]);
+
   return (
     <section className="sql-window" aria-label="Ventana de comando">
       <div className="sql-terminal" ref={terminal} role="log" aria-label="Transcripción"
@@ -104,46 +164,14 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
         </div>)}
         {alert && <div role="alert" className="sql-line sql-line-error">{alert}</div>}
         {notice && <div role="status" className="sql-line">{notice}</div>}
-        {running && <div role="status" className="sql-line">Ejecutando… {key()} para detener</div>}
-        <form className="sql-command-prompt" onSubmit={async (event) => {
+        {running && <div role="status" className="sql-line">Ejecutando {elapsed} s · {key()} para detener</div>}
+        <form className="sql-command-prompt" onSubmit={(event) => {
           event.preventDefault();
-          const entered = prompt;
-          const trimmed = entered.trim();
-          if (running || !trimmed) return;
+          if (!prompt.trim()) return;
+          enqueue(prompt, candidates[picked]);
           setPrompt("");
           setChoice(undefined);
           setDismissed(false);
-          if (!commandLines.length && editCommand.test(trimmed)) {
-            remember(entered);
-            log("info", `SQL> ${entered}`);
-            if (!matchesEdit || !onEditObject) {
-              log("error", "Usa EDIT [esquema.]objeto.");
-              return;
-            }
-            try {
-              const name = matchesEdit[2].toUpperCase();
-              const items = candidates.length ? candidates : await api.completeObjects(
-                sessionId, matchesEdit[1]?.toUpperCase() ?? null, name, null, "edit",
-              );
-              const object = candidates.length ? items[picked] : items.find((item) => item.name === name) ?? items[0];
-              if (object) onEditObject(object);
-              else log("error", "Objeto no encontrado.");
-            } catch (error) {
-              log("error", describeError(error).message);
-            }
-            return;
-          }
-          const source = [...commandLines, entered].join("\n");
-          const statements = splitScript(source);
-          const complete = /(?:^|\n)\s*\/$/.test(trimmed) || statements[0]?.kind === "sqlplus" ||
-            (statements[0]?.kind === "sql" && trimmed.endsWith(";"));
-          if (!complete) {
-            setCommandLines((lines) => [...lines, entered]);
-            return;
-          }
-          if (statements.length) remember(source);
-          setCommandLines([]);
-          await onRun(source, io);
         }}>
           <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? String(commandLines.length + 1).padStart(3) : "SQL>"}</label>
           <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="mono" aria-label="Comando SQL"
@@ -151,7 +179,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
             aria-controls={candidates.length ? `${tabPrefix}-objects` : undefined}
             aria-activedescendant={candidates.length ? `${tabPrefix}-object-${picked}` : undefined}
-            value={prompt} readOnly={running}
+            value={prompt}
             onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

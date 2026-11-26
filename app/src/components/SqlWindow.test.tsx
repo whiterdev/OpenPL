@@ -156,6 +156,28 @@ test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => 
   expect(screen.getByRole("tabpanel", { name: "Plan" })).toHaveTextContent("TABLE ACCESS");
 });
 
+test("la consola admite otro comando durante la ejecución y lo ejecuta después", async () => {
+  let finish!: () => void;
+  const first = new Promise<ReturnType<typeof query>>((resolve) => {
+    finish = () => resolve(query([]));
+  });
+  const execute = vi.spyOn(api, "sqlExecute").mockReturnValueOnce(first).mockResolvedValue(query([]));
+  setup("", { command: true });
+  const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  const submit = async (value: string) => {
+    fireEvent.change(prompt, { target: { value } });
+    await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  };
+  await submit("SELECT 1 FROM DUAL;");
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(prompt).not.toHaveAttribute("readonly");
+  expect(screen.getByText(/Ejecutando 0 s/)).toBeVisible();
+  await submit("SELECT 2 FROM DUAL;");
+  expect(execute).toHaveBeenCalledTimes(1);
+  await act(async () => { finish(); });
+  await waitFor(() => expect(execute).toHaveBeenNthCalledWith(2, "w1", "SELECT 2 FROM DUAL", []));
+});
+
 test("exporta CSV con encabezado y todas las páginas del cursor", async () => {
   vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana, B"]], true));
   const fetch = vi.spyOn(api, "sqlFetch").mockResolvedValue({ rows: [["2", "Beto"]], more: false });
