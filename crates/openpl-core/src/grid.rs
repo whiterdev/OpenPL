@@ -2,6 +2,7 @@
 
 use crate::catalog::{editor_object, ObjectType};
 use crate::sql::{row_cells, NumberText};
+use crate::value_fmt::parse_timestamp;
 use openpl_oracle::{DbConn, DbError};
 use oracle::sql_type::{Timestamp, ToSql};
 use serde::{Deserialize, Serialize};
@@ -202,18 +203,7 @@ fn typed(column: &EditColumn, value: &Option<String>) -> Result<Box<dyn ToSql>, 
     if is_date(base) {
         return Ok(match text {
             None => Box::new(None::<Timestamp>),
-            Some(t) => {
-                let t = t.trim();
-                let full = if t.len() == 10 {
-                    format!("{t} 00:00:00")
-                } else {
-                    t.to_string()
-                };
-                Box::new(
-                    full.parse::<Timestamp>()
-                        .map_err(|_| invalid("una fecha"))?,
-                )
-            }
+            Some(t) => Box::new(parse_timestamp(t).map_err(|_| invalid("una fecha"))?),
         });
     }
     Ok(Box::new(text.map(str::to_string)))

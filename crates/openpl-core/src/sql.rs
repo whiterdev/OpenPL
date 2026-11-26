@@ -1,5 +1,6 @@
 //! Ejecución de sentencias de la Ventana SQL. Corre siempre en el hilo de su sesión.
 
+use crate::value_fmt::{format_timestamp, parse_timestamp};
 use openpl_oracle::{DbConn, DbError, ErrorKind};
 use oracle::sql_type::{Clob, OracleType, RefCursor, Timestamp, ToSql};
 use oracle::{ColumnInfo, ResultSet, Row, Statement, StatementType};
@@ -304,17 +305,7 @@ fn bind_param(b: &BindValue) -> Result<Box<dyn ToSql>, DbError> {
             }
             Box::new(NumberText(normalized))
         }
-        BindKind::Date => {
-            let full = if value.len() == 10 {
-                format!("{value} 00:00:00")
-            } else {
-                value.to_string()
-            };
-            Box::new(
-                full.parse::<Timestamp>()
-                    .map_err(|_| invalid("una fecha"))?,
-            )
-        }
+        BindKind::Date => Box::new(parse_timestamp(value).map_err(|_| invalid("una fecha"))?),
     })
 }
 
@@ -327,6 +318,14 @@ pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
             cells.push(None);
         } else if let Some(label) = binary_label(t) {
             cells.push(Some(label.to_string()));
+        } else if matches!(
+            t,
+            OracleType::Date
+                | OracleType::Timestamp(_)
+                | OracleType::TimestampTZ(_)
+                | OracleType::TimestampLTZ(_)
+        ) {
+            cells.push(Some(format_timestamp(&value.get::<Timestamp>()?, t)));
         } else {
             let text = value.get::<String>().unwrap_or_else(|_| format!("({t})"));
             cells.push(Some(text));

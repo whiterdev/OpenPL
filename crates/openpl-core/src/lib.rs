@@ -10,6 +10,7 @@ pub mod routine;
 pub mod secrets;
 pub mod session;
 pub mod sql;
+mod value_fmt;
 
 pub use error::CoreError;
 pub use profiles::{ConnectionProfile, Environment, ProfileStore};
