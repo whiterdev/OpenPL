@@ -50,6 +50,7 @@ export interface SqlColumn {
   name: string;
   type_name: string;
   numeric: boolean;
+  lob: boolean;
 }
 
 export interface QueryPage {

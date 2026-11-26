@@ -6,8 +6,8 @@ import type { Cell } from "../gridEdits";
 import { copyGridCells, gridTotal } from "../gridSelection";
 
 const columns: SqlColumn[] = [
-  { name: "ID", type_name: "NUMBER", numeric: true },
-  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false },
+  { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
+  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false, lob: false },
 ];
 const rows: Cell[][] = [["1", "Ana"], ["2", "Luis"]];
 

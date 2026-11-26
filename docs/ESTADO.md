@@ -20,7 +20,9 @@
   con 551 tests de frontend. El brief 21 conserva DBMS_OUTPUT y el estado de transacción
   al fallar un bloque. Los cinco controles pasaron, con 552 tests de frontend.
   El brief 22 usa fechas ISO en binds, grilla y comparación de ediciones. Pasaron los
-  controles de Rust. Quedan las pruebas manuales contra Oracle. Sigue el brief 23.
+  controles de Rust. El brief 23 limita a un millón de caracteres el texto LOB retenido
+  por celda y marca las columnas. LONG llega materializado desde el driver.
+  Pasaron los cinco controles. Quedan las verificaciones manuales contra Oracle. Sigue el brief 24.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

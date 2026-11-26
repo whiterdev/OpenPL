@@ -2,7 +2,7 @@
 
 use crate::value_fmt::{format_timestamp, parse_timestamp};
 use openpl_oracle::{DbConn, DbError, ErrorKind};
-use oracle::sql_type::{Clob, OracleType, RefCursor, Timestamp, ToSql};
+use oracle::sql_type::{Clob, Nclob, OracleType, RefCursor, Timestamp, ToSql};
 use oracle::{ColumnInfo, ResultSet, Row, Statement, StatementType};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -14,6 +14,7 @@ use std::time::Instant;
 pub const PAGE_SIZE: usize = 50;
 /// Tope de líneas de DBMS_OUTPUT leídas por ejecución.
 pub const OUTPUT_LIMIT: usize = 10_000;
+const LOB_CHAR_LIMIT: usize = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum BindKind {
@@ -35,6 +36,7 @@ pub struct Column {
     pub name: String,
     pub type_name: String,
     pub numeric: bool,
+    pub lob: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,6 +167,15 @@ fn result_columns(columns: &[ColumnInfo]) -> Vec<Column> {
             name: c.name().to_string(),
             type_name: c.oracle_type().to_string(),
             numeric: is_numeric(c.oracle_type()),
+            lob: matches!(
+                c.oracle_type(),
+                OracleType::CLOB
+                    | OracleType::NCLOB
+                    | OracleType::Long
+                    | OracleType::BLOB
+                    | OracleType::BFILE
+                    | OracleType::LongRaw
+            ),
         })
         .collect()
 }
@@ -309,6 +320,28 @@ fn bind_param(b: &BindValue) -> Result<Box<dyn ToSql>, DbError> {
     })
 }
 
+fn cap_text(text: &str, cap: usize) -> (String, bool) {
+    match text.char_indices().nth(cap) {
+        Some((end, _)) => (text[..end].to_owned(), true),
+        None => (text.to_owned(), false),
+    }
+}
+
+fn read_capped_text(mut reader: impl Read, cap: usize) -> Result<String, DbError> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 8192];
+    while bytes.len() <= cap.saturating_mul(4) {
+        let count = reader
+            .read(&mut chunk)
+            .map_err(|err| DbError::from_code(None, &err.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+    }
+    Ok(cap_text(&String::from_utf8_lossy(&bytes), cap).0)
+}
+
 /// Valores de una fila como texto, con el mismo formato en la grilla y al comparar al aplicar.
 pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
     let mut cells = Vec::with_capacity(row.sql_values().len());
@@ -318,6 +351,23 @@ pub(crate) fn row_cells(row: &Row) -> Result<Vec<Option<String>>, DbError> {
             cells.push(None);
         } else if let Some(label) = binary_label(t) {
             cells.push(Some(label.to_string()));
+        } else if matches!(t, OracleType::CLOB | OracleType::NCLOB | OracleType::Long) {
+            let text = match t {
+                OracleType::CLOB => value
+                    .get::<Clob>()
+                    .ok()
+                    .map(|lob| read_capped_text(lob, LOB_CHAR_LIMIT)),
+                OracleType::NCLOB => value
+                    .get::<Nclob>()
+                    .ok()
+                    .map(|lob| read_capped_text(lob, LOB_CHAR_LIMIT)),
+                _ => None,
+            };
+            let text = match text {
+                Some(text) => text?,
+                None => cap_text(&value.get::<String>()?, LOB_CHAR_LIMIT).0,
+            };
+            cells.push(Some(text));
         } else if matches!(
             t,
             OracleType::Date
@@ -421,13 +471,7 @@ pub fn execute_with_outputs(
     );
     let started = Instant::now();
     let mut builder = conn.raw().statement(sql);
-    builder.fetch_array_size(page_size as u32);
-    if outputs
-        .iter()
-        .any(|bind| matches!(bind.kind, TestOutputKind::Clob))
-    {
-        builder.lob_locator();
-    }
+    builder.fetch_array_size(page_size as u32).lob_locator();
     let mut stmt = builder.build()?;
     let mut test_outputs = Vec::new();
     let result = if stmt.is_query() {
@@ -535,6 +579,14 @@ pub fn rollback(conn: &DbConn) -> Result<bool, DbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tope_lob_cuenta_caracteres_y_respeta_utf8() {
+        assert_eq!(cap_text("A😀ñB", 3), ("A😀ñ".into(), true));
+        assert_eq!(cap_text("A😀ñ", 3), ("A😀ñ".into(), false));
+        assert_eq!(cap_text("ñ", 0), (String::new(), true));
+        assert_eq!(read_capped_text("A😀ñB".as_bytes(), 3).unwrap(), "A😀ñ");
+    }
 
     #[test]
     fn ejecucion_fallida_conserva_salida_y_transaccion() {

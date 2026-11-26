@@ -556,7 +556,7 @@ async function openSqlWithResults() {
     result: {
       kind: "Query",
       cursor: 7,
-      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
       page: { rows: [["1"]], more: true },
     },
     elapsed_ms: 1,
@@ -731,7 +731,7 @@ test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
     result: {
       kind: "Query",
       cursor: 1,
-      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
       page: { rows: [["1"]], more: false },
     },
     elapsed_ms: 1,
@@ -783,7 +783,7 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
       result: {
         kind: "Query",
         cursor: 1,
-        columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+        columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
         page: { rows: [["1"]], more: false },
       },
       elapsed_ms: 1,
@@ -795,8 +795,8 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
         kind: "Query",
         cursor: 2,
         columns: [
-          { name: "OPENPL$ROWID", type_name: "ROWID", numeric: false },
-          { name: "ID", type_name: "NUMBER", numeric: true },
+          { name: "OPENPL$ROWID", type_name: "ROWID", numeric: false, lob: false },
+          { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
         ],
         page: { rows: [["AAA1", "1"]], more: false },
       },

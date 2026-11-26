@@ -14,7 +14,7 @@ afterEach(() => vi.restoreAllMocks());
 const query = (rows: (string | null)[][], more = false, cursor = 1): ExecOutcome => ({
   result: {
     kind: "Query", cursor,
-    columns: [{ name: "ID", type_name: "NUMBER", numeric: true }, { name: "NOMBRE", type_name: "VARCHAR2(40)", numeric: false }],
+    columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }, { name: "NOMBRE", type_name: "VARCHAR2(40)", numeric: false, lob: false }],
     page: { rows, more },
   },
   elapsed_ms: 40, output: [], transaction: false,
@@ -95,7 +95,7 @@ test("la consola ejecuta SQL con Enter y maneja PROMPT localmente", async () => 
 
 test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
   const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({
-    columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false }],
+    columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false, lob: false }],
     page: { rows: [["TABLE ACCESS"]], more: false },
   });
   const execute = vi.spyOn(api, "sqlExecute");
@@ -159,7 +159,7 @@ test("muestra un cursor de salida en una grilla de solo lectura", async () => {
     result: { kind: "Done", message: "Bloque ejecutado" },
     elapsed_ms: 1, output: [], transaction: false,
     test_outputs: [{ name: "FILAS", kind: "Cursor",
-      columns: [{ name: "ID", type_name: "NUMBER", numeric: true }],
+      columns: [{ name: "ID", type_name: "NUMBER", numeric: true, lob: false }],
       page: { rows: [["7"]], more: true },
     }],
   });
@@ -408,9 +408,9 @@ describe("edición en grilla", () => {
     result: {
       kind: "Query", cursor: 2,
       columns: [
-        { name: ROWID_COLUMN, type_name: "ROWID", numeric: false },
-        { name: "ID", type_name: "NUMBER", numeric: true },
-        { name: "NOMBRE", type_name: "VARCHAR2(40)", numeric: false },
+        { name: ROWID_COLUMN, type_name: "ROWID", numeric: false, lob: false },
+        { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
+        { name: "NOMBRE", type_name: "VARCHAR2(40)", numeric: false, lob: false },
       ],
       page: { rows, more: false },
     },

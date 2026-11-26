@@ -3,8 +3,8 @@ import { feedbackLine, formatTable } from "./sqlplusFormat";
 import type { SqlColumn } from "./types";
 
 const columns: SqlColumn[] = [
-  { name: "ID", type_name: "NUMBER", numeric: true },
-  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false },
+  { name: "ID", type_name: "NUMBER", numeric: true, lob: false },
+  { name: "NOMBRE", type_name: "VARCHAR2", numeric: false, lob: false },
 ];
 const rows = [["10", "Ana"], ["2", null]];
 
