@@ -61,7 +61,8 @@
   en verde. El brief 53 abre archivos soltados en la ventana; el gesto en Windows
   queda para prueba manual. El brief 54 permite recorrer y reordenar pestañas.
   El brief 55 agrega el almacén local por perfil, con topes y reemplazo atómico.
-  Pasaron los controles de Rust. Sigue el brief 56.
+  El brief 56 expone el espacio de trabajo por IPC. Los cinco controles pasaron,
+  con 607 tests de frontend. Sigue el brief 57.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

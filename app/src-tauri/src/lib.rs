@@ -4,6 +4,7 @@ pub mod commands;
 pub mod state;
 
 use openpl_core::session::{OracleConnector, SessionManager};
+use openpl_core::workspace::WorkspaceStore;
 use openpl_core::{KeyringStore, ProfileStore};
 use state::{AppSettings, AppState};
 use std::path::Path;
@@ -18,6 +19,7 @@ pub fn run() {
 
     let state = AppState {
         profiles: ProfileStore::new(ProfileStore::default_path()),
+        workspaces: WorkspaceStore::new(WorkspaceStore::default_dir()),
         secrets: Arc::new(KeyringStore),
         sessions: SessionManager::new(Arc::new(OracleConnector)),
         client_version: Box::new(move || match &init_error {
@@ -39,6 +41,9 @@ pub fn run() {
             commands::save_profile,
             commands::delete_profile,
             commands::stored_password,
+            commands::load_workspace,
+            commands::save_workspace,
+            commands::clear_workspace,
             commands::connect,
             commands::disconnect,
             commands::reconnect,

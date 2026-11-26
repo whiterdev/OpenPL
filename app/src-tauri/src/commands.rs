@@ -3,6 +3,7 @@
 use crate::state::{AppSettings, AppState};
 use openpl_core::catalog::{ObjectInfo, ObjectType, Scope};
 use openpl_core::session::{Connector, SessionId, SessionState};
+use openpl_core::workspace::Workspace;
 use openpl_core::{ConnectionProfile, CoreError};
 use openpl_oracle::{Compat, ConnectParams, DbError};
 use serde::Serialize;
@@ -177,6 +178,40 @@ pub fn set_client_dir(st: St<'_>, dir: Option<String>) -> Result<(), CoreError> 
 #[tauri::command]
 pub fn list_profiles(st: St<'_>) -> Result<Vec<ConnectionProfile>, CoreError> {
     list_profiles_impl(&st)
+}
+
+fn load_workspace_impl<C: Connector>(
+    st: &AppState<C>,
+    profile_id: Uuid,
+) -> Result<Option<Workspace>, CoreError> {
+    st.workspaces.load(profile_id)
+}
+
+fn save_workspace_impl<C: Connector>(
+    st: &AppState<C>,
+    profile_id: Uuid,
+    workspace: &Workspace,
+) -> Result<(), CoreError> {
+    st.workspaces.save(profile_id, workspace)
+}
+
+fn clear_workspace_impl<C: Connector>(st: &AppState<C>, profile_id: Uuid) -> Result<(), CoreError> {
+    st.workspaces.clear(profile_id)
+}
+
+#[tauri::command]
+pub fn load_workspace(st: St<'_>, profile_id: Uuid) -> Result<Option<Workspace>, CoreError> {
+    load_workspace_impl(&st, profile_id)
+}
+
+#[tauri::command]
+pub fn save_workspace(st: St<'_>, profile_id: Uuid, workspace: Workspace) -> Result<(), CoreError> {
+    save_workspace_impl(&st, profile_id, &workspace)
+}
+
+#[tauri::command]
+pub fn clear_workspace(st: St<'_>, profile_id: Uuid) -> Result<(), CoreError> {
+    clear_workspace_impl(&st, profile_id)
 }
 
 #[tauri::command]
@@ -678,6 +713,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn workspace_ipc_usa_el_perfil_indicado() {
+        let (_dir, state) = state(DbVersion::new(19, 0, 0), Ok(DbVersion::new(19, 21, 0)));
+        let profile = Uuid::new_v4();
+        let workspace = Workspace {
+            version: 1,
+            tabs: Vec::new(),
+        };
+        save_workspace_impl(&state, profile, &workspace).unwrap();
+        assert_eq!(
+            load_workspace_impl(&state, profile).unwrap(),
+            Some(workspace)
+        );
+        assert!(load_workspace_impl(&state, Uuid::new_v4())
+            .unwrap()
+            .is_none());
+        clear_workspace_impl(&state, profile).unwrap();
+        assert!(load_workspace_impl(&state, profile).unwrap().is_none());
+    }
+
+    #[test]
     fn archivos_sqlplus_extensiones_tope_y_utf8() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
@@ -731,6 +786,7 @@ mod tests {
             sessions: SessionManager::new(Arc::new(FakeConnector::new(server))),
             client_version: Box::new(move || client.clone()),
             settings_path: dir.path().join("settings.json"),
+            workspaces: openpl_core::workspace::WorkspaceStore::new(dir.path().join("workspace")),
         };
         (dir, st)
     }
@@ -883,6 +939,7 @@ mod tests {
             })),
             client_version: Box::new(|| Ok(DbVersion::new(19, 21, 0))),
             settings_path: dir.path().join("settings.json"),
+            workspaces: openpl_core::workspace::WorkspaceStore::new(dir.path().join("workspace")),
         });
 
         let st_task = st.clone();

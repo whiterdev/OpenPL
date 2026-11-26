@@ -205,6 +205,16 @@ export interface ActiveConnection {
   compat: Compat;
 }
 
+export type WorkspaceTab =
+  | { type: "object"; object_type: ObjectType; owner: string; name: string }
+  | { type: "sql"; title: string; text: string; kind: "sql" | "test" }
+  | { type: "file"; name: string; text: string };
+
+export interface Workspace {
+  version: 1;
+  tabs: WorkspaceTab[];
+}
+
 export interface ProgramPart {
   kind: string;
   source: string;

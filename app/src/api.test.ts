@@ -63,3 +63,14 @@ describe("sesiones hermanas y ping", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "session_ping", { sessionId: "s1" });
   });
 });
+
+test("los comandos de espacio de trabajo usan profileId", async () => {
+  const workspace = { version: 1 as const, tabs: [] };
+  vi.mocked(invoke).mockResolvedValueOnce(workspace).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+  await expect(api.loadWorkspace("p1")).resolves.toEqual(workspace);
+  await api.saveWorkspace("p1", workspace);
+  await api.clearWorkspace("p1");
+  expect(invoke).toHaveBeenNthCalledWith(1, "load_workspace", { profileId: "p1" });
+  expect(invoke).toHaveBeenNthCalledWith(2, "save_workspace", { profileId: "p1", workspace });
+  expect(invoke).toHaveBeenNthCalledWith(3, "clear_workspace", { profileId: "p1" });
+});

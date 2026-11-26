@@ -23,6 +23,7 @@ import type {
   ProgramPart,
   Scope,
   SessionState,
+  Workspace,
 } from "./types";
 
 export const api = {
@@ -36,6 +37,12 @@ export const api = {
   deleteProfile: (id: string) => invoke<void>("delete_profile", { id }),
   storedPassword: (id: string) =>
     invoke<string | null>("stored_password", { id }),
+  loadWorkspace: (profileId: string) =>
+    invoke<Workspace | null>("load_workspace", { profileId }),
+  saveWorkspace: (profileId: string, workspace: Workspace) =>
+    invoke<void>("save_workspace", { profileId, workspace }),
+  clearWorkspace: (profileId: string) =>
+    invoke<void>("clear_workspace", { profileId }),
   connect: (params: ConnectParams) =>
     invoke<ConnectResult>("connect", { params }),
   disconnect: (sessionId: string) => invoke<void>("disconnect", { sessionId }),
