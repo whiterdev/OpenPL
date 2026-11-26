@@ -21,6 +21,15 @@ function grid(queryKey = 1, onSelect = vi.fn()) {
 
 const header = () => screen.getAllByRole("row")[0] as HTMLElement;
 
+test("Ctrl+A en la grilla selecciona las filas cargadas", () => {
+  const onSelect = vi.fn();
+  render(grid(1, onSelect));
+  const scroll = screen.getByRole("presentation");
+  scroll.focus();
+  expect(fireEvent.keyDown(scroll, { key: "a", ctrlKey: true })).toBe(false);
+  expect(onSelect).toHaveBeenCalledWith({ row: 0, col: 0, scope: "all" });
+});
+
 test("la esquina selecciona las filas cargadas y el numero selecciona una fila", () => {
   const onSelect = vi.fn();
   render(grid(1, onSelect));

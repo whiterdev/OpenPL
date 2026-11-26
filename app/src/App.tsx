@@ -364,7 +364,29 @@ export default function App() {
   }, []);
 
   async function disconnect(id: string) {
-    await api.disconnect(id);
+    if (
+      programs.some((tab) => tab.connection?.sessionId === id && tab.sql?.transaction) &&
+      !window.confirm("Hay transacciones abiertas. ¿Desconectar con rollback?")
+    ) return;
+    try {
+      await api.disconnect(id);
+    } catch (error) {
+      const detail = describeError(error);
+      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message);
+      return;
+    }
+    setStates((current) => {
+      const next = { ...current, [id]: "Disconnected" as const };
+      for (const tab of programs) {
+        if (tab.connection?.sessionId === id && tab.sql) next[tab.sql.sessionId] = "Disconnected";
+      }
+      return next;
+    });
+    setPrograms((current) => current.map((tab) =>
+      tab.connection?.sessionId === id && tab.sql?.transaction
+        ? { ...tab, sql: { ...tab.sql, transaction: false } }
+        : tab,
+    ));
     const rest = connections.filter((c) => c.sessionId !== id);
     setConnections(rest);
     setActiveId(rest[0]?.sessionId ?? null);
@@ -1033,6 +1055,7 @@ export default function App() {
                 >
                   {tab.sql ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
+                      {states[tab.sql.sessionId] === "Disconnected" && <p role="status">Sesión desconectada</p>}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}

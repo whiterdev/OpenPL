@@ -52,6 +52,7 @@ vi.mock("./api", () => ({
     saveProgramFile: vi.fn(),
     listProfiles: vi.fn(async () => []),
     connect: vi.fn(),
+    disconnect: vi.fn(),
     listObjects: vi.fn(),
     programSource: vi.fn(),
     routineOverloads: vi.fn(),
@@ -346,6 +347,7 @@ test("las teclas del webview se bloquean con y sin diálogo abierto", async () =
   windowEvents.close.mockResolvedValue(() => {});
   render(<App />);
   const user = await screen.findByLabelText("Usuario");
+  expect(press(user, { key: "a", ctrlKey: true })).toBe(false);
   const webview: KeyboardEventInit[] = [
     { key: "r", ctrlKey: true },
     { key: "R", ctrlKey: true, shiftKey: true },
@@ -621,7 +623,7 @@ test("desde el editor las teclas de la app siguen actuando y Tab queda en el edi
   expect(document.querySelector(".editor-search-bar")).toBeInTheDocument();
 });
 
-test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", async () => {
+test.each(["cerrar", "desconectar"])("%s con transacción SQL abierta pide confirmación", async (action) => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.listObjects).mockResolvedValue([]);
   vi.mocked(api.sqlOpen).mockResolvedValue("w2");
@@ -651,6 +653,27 @@ test("cerrar una ventana SQL con transacción abierta pregunta qué hacer", asyn
     fireEvent.keyDown(window, { key: "F8" });
   });
   await screen.findByText("Transacción abierta");
+
+  if (action === "desconectar") {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const disconnect = () => {
+      fireEvent.click(screen.getByRole("button", { name: "Sesión" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Desconectar" }));
+    };
+    try {
+      disconnect();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(api.disconnect).not.toHaveBeenCalled();
+      confirm.mockReturnValue(true);
+      vi.mocked(api.disconnect).mockResolvedValue();
+      disconnect();
+      expect(await screen.findByText("Sesión desconectada")).toBeVisible();
+      expect(editor).toBeInTheDocument();
+    } finally {
+      confirm.mockRestore();
+    }
+    return;
+  }
 
   fireEvent.click(screen.getByRole("button", { name: /^Cerrar SQL 1/ }));
   let dialog = within(
@@ -761,6 +784,7 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
     fireEvent.keyDown(window, { key: "n", ctrlKey: true, shiftKey: true });
     const prompt = await screen.findByRole("textbox", { name: "Comando SQL" });
     expect(prompt).toHaveFocus();
+    expect(press(prompt, { key: "a", ctrlKey: true })).toBe(false);
     fireEvent.change(prompt, { target: { value: "EDIT CLIENTES" } });
     fireEvent.keyDown(prompt, { key: "Enter" });
     expect(await screen.findByRole("button", { name: "HR.CLIENTES" })).toBeVisible();
