@@ -14,7 +14,8 @@
   punto de tabulación al explorador. El brief 15 separa los bloques PL/SQL sin barra
   y resuelve el cursor entre sentencias. El brief 16 interpreta los comandos SQL*Plus y
   traduce `EXEC` a PL/SQL. El brief 17 calcula la posición de errores Oracle.
-  TypeScript y 507 tests en verde. Sigue el brief 18.
+  El brief 18 cuenta las variables de todo el script y respeta las comillas alternativas.
+  TypeScript y 514 tests en verde. Sigue el brief 19.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

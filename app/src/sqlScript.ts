@@ -23,7 +23,7 @@ const CLOSERS: Record<string, string> = {
 };
 
 /** Si en `i` empieza un literal o comentario, devuelve dónde termina; si no, -1. */
-function skipOpaque(source: string, i: number): number {
+export function skipOpaque(source: string, i: number): number {
   const c = source[i];
   const next = source[i + 1];
   if (c === "-" && next === "-") {
