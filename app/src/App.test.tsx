@@ -61,7 +61,7 @@ vi.mock("./api", () => ({
     routineOverloads: vi.fn(),
     completeObjects: vi.fn(),
     sqlOpen: vi.fn(),
-    sqlClose: vi.fn(),
+    sqlClose: vi.fn(async () => {}),
     sqlExecute: vi.fn(),
     sqlFetch: vi.fn(),
     sqlCommit: vi.fn(),

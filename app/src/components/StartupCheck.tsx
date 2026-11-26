@@ -10,6 +10,7 @@ export function StartupCheck({ onReady }: { onReady: (info: ClientInfo) => void 
   const [dir, setDir] = useState("");
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // El cliente se inicializa una sola vez al arrancar el proceso: cambiarlo exige reiniciar.
   useEffect(() => {
@@ -58,13 +59,20 @@ export function StartupCheck({ onReady }: { onReady: (info: ClientInfo) => void 
           <button
             className="btn primary"
             onClick={async () => {
-              await api.setClientDir(dir.trim() || null);
-              setSaved(true);
+              setSaveError(null);
+              setSaved(false);
+              try {
+                await api.setClientDir(dir.trim() || null);
+                setSaved(true);
+              } catch (error) {
+                setSaveError(describeError(error).message);
+              }
             }}
           >
             Guardar
           </button>
         </div>
+        {saveError && <p className="startup-err" role="alert">{saveError}</p>}
       </section>
     </main>
   );

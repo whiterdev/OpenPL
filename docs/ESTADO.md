@@ -56,7 +56,9 @@
   en verde. El brief 50 separa los atajos del editor de la consola. F5 sigue
   bloqueado como tecla del webview. El brief 51 limita a 500 filas la salida
   tabular de consola y libera el cursor. Los cinco controles pasaron, con 601
-  tests de frontend. Sigue el brief 52.
+  tests de frontend. El brief 52 mantiene visibles los errores hasta cerrarlos
+  y muestra los fallos al guardar la carpeta del cliente. TypeScript y 602 tests
+  en verde. Sigue el brief 53.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

@@ -72,6 +72,9 @@
     gap: 8px;
 }
 .toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     position: absolute;
     bottom: 16px;
     left: 50%;

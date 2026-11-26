@@ -179,7 +179,9 @@ export default function App() {
   };
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ message: string; kind: "info" | "error" } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const errorVisible = useRef(false);
   const [reconnectErrors, setReconnectErrors] = useState<
     Record<string, string>
   >({});
@@ -394,7 +396,7 @@ export default function App() {
       await api.disconnect(id);
     } catch (error) {
       const detail = describeError(error);
-      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message);
+      showNotice(detail.code ? `${detail.code} ${detail.message}` : detail.message, "error");
       return;
     }
     setStates((current) => {
@@ -438,7 +440,7 @@ export default function App() {
     try {
       await Promise.all((await api.sessionSiblings(id)).map(reconnect));
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
@@ -475,10 +477,21 @@ export default function App() {
     if (activeId) setStates((s) => ({ ...s, [activeId]: "Disconnected" }));
   }, [activeId]);
 
-  const showNotice = useCallback((message: string) => {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 2500);
+  const clearNotice = useCallback(() => {
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = undefined;
+    errorVisible.current = false;
+    setNotice(null);
   }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  const showNotice = useCallback((message: string, kind: "info" | "error" = "info") => {
+    if (kind === "info" && errorVisible.current) return;
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = undefined;
+    errorVisible.current = kind === "error";
+    setNotice({ message, kind });
+    if (kind === "info") noticeTimer.current = setTimeout(clearNotice, 2500);
+  }, [clearNotice]);
 
   function updateProgram(
     id: string,
@@ -564,7 +577,7 @@ export default function App() {
         ],
       });
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
@@ -592,6 +605,7 @@ export default function App() {
       const detail = describeError(error);
       showNotice(
         detail.code ? `${detail.code} ${detail.message}` : detail.message,
+        "error",
       );
     }
   }
@@ -619,7 +633,7 @@ export default function App() {
           bindKinds: draft.bindKinds, outputs: draft.outputs, routine: { path, signature, overloaded },
         });
       } catch (error) {
-        showNotice(describeError(error).message);
+        showNotice(describeError(error).message, "error");
       }
     }
     try {
@@ -634,7 +648,7 @@ export default function App() {
         })) });
       }
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
@@ -659,13 +673,13 @@ export default function App() {
         label: name, run: () => void testRoutine(connection, object, name, x, y),
       })) });
     } catch (error) {
-      showNotice(describeError(error).message);
+      showNotice(describeError(error).message, "error");
     }
   }
 
   function removeTab(tab: ProgramTab) {
     delete gridPending.current[tab.id];
-    if (tab.sql) void api.sqlClose(tab.sql.sessionId);
+    if (tab.sql) void api.sqlClose(tab.sql.sessionId).catch((error) => showNotice(describeError(error).message, "error"));
     setPrograms((all) => {
       const index = all.findIndex((item) => item.id === tab.id);
       const remaining = all.filter((item) => item.id !== tab.id);
@@ -692,6 +706,7 @@ export default function App() {
       setClosing(null);
       showNotice(
         detail.code ? `${detail.code} ${detail.message}` : detail.message,
+        "error",
       );
     }
   }
@@ -738,7 +753,7 @@ export default function App() {
           const ddl = await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name);
           await openSql(connection, ddl);
         } catch (error) {
-          showNotice(describeError(error).message);
+          showNotice(describeError(error).message, "error");
         }
       } else {
         setInspection({ object, sessionId: connection.sessionId, mode: "describe" });
@@ -826,8 +841,8 @@ export default function App() {
       compileSession.current = null;
       try {
         await api.sqlClose(id);
-      } catch {
-        // La sesión hermana ya pudo cerrarse; el resultado de la compilación es lo que importa.
+      } catch (error) {
+        showNotice(describeError(error).message, "error");
       }
     }
   }
@@ -1253,8 +1268,10 @@ export default function App() {
             />
           )}
           {notice && (
-            <div className="toast" role="status">
-              {notice}
+            <div className="toast" role={notice.kind === "error" ? "alert" : "status"}>
+              <span>{notice.message}</span>
+              {notice.kind === "error" && <button type="button" className="ib"
+                aria-label="Cerrar aviso" title="Cerrar aviso" onClick={clearNotice}><X size={14} /></button>}
             </div>
           )}
         </main>
