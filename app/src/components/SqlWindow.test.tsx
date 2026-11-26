@@ -417,15 +417,17 @@ test("conserva DBMS_OUTPUT y la transacción de un bloque fallido", async () => 
   expect(exec).toHaveBeenCalledTimes(1);
 });
 
-test("el script omite SQL*Plus, junta DBMS_OUTPUT y avisa la transacción", async () => {
+test("el script ejecuta SQL*Plus, junta DBMS_OUTPUT y avisa la transacción", async () => {
   const exec = vi.spyOn(api, "sqlExecute")
     .mockResolvedValueOnce({ result: { kind: "Done", message: "1 fila actualizada" }, elapsed_ms: 3, output: [], transaction: true })
     .mockResolvedValueOnce({ result: { kind: "Done", message: "Bloque ejecutado" }, elapsed_ms: 2, output: ["hola"], transaction: true });
-  const { ref, onTransaction } = setup("set serveroutput on\nupdate t set a = 1;\nbegin dbms_output.put_line('hola'); end;\n/");
+  const { ref, onTransaction } = setup("set sqlprompt prueba\nset timing on\nset serveroutput on\ndefine valor = 1\nupdate t set a = &valor;\nbegin dbms_output.put_line('hola'); end;\n/");
   await act(async () => ref.current!.executeScript!());
   expect(exec).toHaveBeenCalledTimes(2);
   const output = within(screen.getByRole("tabpanel", { name: "Salida" }));
-  expect(output.getByText("Omitido (SQL*Plus): set serveroutput on")).toBeInTheDocument();
+  expect(exec).toHaveBeenNthCalledWith(1, "w1", "update t set a = 1", []);
+  expect(output.getByText("Comando no admitido: SET SQLPROMPT")).toBeInTheDocument();
+  expect(output.getAllByText("Transcurrido: 00:00:00.00")).toHaveLength(2);
   expect(output.getByText("1 fila actualizada")).toBeInTheDocument();
   expect(output.getByText("hola")).toBeInTheDocument();
   expect(onTransaction).toHaveBeenLastCalledWith(true);

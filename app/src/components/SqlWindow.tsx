@@ -1,7 +1,12 @@
-import { CommandConsole, type OutputLine } from "./CommandConsole";
+import { CommandConsole, type ConsoleIo, type OutputLine } from "./CommandConsole";
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { locateError, formatConsoleError } from "../sqlError";
 import { useLineBuffer } from "../useLineBuffer";
+import { createSqlplusState } from "../sqlplusState";
+import { createdObject } from "../sqlplusQueries";
+import { feedbackLine, formatTable } from "../sqlplusFormat";
+import { printSqlplus, runSqlplus, substituteDefines, timingLine, type SqlplusCtx } from "../sqlplusRun";
+import { parseSqlplus } from "../sqlplus";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -112,7 +117,9 @@ export function SqlWindow({
   const output = useMemo(() => omittedLines
     ? [{ id: 0, kind: "info" as const, text: `… ${omittedLines} líneas anteriores omitidas` }, ...lines]
     : lines, [lines, omittedLines]);
-  const commandOptions = useRef({ echo: true, serverOutput: true });
+  const echo = useRef(true);
+  const sqlplusRef = useRef<ReturnType<typeof createSqlplusState> | null>(null);
+  const sqlplus = sqlplusRef.current ??= createSqlplusState();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
@@ -162,9 +169,15 @@ export function SqlWindow({
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: script } });
   }
 
-  const log = useCallback((kind: OutputLine["kind"], text: string) => {
+  const appendLine = useCallback((kind: OutputLine["kind"], text: string) => {
     append({ id: ++lineId.current, kind, text });
   }, [append]);
+  const log = useCallback((kind: OutputLine["kind"], text: string) => {
+    if (kind === "skip") {
+      sqlplus.spool?.lines.push(text);
+      appendLine(kind, text);
+    } else printSqlplus(sqlplus, (line, level) => appendLine(level ?? "info", line), text, kind);
+  }, [appendLine, sqlplus]);
 
   function targets(): { list: ScriptStatement[]; script: boolean } {
     const editor = view.current;
@@ -217,55 +230,87 @@ export function SqlWindow({
     return applySubstitutions(text, substitutions);
   }
 
-  function runConsoleCommand(source: string) {
+  function runConsoleCommand(source: string): boolean {
     const [keyword, ...words] = source.replace(/;$/, "").trim().split(/\s+/);
     const syntax = words.join(" ").toUpperCase();
     switch (keyword.toUpperCase()) {
       case "PROMPT":
         log("output", source.slice(keyword.length).trimStart());
-        return;
+        return true;
       case "REM":
       case "REMARK":
-        return;
+        return true;
       case "CLEAR":
-        if (syntax === "SCREEN") { clearOutput(); return; }
+        if (syntax === "SCREEN") { clearOutput(); return true; }
         break;
       case "SET":
-        if (/^(ECHO|SERVEROUTPUT) (ON|OFF)$/.test(syntax)) {
-          const option = syntax.startsWith("ECHO") ? "echo" : "serverOutput";
-          commandOptions.current[option] = syntax.endsWith("ON");
-          return;
+        if (/^ECHO (ON|OFF)$/.test(syntax)) {
+          echo.current = syntax.endsWith("ON");
+          return true;
         }
         break;
     }
-    log("skip", `Comando no admitido: ${keyword.toUpperCase()}`);
+    return false;
   }
 
-  async function run(list: ScriptStatement[], entered = false, exportQuery = false) {
+  async function run(list: ScriptStatement[], entered = false, exportQuery = false, io?: ConsoleIo) {
     if (running || applying || fetchingRef.current || !list.length) return;
     setAlert("");
     setNotice("");
     setTestResults([]);
     setTestSelection({});
     setMarkers([]);
-    const prepared = list.map((statement) => ({ statement, sql: panelSql(statement.text) }));
-    if (prepared.some(({ sql }) => sql === null)) return;
     setRunning(true);
-    setEditSession(null);
-    setPending(emptyPending());
-    setConflicts(null);
-    setSelected(null);
+    let startedSql = false;
     let lastQuery = false;
-    try {
-      for (const { statement, sql } of prepared) {
-        if (sql === null) continue;
-        if (command && (entered || commandOptions.current.echo)) {
+    const ask: SqlplusCtx["ask"] = io?.ask ?? (async (name) => {
+      const value = values[name.toUpperCase()]?.value;
+      if (value) return value;
+      setAlert(`Falta el valor de &${name}`);
+      return null;
+    });
+
+    async function executeStatements(statements: ScriptStatement[], script?: SqlplusCtx["script"]): Promise<boolean> {
+      let nestedSucceeded = true;
+      const context: SqlplusCtx = {
+        print: (line, kind) => appendLine(kind ?? "info", line),
+        ask,
+        query: (sql, binds = []) => {
+          setGrid((current) => current?.more ? { ...current, more: false } : current);
+          return api.sqlExecute(sessionId, sql, binds);
+        },
+        readFile: api.readScriptFile,
+        writeFile: api.writeSpoolFile,
+        runScript: async (source, child) => {
+          nestedSucceeded = await executeStatements(splitScript(source), child);
+        },
+        script,
+      };
+      for (const statement of statements) {
+        if (command && ((entered && !script) || echo.current)) {
           log("info", `SQL> ${statement.text}${statement.kind === "sql" ? ";" : ""}`);
         }
         if (statement.kind === "sqlplus") {
-          if (command) runConsoleCommand(statement.text);
-          else log("skip", `Omitido (SQL*Plus): ${statement.text}`);
+          if (command && runConsoleCommand(statement.text)) continue;
+          const parsed = statement.command ?? parseSqlplus(statement.text);
+          try {
+            if (parsed) await runSqlplus(parsed, sqlplus, context);
+          } catch (error) {
+            log("error", describeError(error).message);
+            setTab("output");
+            return false;
+          }
+          if (!nestedSucceeded) return false;
           continue;
+        }
+        const sql = await substituteDefines(statement.text, sqlplus, ask);
+        if (sql === null) return false;
+        if (!startedSql) {
+          startedSql = true;
+          setEditSession(null);
+          setPending(emptyPending());
+          setConflicts(null);
+          setSelected(null);
         }
         const vars = findVariables(statement.text);
         const outputs = declaredOutputs?.filter((output) => vars.some((v) => v.kind === "bind" && v.key === output.name)) ?? [];
@@ -281,8 +326,9 @@ export function SqlWindow({
             : api.sqlExecute(sessionId, sql, binds));
           if (outcome.result.kind === "Query") lastQueryRef.current = { sql, binds };
           if (outcome.result.kind === "Failed") {
-            outcome.output.forEach((line) => log("output", line));
+            if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
             onTransaction(outcome.transaction);
+            if (createdObject(sql)) sqlplus.lastCreated = sql;
             throw { Db: outcome.result.error };
           }
         } catch (error) {
@@ -294,7 +340,7 @@ export function SqlWindow({
             const location = locateError(sql, detail);
             formatConsoleError(detail.code, detail.message, location).forEach((line) => log("error", line));
             const editor = view.current;
-            if (location && editor && sql === statement.text &&
+            if (location && editor && !script && sql === statement.text &&
                 editor.state.sliceDoc(statement.from, statement.to) === statement.text) {
               const lines = sql.split("\n");
               const beforeLine = lines.slice(0, location.line - 1).reduce((sum, line) => sum + line.length + 1, 0);
@@ -305,10 +351,11 @@ export function SqlWindow({
             }
           }
           setTab("output");
-          return;
+          return false;
         }
         setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
-        if (!command || commandOptions.current.serverOutput) outcome.output.forEach((line) => log("output", line));
+        if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
+        if (createdObject(sql)) sqlplus.lastCreated = sql;
         if (outcome.test_outputs?.length) setTestResults(outcome.test_outputs);
         onTransaction(outcome.transaction);
         if (outcome.result.kind === "Query") {
@@ -318,22 +365,27 @@ export function SqlWindow({
           if (exportQuery) await exportRows(result);
           setSummary(null);
           if (command) {
-            const rows = page.rows.map((row) => row.map((value) => (value ?? "NULL").replace(/\r?\n/g, " ")));
-            const widths = columns.map((column, i) => rows.reduce((size, row) => Math.max(size, row[i].length), column.name.length));
-            const line = (cells: string[]) => cells.map((value, i) => value.padEnd(widths[i])).join("  ").trimEnd();
-            log("output", line(columns.map((column) => column.name)));
-            log("output", line(widths.map((width) => "-".repeat(width))));
-            rows.forEach((row) => log("output", line(row)));
+            formatTable(columns, page.rows, sqlplus.settings).forEach((line) => log("output", line));
+            const { feedback } = sqlplus.settings;
+            if (!page.more && (feedback === true || (typeof feedback === "number" && page.rows.length >= feedback))) {
+              log("info", feedbackLine(page.rows.length));
+            }
             if (page.more) log("info", `${page.rows.length} filas mostradas · ${formatKeys(commands.exportData.keys!)} para exportar todas`);
           }
           lastQuery = true;
         } else if (outcome.result.kind === "Done") {
-          log("info", outcome.result.message);
+          if (sqlplus.settings.feedback !== false) log("info", outcome.result.message);
           setSummary(`${outcome.result.message} · ${outcome.elapsed_ms} ms`);
           lastQuery = false;
         }
+        if (sqlplus.settings.timing) log("info", timingLine(outcome.elapsed_ms));
       }
-      setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
+      return true;
+    }
+    try {
+      if (await executeStatements(list)) {
+        setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
+      }
     } finally {
       flushOutput();
       setRunning(false);
@@ -703,7 +755,7 @@ export function SqlWindow({
 
   if (command) return <CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
     lines={output} running={running} alert={alert} notice={notice} log={log} onEditObject={onEditObject}
-    onRun={(source) => run(splitScript(source), true)} onCancel={actions.cancel} onClear={clearOutput} />;
+    onRun={(source, io) => run(splitScript(source), true, false, io)} onCancel={actions.cancel} onClear={clearOutput} />;
 
   return (
     <section className="sql-window" aria-label="Ventana SQL">
