@@ -37,8 +37,15 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   const key = () => formatKeys(commands.cancel.keys!);
   const terminal = useRef<HTMLDivElement>(null);
   const commandInput = useRef<HTMLTextAreaElement>(null);
+  const followOutput = useRef(true);
   useLayoutEffect(() => {
-    if (active) commandInput.current?.focus({ preventScroll: true });
+    if (active && !running) commandInput.current?.focus({ preventScroll: true });
+  }, [active, running]);
+  useEffect(() => {
+    if (!active) return;
+    const focus = () => commandInput.current?.focus({ preventScroll: true });
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
   }, [active]);
   const [prompt, setPrompt] = useState("");
   useLayoutEffect(() => {
@@ -55,10 +62,10 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   const candidates = suggestions?.prompt === prompt && !dismissed ? suggestions.items : [];
   const exact = candidates.findIndex((object) => object.name === matchesEdit?.[2].toUpperCase());
   const picked = choice ?? Math.max(0, exact);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const area = terminal.current;
-    if (area) area.scrollTop = area.scrollHeight;
-  }, [lines, commandLines, running, suggestions, dismissed]);
+    if (area && followOutput.current) area.scrollTop = area.scrollHeight;
+  }, [lines, commandLines, running, suggestions, dismissed, prompt]);
   useEffect(() => {
     const target = prompt.trim().match(editTarget);
     if (commandLines.length || !target) return;
@@ -75,7 +82,15 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
 
   return (
     <section className="sql-window" aria-label="Ventana de comando">
-      <div className="sql-terminal" ref={terminal} role="log" aria-label="Transcripción">
+      <div className="sql-terminal" ref={terminal} role="log" aria-label="Transcripción"
+        onScroll={({ currentTarget: area }) => {
+          followOutput.current = area.scrollHeight - area.clientHeight - area.scrollTop <= 8;
+        }}
+        onClick={(event) => {
+          const selection = window.getSelection();
+          if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return;
+          commandInput.current?.focus({ preventScroll: true });
+        }}>
         {lines.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
         {commandLines.map((line, index) => <div key={index} className="sql-line sql-line-info">
           {index === 0 ? "SQL>" : index + 1} {line}

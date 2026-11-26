@@ -102,6 +102,26 @@ test("el prompt crece con el contenido dentro de la transcripción", () => {
   expect(prompt).toHaveStyle({ height: "36px" });
 });
 
+test("la consola recupera el foco y conserva la posición al leer salida anterior", async () => {
+  setup("", { command: true });
+  const terminal = screen.getByRole("log");
+  const prompt = screen.getByLabelText("Comando SQL");
+  expect(prompt).toHaveFocus();
+  prompt.blur();
+  fireEvent.click(terminal);
+  expect(prompt).toHaveFocus();
+  prompt.blur();
+  fireEvent.focus(window);
+  expect(prompt).toHaveFocus();
+  Object.defineProperties(terminal, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } });
+  terminal.scrollTop = 30;
+  fireEvent.scroll(terminal);
+  fireEvent.change(prompt, { target: { value: "PROMPT Hola" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(screen.getByText("Hola")).toBeVisible();
+  expect(terminal.scrollTop).toBe(30);
+});
+
 test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
   const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({
     columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false, lob: false }],
