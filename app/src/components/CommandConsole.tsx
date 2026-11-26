@@ -79,6 +79,13 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   }, [commandLines.length, prompt, sessionId]);
   const commandHistory = useRef<string[]>([]);
   const historyIndex = useRef(0);
+  const draft = useRef("");
+  function remember(source: string) {
+    const history = commandHistory.current;
+    if (history[history.length - 1] !== source) history.push(source);
+    historyIndex.current = history.length;
+    draft.current = "";
+  }
 
   return (
     <section className="sql-window" aria-label="Ventana de comando">
@@ -93,21 +100,21 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
         }}>
         {lines.map((line) => <div key={line.id} className={`sql-line sql-line-${line.kind}`}>{line.text}</div>)}
         {commandLines.map((line, index) => <div key={index} className="sql-line sql-line-info">
-          {index === 0 ? "SQL>" : index + 1} {line}
+          {index === 0 ? "SQL>" : String(index + 1).padStart(3)} {line}
         </div>)}
         {alert && <div role="alert" className="sql-line sql-line-error">{alert}</div>}
         {notice && <div role="status" className="sql-line">{notice}</div>}
         {running && <div role="status" className="sql-line">Ejecutando… {key()} para detener</div>}
         <form className="sql-command-prompt" onSubmit={async (event) => {
           event.preventDefault();
-          const entered = prompt.trim();
-          if (running || !entered) return;
+          const entered = prompt;
+          const trimmed = entered.trim();
+          if (running || !trimmed) return;
           setPrompt("");
           setChoice(undefined);
           setDismissed(false);
-          if (!commandLines.length && editCommand.test(entered)) {
-            commandHistory.current.push(entered);
-            historyIndex.current = commandHistory.current.length;
+          if (!commandLines.length && editCommand.test(trimmed)) {
+            remember(entered);
             log("info", `SQL> ${entered}`);
             if (!matchesEdit || !onEditObject) {
               log("error", "Usa EDIT [esquema.]objeto.");
@@ -128,18 +135,17 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
           }
           const source = [...commandLines, entered].join("\n");
           const statements = splitScript(source);
-          const complete = /(?:^|\n)\s*\/$/.test(entered) || statements[0]?.kind === "sqlplus" ||
-            (statements[0]?.kind === "sql" && entered.endsWith(";"));
+          const complete = /(?:^|\n)\s*\/$/.test(trimmed) || statements[0]?.kind === "sqlplus" ||
+            (statements[0]?.kind === "sql" && trimmed.endsWith(";"));
           if (!complete) {
             setCommandLines((lines) => [...lines, entered]);
             return;
           }
-          if (statements.length) commandHistory.current.push(source);
-          historyIndex.current = commandHistory.current.length;
+          if (statements.length) remember(source);
           setCommandLines([]);
           await onRun(source, io);
         }}>
-          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? commandLines.length + 1 : "SQL>"}</label>
+          <label htmlFor={`${tabPrefix}-prompt`} className="mono">{commandLines.length ? String(commandLines.length + 1).padStart(3) : "SQL>"}</label>
           <textarea ref={commandInput} id={`${tabPrefix}-prompt`} rows={1} className="mono" aria-label="Comando SQL"
             role={matchesEdit ? "combobox" : undefined} aria-autocomplete={matchesEdit ? "list" : undefined}
             aria-expanded={matchesEdit ? !!candidates.length : undefined}
@@ -148,7 +154,7 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
             value={prompt} readOnly={running}
             onChange={(event) => { setPrompt(event.target.value); setChoice(undefined); setDismissed(false); }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
                 return;
@@ -165,7 +171,10 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
                 return;
               }
               const delta = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
-              if (!delta || running) return;
+              if (!delta || running || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+              const input = event.currentTarget;
+              if (delta < 0 ? input.value.slice(0, input.selectionStart).includes("\n")
+                : input.value.slice(input.selectionEnd).includes("\n")) return;
               event.preventDefault();
               if (candidates.length) {
                 const next = (picked + delta + candidates.length) % candidates.length;
@@ -174,8 +183,9 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
                 return;
               }
               const history = commandHistory.current;
+              if (historyIndex.current === history.length) draft.current = input.value;
               historyIndex.current = Math.max(0, Math.min(history.length, historyIndex.current + delta));
-              setPrompt(history[historyIndex.current] ?? "");
+              setPrompt(history[historyIndex.current] ?? draft.current);
             }} />
           {!!candidates.length && <div className="sql-command-objects" role="listbox" id={`${tabPrefix}-objects`} aria-label="Objetos Oracle">
             {candidates.map((object, index) => <div key={JSON.stringify(object)} role="option"

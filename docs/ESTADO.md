@@ -38,7 +38,9 @@
   El brief 35 extrae la consola a su propio componente. TypeScript y 586 tests
   en verde. El brief 36 integra el prompt redimensionable en la transcripción.
   El brief 37 recupera el foco de la consola y conserva el desplazamiento al leer
-  salida anterior. TypeScript y 588 tests en verde. Sigue el brief 38.
+  salida anterior. El brief 38 conserva la sangría, admite Shift+Enter y evita
+  duplicados consecutivos en el historial. TypeScript y 589 tests en verde.
+  Sigue el brief 39.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

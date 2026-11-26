@@ -122,6 +122,27 @@ test("la consola recupera el foco y conserva la posición al leer salida anterio
   expect(terminal.scrollTop).toBe(30);
 });
 
+test("la consola conserva la sangría y el historial no intercepta flechas internas", async () => {
+  setup("", { command: true });
+  const prompt = screen.getByLabelText<HTMLTextAreaElement>("Comando SQL");
+  const form = prompt.closest("form")!;
+  for (const value of ["PROMPT Anterior", "PROMPT Actual", "PROMPT Actual"]) {
+    fireEvent.change(prompt, { target: { value } });
+    await act(async () => { fireEvent.submit(form); });
+  }
+  fireEvent.keyDown(prompt, { key: "ArrowUp" });
+  expect(prompt).toHaveValue("PROMPT Actual");
+  fireEvent.keyDown(prompt, { key: "ArrowUp" });
+  expect(prompt).toHaveValue("PROMPT Anterior");
+  fireEvent.change(prompt, { target: { value: "  BEGIN\n    NULL;" } });
+  prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+  expect(fireEvent.keyDown(prompt, { key: "ArrowUp" })).toBe(true);
+  expect(fireEvent.keyDown(prompt, { key: "Enter", shiftKey: true })).toBe(true);
+  expect(prompt).toHaveValue("  BEGIN\n    NULL;");
+  await act(async () => { fireEvent.submit(form); });
+  expect(screen.getByText(/SQL>\s+BEGIN/).textContent).toContain("  BEGIN");
+});
+
 test("F5 muestra el plan sin ejecutar la sentencia de la pestaña", async () => {
   const explain = vi.spyOn(api, "sqlExplain").mockResolvedValue({
     columns: [{ name: "OPERATION", type_name: "VARCHAR2", numeric: false, lob: false }],
