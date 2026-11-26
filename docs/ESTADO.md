@@ -35,7 +35,8 @@
   el pegado TSV para el brief 50. El brief 32 ordena y filtra las filas cargadas.
   El brief 33 distingue totales parciales y muestra tooltips para valores recortados.
   El brief 34 agrega el visor de celda y evita editar columnas LOB en la grilla.
-  TypeScript y 586 tests en verde. Sigue el brief 35.
+  El brief 35 extrae la consola a su propio componente. TypeScript y 586 tests
+  en verde. Sigue el brief 36.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
