@@ -4,7 +4,7 @@ use crate::CoreError;
 use openpl_oracle::{ConnectParams, DbConn, DbError, DbVersion, ErrorKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -326,7 +326,7 @@ impl<C: Connector> SessionManager<C> {
 #[cfg(any(test, feature = "testing"))]
 pub mod fake {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     pub struct FakeConn {
         pub server: DbVersion,

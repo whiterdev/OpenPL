@@ -16,7 +16,7 @@ import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectReq
 import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
 import { compileStatement, type CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
-import type { CompletionCatalog } from "../programCompletion";
+import { useCompletionCatalog } from "../useCompletionCatalog";
 import { ContextMenu } from "./ContextMenu";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
@@ -238,26 +238,7 @@ export function ProgramWindow({
   const part = parts[selected];
   const sessionId = catalog?.sessionId;
   const contextOwner = catalog?.owner ?? null;
-  const completion = useMemo<CompletionCatalog | null>(() => {
-    if (!sessionId) return null;
-    // Caché por sesión: cambiar de conexión crea otro catálogo y descarta lo anterior.
-    const cache = new Map<string, Promise<unknown>>();
-    const cached = <T,>(key: string, load: () => Promise<T>) => {
-      let value = cache.get(key) as Promise<T> | undefined;
-      if (!value) {
-        value = load();
-        cache.set(key, value);
-        value.catch(() => cache.delete(key));
-      }
-      return value;
-    };
-    return {
-      objects: (owner, prefix, scope = "any") => cached(`o\0${owner ?? ""}\0${prefix}\0${scope}`,
-        () => api.completeObjects(sessionId, owner, prefix, contextOwner, scope)),
-      columns: (owner, name) => cached(`c\0${owner ?? ""}\0${name}`,
-        () => api.objectColumns(sessionId, owner, name, contextOwner)),
-    };
-  }, [sessionId, contextOwner]);
+  const completion = useCompletionCatalog(sessionId, contextOwner);
 
   function focusPart(index: number, focusEditor = true) {
     setComparison(null);

@@ -32,7 +32,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::client_info,
@@ -76,4 +75,16 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar OpenPL");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn la_ventana_principal_abre_maximizada() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let window = &conf["app"]["windows"][0];
+        assert_eq!(window["maximized"], true);
+        assert_eq!(window["center"], true);
+    }
 }

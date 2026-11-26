@@ -204,6 +204,18 @@ describe("catalogCompletion", () => {
     ]);
   });
 
+  test("al final de la ventana SQL, sin ';', sugiere columnas del alias", async () => {
+    const current = catalog();
+    const result = await complete(
+      "SELECT * FROM FIN_DOCUMENTO T WHERE T.|",
+      catalogCompletion(() => current),
+      true,
+    );
+    expect(current.columns).toHaveBeenCalledWith(null, "FIN_DOCUMENTO");
+    expect(current.objects).not.toHaveBeenCalled();
+    expect(result?.options.map((option) => option.label)).toEqual(["ID"]);
+  });
+
   test("con un calificador sin alias busca columnas y objetos del esquema", async () => {
     const current = catalog();
     const result = await complete(
