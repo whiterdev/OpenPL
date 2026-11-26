@@ -5,6 +5,7 @@ import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
 import { copyGridCells, gridTotal, type GridTotal } from "../gridSelection";
+import { moveCell } from "../gridNav";
 import { ContextMenu } from "./ContextMenu";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
@@ -28,6 +29,7 @@ interface Props {
 }
 
 const ROW = 24;
+const ROW_HEADER = 64;
 const TOTAL_LABELS: Record<GridTotal, string> = {
   count: "Conteo", sum: "Suma", max: "Máximo", min: "Mínimo", average: "Promedio",
 };
@@ -76,10 +78,8 @@ export function ResultGrid(props: Props) {
   const items = virtualized ? virtual.getVirtualItems() : rows.map((_, index) => ({ index, start: index * ROW }));
 
   useEffect(() => { if (!editable) setEditing(null); }, [editable]);
-  useEffect(() => {
-    if (selected && virtualized) virtual.scrollToIndex(selected.row);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.row]);
+  const selectedRow = selected?.row;
+  const selectedColumn = selected?.col;
 
   const canEdit = (p: CellPosition) => !fetching && !!editable?.[p.col] && status[p.row] !== "delete";
   const startEdit = (p: CellPosition, initial?: string) => {
@@ -98,6 +98,24 @@ export function ResultGrid(props: Props) {
   const cursor = selected ?? { row: 0, col: 0 };
   const selectedRows = () => selected?.scope === "all" ? rows : rows.slice(cursor.row, cursor.row + 1);
   const totals = totalsFor?.queryKey === queryKey ? totalsFor.columns : undefined;
+  const footerHeight = totals && Object.keys(totals).length ? ROW : 0;
+  useEffect(() => {
+    const viewport = scroll.current;
+    if (!viewport || selectedRow === undefined || selectedColumn === undefined) return;
+    const height = viewport.clientHeight - ROW - footerHeight;
+    if (height > 0) {
+      const top = selectedRow * ROW;
+      if (top < viewport.scrollTop) viewport.scrollTop = top;
+      else if (top + ROW > viewport.scrollTop + height) viewport.scrollTop = top + ROW - height;
+    }
+    const width = viewport.clientWidth;
+    if (width > 0) {
+      const left = ROW_HEADER + widths.slice(0, selectedColumn).reduce((sum, cell) => sum + cell, 0);
+      const right = left + (widths[selectedColumn] ?? 0);
+      if (left < viewport.scrollLeft) viewport.scrollLeft = left;
+      else if (right > viewport.scrollLeft + width) viewport.scrollLeft = Math.min(left, right - width);
+    }
+  }, [scroll, selectedRow, selectedColumn, widths, footerHeight]);
   const totalValues = useMemo(() => Object.entries(totals ?? {}).map(([column, operation]) => [
     column, gridTotal(rows.filter((_, row) => status[row] !== "delete").map((row) => row[Number(column)] ?? null), operation),
   ] as const), [totals, rows, status]);
@@ -124,15 +142,14 @@ export function ResultGrid(props: Props) {
     // Las teclas sobre un borde de columna no mueven ni editan la celda.
     if (editing || fetching || !rows.length || event.target !== event.currentTarget) return;
     const at = selected ?? { row: 0, col: 0 };
-    const steps: Record<string, [number, number]> = {
-      ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
-    };
-    if (steps[event.key]) {
+    const position = !matches(event, commands.fetchAllRows.keys!) && moveCell(at, event, {
+      rows: rows.length,
+      cols: columns.length,
+      page: Math.floor((event.currentTarget.clientHeight - ROW - footerHeight) / ROW),
+    });
+    if (position) {
       event.preventDefault();
-      move(at.row + steps[event.key][0], at.col + steps[event.key][1]);
-    } else if ((event.key === "Home" || event.key === "End") && !matches(event, commands.fetchAllRows.keys!)) {
-      event.preventDefault();
-      move(event.ctrlKey ? (event.key === "Home" ? 0 : rows.length - 1) : at.row, event.key === "Home" ? 0 : columns.length - 1);
+      onSelect(position);
     } else if (event.key === "Enter" || event.key === "F2") {
       event.preventDefault();
       startEdit(at);
