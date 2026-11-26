@@ -11,7 +11,8 @@
   El brief 13 actualiza el diálogo de conexión, permite cancelar y conserva la contraseña
   ante errores ajenos a las credenciales. Última verificación: formato, Clippy, Rust,
   TypeScript y 479 tests de frontend. El brief 14 agrega navegación por flechas y un solo
-  punto de tabulación al explorador. Sigue el brief 15.
+  punto de tabulación al explorador. El brief 15 separa los bloques PL/SQL sin barra
+  y resuelve el cursor entre sentencias. TypeScript y 488 tests en verde. Sigue el brief 16.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
