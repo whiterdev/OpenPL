@@ -112,6 +112,22 @@ test("un total indica cuando quedan filas por traer", () => {
   expect(screen.getByRole("rowheader", { name: "Total parcial" })).toHaveAttribute("title", "Parcial, 2 filas cargadas");
 });
 
+test("Shift Espacio abre el visor y Escape vuelve a la grilla", () => {
+  render(<ResultGrid queryKey={1} columns={columns} rows={rows} status={[]} isModified={() => false}
+    editable={null} selected={{ row: 0, col: 1 }} onSelect={vi.fn()} onEdit={vi.fn()}
+    fetching={false} fetchError={null} />);
+  const scroll = screen.getByRole("presentation");
+  scroll.focus();
+  fireEvent.keyDown(scroll, { key: " ", shiftKey: true });
+  const dialog = screen.getByRole("dialog", { name: "NOMBRE" });
+  const value = within(dialog).getByRole("textbox", { name: "Valor" });
+  expect(value).toHaveValue("Ana");
+  expect(value).toHaveFocus();
+  fireEvent.keyDown(value, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(scroll).toHaveFocus();
+});
+
 test("Escape cancela la edición y pegar TSV recorta al rango disponible", () => {
   const onEdit = vi.fn();
   const onPasteCells = vi.fn();

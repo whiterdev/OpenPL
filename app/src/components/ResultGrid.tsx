@@ -8,6 +8,7 @@ import { copyGridCells, gridTotal, parseTsv, type GridTotal } from "../gridSelec
 import { inSelection, moveCell, selectedCells, selectRange, type GridSelection } from "../gridNav";
 import { viewIndexes, type GridSort } from "../gridView";
 import { ContextMenu } from "./ContextMenu";
+import { CellViewer } from "./CellViewer";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
 export type CellPosition = GridSelection;
@@ -74,6 +75,7 @@ export function ResultGrid(props: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; column: number; totals?: boolean } | null>(null);
   const [totalsFor, setTotalsFor] = useState<{ queryKey: number; columns: Record<number, GridTotal> } | null>(null);
   const [copyError, setCopyError] = useState(false);
+  const [viewer, setViewer] = useState<{ column: SqlColumn; value: Cell } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const autoWidths = useMemo(() => columns.map((c, i) => columnWidth(c, rows, i)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,7 +104,8 @@ export function ResultGrid(props: Props) {
   const selectedRow = selected?.row;
   const selectedColumn = selected?.col;
 
-  const canEdit = (p: CellPosition) => !fetching && !!editable?.[p.col] && status[p.row] !== "delete";
+  const canEdit = (p: CellPosition) =>
+    !fetching && !!editable?.[p.col] && !columns[p.col]?.lob && status[p.row] !== "delete";
   const startEdit = (p: CellPosition, initial?: string) => {
     if (!canEdit(p)) return;
     editClosed.current = false;
@@ -184,6 +187,11 @@ export function ResultGrid(props: Props) {
     } else if (matches(event, commands.selectGridRows.keys!)) {
       event.preventDefault();
       selectAll();
+    } else if (matches(event, commands.viewCell.keys!)) {
+      event.preventDefault();
+      if (columns[at.col] && rows[at.row]) {
+        setViewer({ column: columns[at.col], value: rows[at.row][at.col] ?? null });
+      }
     } else if (matches(event, commands.copyGrid.keys!) || (event.metaKey && event.key.toLowerCase() === "c")) {
       event.preventDefault();
       void copy(false);
@@ -309,7 +317,8 @@ export function ResultGrid(props: Props) {
                       onMouseEnter={(event) => {
                         if (drag.current) onSelect(selectRange(drag.current, { row, col }, "extend"));
                         const cell = event.currentTarget;
-                        if (!isEditing && value !== null && cell.scrollWidth > cell.clientWidth) cell.title = value;
+                        if (editable && column.lob) cell.title = "Valor recortado";
+                        else if (!isEditing && value !== null && cell.scrollWidth > cell.clientWidth) cell.title = value;
                       }}
                       onMouseLeave={(event) => event.currentTarget.removeAttribute("title")}
                       onClick={(event) => {
@@ -380,6 +389,8 @@ export function ResultGrid(props: Props) {
         {sort && props.more && <span role="status">Ordenado sobre {sourceRows.length} filas cargadas</span>}
       </div>
       {table}
+      {viewer && <CellViewer column={viewer.column.name} value={viewer.value} lob={viewer.column.lob}
+        onClose={() => setViewer(null)} />}
       {menu && <ContextMenu key={menu.totals ? "totals" : "grid"} {...menu}
         label={menu.totals ? `Totales de ${columns[menu.column]?.name}` : "Grilla de resultados"} onClose={closeMenu} items={menu.totals ? [
         { label: "Ninguno", radio: true, checked: !totals?.[menu.column], run: () => setTotal(menu.column) },
