@@ -8,7 +8,9 @@
   El brief 11 pide confirmación antes de desconectar con transacciones SQL abiertas. Conserva
   los editores, marca las sesiones afectadas y muestra los errores de desconexión.
   El brief 12 comprueba las sesiones al volver a la ventana y permite reconectarlas.
-  Formato, Clippy, Rust, TypeScript y 476 tests de frontend en verde. Sigue el brief 13.
+  El brief 13 actualiza el diálogo de conexión, permite cancelar y conserva la contraseña
+  ante errores ajenos a las credenciales. Última verificación: formato, Clippy, Rust,
+  TypeScript y 478 tests de frontend. Sigue el brief 14.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

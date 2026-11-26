@@ -10,6 +10,7 @@ vi.mock("../api", () => ({
     listProfiles: vi.fn(),
     storedPassword: vi.fn(),
     connect: vi.fn(),
+    disconnect: vi.fn(),
     saveProfile: vi.fn(),
     deleteProfile: vi.fn(),
   },
@@ -81,6 +82,32 @@ describe("LoginDialog", () => {
     expect(screen.getByText("Usuario o contraseña incorrectos.")).toBeInTheDocument();
     expect(screen.getByLabelText("Usuario")).toHaveValue("HR");
     expect(screen.getByLabelText("Contraseña")).toHaveValue("");
+  });
+
+  test("un error de conexión conserva la contraseña", async () => {
+    m.connect.mockRejectedValue({ Db: { code: "ORA-12170", message: "Tiempo agotado" } });
+    render(<LoginDialog onConnected={vi.fn()} />);
+    await llenar();
+    await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
+    expect(await screen.findByText("ORA-12170")).toBeVisible();
+    expect(screen.getByLabelText("Contraseña")).toHaveValue("clave");
+  });
+
+  test("cancelar cierra la sesión si la conexión se completa después", async () => {
+    let resolve!: (value: typeof ok) => void;
+    m.connect.mockReturnValue(new Promise((done) => { resolve = done; }));
+    m.disconnect.mockResolvedValue();
+    const onConnected = vi.fn();
+    const onCancel = vi.fn();
+    render(<LoginDialog onConnected={onConnected} onCancel={onCancel} />);
+    await llenar();
+    await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
+    expect(screen.getByRole("button", { name: /Conectando/ })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    resolve(ok);
+    await vi.waitFor(() => expect(m.disconnect).toHaveBeenCalledWith("s1"));
+    expect(onConnected).not.toHaveBeenCalled();
   });
 
   test("elegir perfil guardado completa campos y contraseña guardada", async () => {
