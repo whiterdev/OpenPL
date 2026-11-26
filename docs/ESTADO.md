@@ -4,6 +4,12 @@
 
 ## Resumen
 
+- Auditoría UX: se recuperó el [plan de 61 briefs](superpowers/plans/2026-11-25-openpl-auditoria-ux.md).
+  El brief 11 pide confirmación antes de desconectar con transacciones SQL abiertas. Conserva
+  los editores, marca las sesiones afectadas y muestra los errores de desconexión.
+  TypeScript y 475 tests de frontend en verde. Sigue el brief 12, reconexión y detección de caída.
+  Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
+
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
   hermanas, las cierra con la conexión principal y expone su listado y ping a la interfaz.
   Se verificaron el ping con sesión ocupada y la reconexión individual con conexiones simuladas.
