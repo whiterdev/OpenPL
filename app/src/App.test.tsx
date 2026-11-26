@@ -566,9 +566,8 @@ async function openSqlWithResults() {
   vi.mocked(api.sqlFetch).mockReset().mockResolvedValue({ rows: [["2"]], more: false });
   render(<App />);
   await connectAs();
-  await act(async () => {
-    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
   const editor = await screen.findByRole("textbox", { name: "SQL" });
   const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
   act(() => view.dispatch({ changes: { from: 0, insert: "SELECT id\nFROM t" } }));
