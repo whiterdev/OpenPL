@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeAll, expect, test, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
+import { startCompletion } from "@codemirror/autocomplete";
 import { Profiler } from "react";
 import App from "./App";
 import { api } from "./api";
@@ -97,6 +98,7 @@ vi.mock("./api", () => ({
     programSource: vi.fn(),
     routineOverloads: vi.fn(),
     completeObjects: vi.fn(),
+    objectColumns: vi.fn(),
     sqlOpen: vi.fn(),
     sqlClose: vi.fn(async () => {}),
     sqlExecute: vi.fn(),
@@ -606,6 +608,27 @@ test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella"
   fireEvent.click(screen.getByRole("button", { name: /^Commit/ }));
   expect(await screen.findByText("Sin transacción")).toBeInTheDocument();
   expect(api.sqlCommit).toHaveBeenCalledWith("w1");
+});
+
+test("la ventana SQL completa las columnas de un alias con su propia sesión", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.objectColumns).mockResolvedValue([
+    { name: "NRO_DOCUMENTO", data_type: "NUMBER", nullable: false },
+  ]);
+  render(<App />);
+  await connectAs();
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  const text = "SELECT * FROM FIN_DOCUMENTO T WHERE T.";
+  act(() => view.dispatch({ changes: { from: 0, insert: text }, selection: { anchor: text.length } }));
+  act(() => { startCompletion(view); });
+  expect(await screen.findByRole("option", { name: /NRO_DOCUMENTO/ })).toBeInTheDocument();
+  expect(api.objectColumns).toHaveBeenCalledWith("w1", null, "FIN_DOCUMENTO", null);
 });
 
 async function openSqlWithResults() {

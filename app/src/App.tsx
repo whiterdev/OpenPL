@@ -42,6 +42,8 @@ import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
 import { activeTheme } from "./themes";
+import { completionCatalog } from "./useCompletionCatalog";
+import type { CompletionCatalog } from "./programCompletion";
 import {
   commands,
   formatKeys,
@@ -212,6 +214,16 @@ export default function App() {
   const latestWorkspace = useRef({ programs, connections });
   latestWorkspace.current = { programs, connections };
   const saveBeforeClose = useRef<() => boolean>(() => false);
+  // Un catálogo estable por sesión de ventana SQL: completado contra su propia sesión.
+  const sqlCatalogs = useRef(new Map<string, CompletionCatalog>());
+  const sqlCatalog = (sessionId: string) => {
+    let catalog = sqlCatalogs.current.get(sessionId);
+    if (!catalog) {
+      catalog = completionCatalog(sessionId, null);
+      sqlCatalogs.current.set(sessionId, catalog);
+    }
+    return catalog;
+  };
   openTransactions.current = programs.some((tab) => tab.sql?.transaction);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
@@ -826,6 +838,7 @@ export default function App() {
   function removeTab(tab: ProgramTab) {
     delete gridPending.current[tab.id];
     workspaceTexts.current.delete(tab.id);
+    if (tab.sql) sqlCatalogs.current.delete(tab.sql.sessionId);
     if (tab.sql) void api.sqlClose(tab.sql.sessionId).catch((error) => showNotice(describeError(error).message, "error"));
     setPrograms((all) => {
       const index = all.findIndex((item) => item.id === tab.id);
@@ -1326,6 +1339,7 @@ export default function App() {
                       )}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
+                        completion={sqlCatalog(tab.sql.sessionId)}
                         initialSql={tab.sql.initial}
                         command={tab.sql.command}
                         active={tab.id === programId}
