@@ -181,6 +181,8 @@ export default function App() {
   const [programs, setPrograms] = useState<ProgramTab[]>([]);
   const [programId, setProgramId] = useState<string | null>(null);
   const programActions = useRef<ProgramActions>(null);
+  const reconnectSqlButton = useRef<HTMLButtonElement>(null);
+  const lastPing = useRef(-Infinity);
   const compileSession = useRef<string | null>(null);
   const [closing, setClosing] = useState<ProgramTab | null>(null);
   const sqlCount = useRef(0);
@@ -192,6 +194,8 @@ export default function App() {
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
   const program = programs.find((tab) => tab.id === programId);
   const programObject = program?.object;
+  const editorSessionExists = (tab: ProgramTab) =>
+    connections.some((connection) => connection.sessionId === tab.connection?.sessionId);
   const editorConnection = program?.connection
     ? connections.find(
         (connection) => connection.sessionId === program.connection?.sessionId,
@@ -206,7 +210,14 @@ export default function App() {
               (id !== "commit" && id !== "rollback") ||
               program.sql!.transaction,
           )
-          .map((id) => [id, () => programActions.current?.[id]?.()]),
+          .map((id) => [id, () => {
+            if (id === "execute" && states[program.sql!.sessionId] === "Disconnected") {
+              reconnectSqlButton.current?.focus();
+              showNotice(reconnectErrors[program.sql!.sessionId] ?? "Sesión desconectada");
+              return;
+            }
+            programActions.current?.[id]?.();
+          }]),
       )
     : {};
   const currentProgramActions = Object.fromEntries(
@@ -281,7 +292,7 @@ export default function App() {
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
     refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
-    reconnect: active ? () => void reconnect(active.sessionId) : undefined,
+    reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
     palette: () => setShowPalette(true),
   };
@@ -393,12 +404,13 @@ export default function App() {
     if (rest.length === 0) setShowLogin(true);
   }
 
-  async function reconnect(id: string) {
+  async function reconnect(id: string): Promise<boolean> {
     try {
       await api.reconnect(id);
       setStates((s) => ({ ...s, [id]: "Connected" }));
       setReconnectErrors(({ [id]: _old, ...rest }) => rest);
       setRefreshTick((t) => t + 1);
+      return true;
     } catch (e) {
       const d = describeError(e);
       setStates((s) => ({ ...s, [id]: "Disconnected" }));
@@ -406,8 +418,47 @@ export default function App() {
         ...r,
         [id]: d.code ? `${d.code} ${d.message}` : d.message,
       }));
+      return false;
     }
   }
+
+  async function reconnectConnection(id: string) {
+    if (!await reconnect(id)) return;
+    try {
+      await Promise.all((await api.sessionSiblings(id)).map(reconnect));
+    } catch (error) {
+      showNotice(describeError(error).message);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      if (!connections.length || document.hidden || Date.now() - lastPing.current < 10_000) return;
+      lastPing.current = Date.now();
+      await Promise.all(connections.map(async ({ sessionId }) => {
+        const siblings = await api.sessionSiblings(sessionId).catch(() => []);
+        await Promise.all([sessionId, ...siblings].map(async (id) => {
+          let reason = "Conexión perdida";
+          try {
+            if (await api.sessionPing(id)) return;
+          } catch (error) {
+            reason = describeError(error).message;
+          }
+          if (cancelled) return;
+          setStates((current) => ({ ...current, [id]: "Disconnected" }));
+          setReconnectErrors((current) => ({ ...current, [id]: reason }));
+        }));
+      }));
+    }
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [connections]);
 
   const onConnectionLost = useCallback(() => {
     if (activeId) setStates((s) => ({ ...s, [activeId]: "Disconnected" }));
@@ -908,7 +959,7 @@ export default function App() {
           states={states}
           onSelect={setActiveId}
           onDisconnect={(id) => void disconnect(id)}
-          onReconnect={(id) => void reconnect(id)}
+          onReconnect={(id) => void reconnectConnection(id)}
           reconnectError={activeId ? reconnectErrors[activeId] : undefined}
           onNew={() => setShowLogin(true)}
         />
@@ -1055,7 +1106,20 @@ export default function App() {
                 >
                   {tab.sql ? (
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
-                      {states[tab.sql.sessionId] === "Disconnected" && <p role="status">Sesión desconectada</p>}
+                      {states[tab.sql.sessionId] === "Disconnected" && (
+                        <div>
+                          <span role="status" title={reconnectErrors[tab.sql.sessionId]}>
+                            {editorSessionExists(tab) ? "Sesión caída" : "Sesión desconectada"}
+                          </span>
+                          {editorSessionExists(tab) && (
+                            <button className="btn" aria-label="Reconectar sesión SQL"
+                              ref={tab.id === programId ? reconnectSqlButton : undefined}
+                              onClick={() => void reconnect(tab.sql!.sessionId)}>
+                              Reconectar
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
                         initialSql={tab.sql.initial}

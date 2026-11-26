@@ -53,6 +53,9 @@ vi.mock("./api", () => ({
     listProfiles: vi.fn(async () => []),
     connect: vi.fn(),
     disconnect: vi.fn(),
+    reconnect: vi.fn(),
+    sessionSiblings: vi.fn(async (): Promise<string[]> => []),
+    sessionPing: vi.fn(async () => true),
     listObjects: vi.fn(),
     programSource: vi.fn(),
     routineOverloads: vi.fn(),
@@ -687,6 +690,28 @@ test.each(["cerrar", "desconectar"])("%s con transacción SQL abierta pide confi
   await waitFor(() => expect(editor).not.toBeInTheDocument());
   expect(api.sqlRollback).toHaveBeenCalledWith("w2");
   expect(api.sqlClose).toHaveBeenCalledWith("w2");
+});
+
+test("al recuperar el foco detecta una sesión SQL caída y permite reconectarla", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w2");
+  vi.mocked(api.sessionSiblings).mockResolvedValueOnce(["w2"]);
+  vi.mocked(api.sessionPing).mockImplementation(async (id) => id !== "w2");
+  vi.mocked(api.reconnect).mockResolvedValue();
+  render(<App />);
+  await connectAs();
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  await screen.findByRole("textbox", { name: "SQL" });
+  fireEvent.focus(window);
+  expect(await screen.findByText("Sesión caída")).toBeVisible();
+  fireEvent.focus(window);
+  expect(api.sessionPing).toHaveBeenCalledTimes(2);
+  fireEvent.keyDown(window, { key: "F8" });
+  expect(screen.getByRole("button", { name: "Reconectar sesión SQL" })).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Reconectar sesión SQL" }));
+  await waitFor(() => expect(screen.queryByText("Sesión caída")).toBeNull());
+  expect(api.reconnect).toHaveBeenCalledExactlyOnceWith("w2");
 });
 
 test("Consultar datos del explorador abre y ejecuta un SELECT", async () => {
