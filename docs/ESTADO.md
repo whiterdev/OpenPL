@@ -51,7 +51,8 @@
   asignaciones directas; los IN OUT y los OUT reales requieren verificación aparte.
   El brief 46 confirma escrituras en perfiles de producción, con pruebas simuladas.
   El brief 47 pregunta antes de descartar ediciones de grilla al ejecutar o cerrar.
-  TypeScript y 598 tests en verde. Sigue el brief 48.
+  El brief 48 añade copia con encabezados y como INSERT y exporta CSV con BOM.
+  TypeScript y 598 tests en verde. Sigue el brief 49.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

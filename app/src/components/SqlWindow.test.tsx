@@ -253,7 +253,7 @@ test("exporta CSV con encabezado y todas las páginas del cursor", async () => {
   await act(async () => ref.current!.execute!());
   await act(async () => ref.current!.exportData!());
   expect(fetch).toHaveBeenCalledOnce();
-  expect(save).toHaveBeenCalledWith('ID,NOMBRE\r\n1,"Ana, B"\r\n2,Beto', "csv", "resultados.csv");
+  expect(save).toHaveBeenCalledWith('\ufeffID,NOMBRE\r\n1,"Ana, B"\r\n2,Beto', "csv", "resultados.csv");
 });
 
 test("abre con mas espacio para el editor y mueve el divisor en ambos sentidos", () => {

@@ -4,7 +4,8 @@ import { ArrowDown, ArrowUp, ArrowsDownUp, Funnel, Minus, PencilSimple, Plus, Se
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
-import { copyGridCells, gridTotal, parseTsv, type GridTotal } from "../gridSelection";
+import { copyAsInsert, copyGridCells, gridTotal, parseTsv, type GridTotal } from "../gridSelection";
+import { clipboard } from "../api";
 import { inSelection, moveCell, selectedCells, selectRange, type GridSelection } from "../gridNav";
 import { viewIndexes, type GridSort } from "../gridView";
 import { ContextMenu } from "./ContextMenu";
@@ -31,6 +32,7 @@ interface Props {
   fetching: boolean;
   fetchError: string | null;
   more?: boolean;
+  insertTable?: string[];
 }
 
 const ROW = 24;
@@ -155,12 +157,37 @@ export function ResultGrid(props: Props) {
     setTotalsFor({ queryKey, columns: next });
     scroll.current?.focus();
   }
-  const selectAll = () => onSelect({ ...cursor, scope: "all" });
-  async function copy(csv: boolean) {
+  const selectAll = () => {
+    onSelect({ ...cursor, scope: "all" });
+    if (props.more) props.onNotice?.(`Seleccionadas ${rows.length} filas cargadas. Hay más.`);
+  };
+  function viewCell({ row, col }: CellPosition) {
+    if (columns[col] && rows[row]) setViewer({ column: columns[col], value: rows[row][col] ?? null });
+  }
+  async function copy(mode: "tsv" | "csv" | "headers" | "insert") {
     const cells = selectedCells(rows, cursor);
+    let text: string;
+    if (mode === "insert" && props.insertTable) {
+      const table = props.insertTable;
+      text = rows.flatMap((row, index) => {
+        const included = columns.map((_, col) => col).filter((col) => inSelection(cursor, index, col));
+        return included.length
+          ? [copyAsInsert(table, included.map((col) => columns[col]), [included.map((col) => row[col] ?? null)])]
+          : [];
+      }).join("\n");
+    } else if (mode === "headers") {
+      const included = columns.map((_, col) => col).filter((col) => rows.some((_, row) => inSelection(cursor, row, col)));
+      const aligned = rows.flatMap((row, index) => included.some((col) => inSelection(cursor, index, col))
+        ? [included.map((col) => inSelection(cursor, index, col) ? row[col] ?? null : null)]
+        : []);
+      text = copyGridCells(aligned, false, { headers: included.map((col) => columns[col].name) });
+    } else {
+      text = copyGridCells(cells, mode === "csv");
+    }
     try {
-      await navigator.clipboard.writeText(copyGridCells(cells, csv));
+      await clipboard.writeText(text);
       setCopyError(false);
+      if (props.more) props.onNotice?.(`Copiadas ${cells.length} filas cargadas. Hay más.`);
     } catch {
       setCopyError(true);
     }
@@ -189,12 +216,10 @@ export function ResultGrid(props: Props) {
       selectAll();
     } else if (matches(event, commands.viewCell.keys!)) {
       event.preventDefault();
-      if (columns[at.col] && rows[at.row]) {
-        setViewer({ column: columns[at.col], value: rows[at.row][at.col] ?? null });
-      }
+      viewCell(at);
     } else if (matches(event, commands.copyGrid.keys!) || (event.metaKey && event.key.toLowerCase() === "c")) {
       event.preventDefault();
-      void copy(false);
+      void copy("tsv");
     } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && canEdit(at)) {
       event.preventDefault();
       startEdit(at, event.key);
@@ -402,8 +427,11 @@ export function ResultGrid(props: Props) {
         { label: "Limpiar todos", run: totalValues.length ? () => { setTotalsFor(null); scroll.current?.focus(); } : undefined },
       ] : [
         { ...commands.selectGridRows, run: () => { selectAll(); scroll.current?.focus(); } },
-        { ...commands.copyGrid, run: () => { void copy(false); scroll.current?.focus(); } },
-        { label: "Copiar entre comas", run: () => { void copy(true); scroll.current?.focus(); } },
+        { ...commands.copyGrid, run: () => { void copy("tsv"); scroll.current?.focus(); } },
+        { label: "Copiar con encabezados", run: () => { void copy("headers"); scroll.current?.focus(); } },
+        { label: "Copiar entre comas", run: () => { void copy("csv"); scroll.current?.focus(); } },
+        { label: "Copiar como INSERT", run: props.insertTable ? () => { void copy("insert"); scroll.current?.focus(); } : undefined },
+        { ...commands.viewCell, run: () => viewCell(cursor) },
         { label: "Totales de columna", run: columns[menu.column] ? () => setMenu({ ...menu, totals: true }) : undefined },
       ]} />}
     </section>

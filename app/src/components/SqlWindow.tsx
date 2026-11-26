@@ -23,7 +23,7 @@ import {
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, pendingDiscardMessage, type Cell, type Pending } from "../gridEdits";
-import { copyGridCells } from "../gridSelection";
+import { copyGridCells, withBom } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
 import { applySubstitutions, assignedBinds, findVariables } from "../sqlBinds";
@@ -523,7 +523,7 @@ export function SqlWindow({
     const offset = result.hiddenRowid ? 1 : 0;
     const headers = result.columns.slice(offset).map((column) => column.name);
     try {
-      const name = await api.saveProgramFile(copyGridCells([headers, ...rows.map((row) => row.slice(offset))], true),
+      const name = await api.saveProgramFile(withBom(copyGridCells(rows.map((row) => row.slice(offset)), true, { headers })),
         "csv", "resultados.csv");
       if (name) setNotice("CSV guardado");
     } catch (error) {
@@ -781,6 +781,9 @@ export function SqlWindow({
   }, []);
 
   const offset = grid?.hiddenRowid ? 1 : 0;
+  const insertSource = lastQueryRef.current?.sql;
+  const insertTarget = useMemo(() => insertSource ? editableQuery(insertSource)?.table : undefined, [insertSource]);
+  const insertTable = editSession?.target ?? insertTarget;
   const visibleColumns: SqlColumn[] = grid ? grid.columns.slice(offset) : [];
   const displayRows: Cell[][] = grid ? [
     ...grid.rows.map((row, index) => {
@@ -1039,7 +1042,10 @@ export function SqlWindow({
                   <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
                     selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
-                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} more={grid.more} />
+                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} more={grid.more}
+                    onNotice={setNotice} insertTable={insertTable
+                      ? (insertTable.owner ? [insertTable.owner, insertTable.name] : [insertTable.name])
+                      : undefined} />
                 </>
               )}
         </div>
