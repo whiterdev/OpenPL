@@ -52,6 +52,7 @@ describe("LoginDialog", () => {
     await vi.waitFor(() =>
       expect(onConnected).toHaveBeenCalledWith({
         sessionId: "s1",
+        profileId: perfil.id,
         label: "HR en DEV",
         environment: "dev",
         serverVersion: "12.1.0",

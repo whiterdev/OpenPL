@@ -51,6 +51,7 @@ interface Props {
   onBusy?: (busy: boolean) => void;
   onPendingChange?: (count: number) => void;
   onDirty: (dirty: boolean) => void;
+  onWorkspaceChange?: (text: string) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
 }
@@ -122,7 +123,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export function SqlWindow({
-  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, onWorkspaceChange, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -917,6 +918,7 @@ export function SqlWindow({
             onSelection={setCursor}
             onChange={(doc) => {
               const value = doc.toString();
+              onWorkspaceChange?.(value);
               setSource(value);
               setTestResults([]);
               setMarkers([]);

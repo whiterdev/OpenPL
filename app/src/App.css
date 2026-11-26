@@ -84,6 +84,14 @@
     background: var(--s2);
     border: 1px solid var(--line2);
 }
+.workspace-restore {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--line);
+    background: var(--s1);
+}
 .statusbar {
     height: 26px;
     flex-shrink: 0;

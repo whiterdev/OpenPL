@@ -199,6 +199,7 @@ export interface ObjectInfo {
 
 export interface ActiveConnection {
   sessionId: string;
+  profileId?: string;
   label: string;
   environment: Environment | null;
   serverVersion: string;

@@ -150,6 +150,8 @@ export function LoginDialog({ onConnected, onCancel, clientVersion }: Props) {
       }
       onConnected({
         sessionId: r.session_id,
+        ...(selected?.user === user.trim() && selected.db === db.trim() && selected.role === role
+          ? { profileId: selected.id } : {}),
         label,
         environment,
         serverVersion: r.server_version,

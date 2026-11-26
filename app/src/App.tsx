@@ -32,6 +32,7 @@ import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { pendingDiscardMessage } from "./gridEdits";
 import { neighbor, reorder } from "./tabs";
+import { captureWorkspace, validateWorkspace } from "./workspace";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { CommandPalette } from "./components/CommandPalette";
@@ -56,6 +57,7 @@ import {
   type ObjectInfo,
   type ProgramPart,
   type SessionState,
+  type Workspace,
 } from "./types";
 import "./App.css";
 import "./components/ProgramWindow.css";
@@ -112,6 +114,7 @@ interface ProgramTab {
   parts?: ProgramPart[];
   error?: string;
   fileName?: string;
+  workspaceProfileId?: string;
   load?: symbol;
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
   sql?: {
@@ -199,9 +202,20 @@ export default function App() {
   dirtyPrograms.current = programs.some((tab) => tab.dirty);
   const openTransactions = useRef(false);
   const gridPending = useRef<Record<string, number>>({});
+  const [workspaceOffers, setWorkspaceOffers] = useState<Record<string, Workspace>>({});
+  const workspaceReady = useRef(new Set<string>());
+  const workspaceLoading = useRef(new Set<string>());
+  const workspaceTexts = useRef(new Map<string, { toString(): string }>());
+  const workspaceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastWorkspace = useRef(new Map<string, string>());
+  const workspaceWrites = useRef<Promise<void>>(Promise.resolve());
+  const latestWorkspace = useRef({ programs, connections });
+  latestWorkspace.current = { programs, connections };
+  const saveBeforeClose = useRef<() => boolean>(() => false);
   openTransactions.current = programs.some((tab) => tab.sql?.transaction);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
+  const workspaceOffer = active?.profileId ? workspaceOffers[active.profileId] : undefined;
   const program = programs.find((tab) => tab.id === programId);
   const tabIndex = programs.findIndex((tab) => tab.id === programId);
   const programObject = program?.object;
@@ -388,7 +402,9 @@ export default function App() {
         )
       ) {
         event.preventDefault();
+        return;
       }
+      if (saveBeforeClose.current()) event.preventDefault();
     });
     return () => {
       void listener.then((unlisten) => unlisten());
@@ -501,6 +517,102 @@ export default function App() {
     if (kind === "info") noticeTimer.current = setTimeout(clearNotice, 2500);
   }, [clearNotice]);
 
+  const persistWorkspaces = useCallback(() => {
+    const { programs, connections } = latestWorkspace.current;
+    const profiles = new Set(connections.map((connection) => connection.profileId));
+    const snapshots = [...profiles].flatMap((profileId) => profileId && workspaceReady.current.has(profileId)
+      ? [{ profileId, workspace: captureWorkspace(programs, profileId, workspaceTexts.current) }]
+      : []);
+    const writes = workspaceWrites.current.catch(() => {}).then(async () => {
+      for (const { profileId, workspace } of snapshots) {
+        const payload = JSON.stringify(workspace);
+        if (payload === lastWorkspace.current.get(profileId)) continue;
+        if (workspace.tabs.length || lastWorkspace.current.has(profileId)) {
+          await api.saveWorkspace(profileId, workspace);
+        }
+        lastWorkspace.current.set(profileId, payload);
+      }
+    });
+    workspaceWrites.current = writes;
+    return writes;
+  }, []);
+  const scheduleWorkspaceSave = useCallback(() => {
+    if (!workspaceReady.current.size) return;
+    clearTimeout(workspaceTimer.current);
+    workspaceTimer.current = setTimeout(() => {
+      void persistWorkspaces().catch((error) => showNotice(describeError(error).message, "error"));
+    }, 2000);
+  }, [persistWorkspaces, showNotice]);
+  useEffect(scheduleWorkspaceSave, [programs, connections, scheduleWorkspaceSave]);
+  useEffect(() => () => clearTimeout(workspaceTimer.current), []);
+  saveBeforeClose.current = () => {
+    if (!connections.some(({ profileId }) => profileId && workspaceReady.current.has(profileId))) return false;
+    clearTimeout(workspaceTimer.current);
+    void persistWorkspaces().then(() => getCurrentWindow().destroy())
+      .catch((error) => showNotice(describeError(error).message, "error"));
+    return true;
+  };
+
+  async function offerWorkspace(connection: ActiveConnection) {
+    const id = connection.profileId;
+    if (!id || workspaceReady.current.has(id) || workspaceLoading.current.has(id) || workspaceOffers[id]) return;
+    workspaceLoading.current.add(id);
+    try {
+      const saved = await api.loadWorkspace(id);
+      const workspace = saved && validateWorkspace(saved);
+      if (saved && !workspace) throw new Error("Espacio de trabajo inválido.");
+      if (workspace?.tabs.length) {
+        lastWorkspace.current.set(id, JSON.stringify(workspace));
+        setWorkspaceOffers((all) => ({ ...all, [id]: workspace }));
+      } else {
+        workspaceReady.current.add(id);
+        scheduleWorkspaceSave();
+      }
+    } catch (error) {
+      showNotice(describeError(error).message, "error");
+    } finally {
+      workspaceLoading.current.delete(id);
+    }
+  }
+
+  async function resolveWorkspace(connection: ActiveConnection, workspace: Workspace, restore: boolean) {
+    const id = connection.profileId;
+    if (!id || workspaceLoading.current.has(id)) return;
+    workspaceLoading.current.add(id);
+    try {
+      if (restore) {
+        const remaining: Workspace["tabs"] = [];
+        for (const tab of workspace.tabs) {
+          if (tab.type === "object") {
+            await onOpenObject({ ...tab, status: "Valid", last_ddl_time: "" }, "view", connection);
+          } else if (tab.type === "sql") {
+            const test = tab.kind === "test" ? { bindKinds: {}, outputs: [] } : undefined;
+            if (!await openSql(connection, tab.text, false, false, test, false, tab.title)) remaining.push(tab);
+          } else await openFileContent(tab.name, tab.text, connection);
+        }
+        if (remaining.length) {
+          setWorkspaceOffers((all) => ({ ...all, [id]: { ...workspace, tabs: remaining } }));
+          return;
+        }
+      } else {
+        await api.clearWorkspace(id);
+        lastWorkspace.current.delete(id);
+      }
+      setWorkspaceOffers(({ [id]: _resolved, ...rest }) => rest);
+      workspaceReady.current.add(id);
+      scheduleWorkspaceSave();
+    } catch (error) {
+      showNotice(describeError(error).message, "error");
+    } finally {
+      workspaceLoading.current.delete(id);
+    }
+  }
+
+  function rememberWorkspaceText(id: string, doc: { toString(): string }) {
+    workspaceTexts.current.set(id, doc);
+    scheduleWorkspaceSave();
+  }
+
   function updateProgram(
     id: string,
     change: Partial<ProgramTab>,
@@ -562,12 +674,12 @@ export default function App() {
     }
   }
 
-  async function openFileContent(fileName: string, contents: string) {
+  async function openFileContent(fileName: string, contents: string, connection = active) {
     const name = fileName.toLowerCase();
     if (name.endsWith(".tst")) {
-      if (!active) throw new Error("Conéctate para abrir la prueba.");
+      if (!connection) throw new Error("Conéctate para abrir la prueba.");
       const { source, bindKinds, outputs } = parseTestFile(contents);
-      await openSql(active, source, false, false, { bindKinds, outputs, fileName });
+      await openSql(connection, source, false, false, { bindKinds, outputs, fileName });
       return;
     }
     const kind = name.endsWith(".pks") ? "PACKAGE" : name.endsWith(".pkb") ? "PACKAGE BODY" : "SQL";
@@ -575,6 +687,7 @@ export default function App() {
       id: crypto.randomUUID(),
       label: fileName,
       fileName,
+      workspaceProfileId: connection?.profileId,
       readOnly: false,
       dirty: false,
       parts: [{ kind, source: contents.replace(/\r\n?/g, "\n"), last_ddl_time: null, diagnostics: [] }],
@@ -632,12 +745,14 @@ export default function App() {
         dirty: false,
         sql: { sessionId, initial, run: !!run, exportOnOpen: run === "export", edit, test, command, transaction: false },
       });
+      return true;
     } catch (error) {
       const detail = describeError(error);
       showNotice(
         detail.code ? `${detail.code} ${detail.message}` : detail.message,
         "error",
       );
+      return false;
     }
   }
 
@@ -710,6 +825,7 @@ export default function App() {
 
   function removeTab(tab: ProgramTab) {
     delete gridPending.current[tab.id];
+    workspaceTexts.current.delete(tab.id);
     if (tab.sql) void api.sqlClose(tab.sql.sessionId).catch((error) => showNotice(describeError(error).message, "error"));
     setPrograms((all) => {
       const index = all.findIndex((item) => item.id === tab.id);
@@ -764,6 +880,7 @@ export default function App() {
       return;
     }
     const index = programs.findIndex((item) => item.id === tab.id);
+    workspaceTexts.current.delete(tab.id);
     const remaining = programs.filter((item) => item.id !== tab.id);
     setPrograms(remaining);
     if (programId === tab.id)
@@ -1116,6 +1233,11 @@ export default function App() {
           />
         )}
         <main className="workspace">
+          {active && workspaceOffer && <div className="workspace-restore" role="status">
+            <span>Restaurar {workspaceOffer.tabs.length} {workspaceOffer.tabs.length === 1 ? "pestaña" : "pestañas"}</span>
+            <button className="btn" onClick={() => void resolveWorkspace(active, workspaceOffer, true)}>Restaurar</button>
+            <button className="btn" onClick={() => void resolveWorkspace(active, workspaceOffer, false)}>Descartar</button>
+          </div>}
           {!active && !program && (
             <div className="empty">
               <p>Sin conexión</p>
@@ -1222,6 +1344,8 @@ export default function App() {
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={dirtyHandler(tab.id)}
+                        onWorkspaceChange={tab.connection?.profileId && !tab.sql.command
+                          ? (text) => rememberWorkspaceText(tab.id, text) : undefined}
                         onPendingChange={(count) => { gridPending.current[tab.id] = count; }}
                         onBusy={(busy) => setPrograms((all) => {
                           const current = all.find((item) => item.id === tab.id);
@@ -1300,6 +1424,8 @@ export default function App() {
                         }
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={dirtyHandler(tab.id)}
+                        onWorkspaceChange={tab.workspaceProfileId
+                          ? (doc) => rememberWorkspaceText(tab.id, doc) : undefined}
                       />
                     </Suspense>
                   ) : tab.error ? (
@@ -1364,6 +1490,7 @@ export default function App() {
             setActiveId(c.sessionId);
             setStates((s) => ({ ...s, [c.sessionId]: "Connected" }));
             setShowLogin(false);
+            void offerWorkspace(c);
           }}
         />
       )}

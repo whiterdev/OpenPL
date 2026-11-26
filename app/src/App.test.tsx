@@ -85,6 +85,9 @@ vi.mock("./api", () => ({
     openProgramFile: vi.fn(),
     saveProgramFile: vi.fn(),
     listProfiles: vi.fn(async () => []),
+    loadWorkspace: vi.fn(),
+    saveWorkspace: vi.fn(async () => {}),
+    clearWorkspace: vi.fn(async () => {}),
     connect: vi.fn(),
     disconnect: vi.fn(),
     reconnect: vi.fn(),
@@ -501,6 +504,29 @@ async function connectAs(service = "DEV") {
   fireEvent.click(dialog.getByRole("button", { name: "Conectar" }));
   await waitFor(() => expect(user).not.toBeInTheDocument());
 }
+
+test("reconectar un perfil ofrece restaurar SQL sin ejecutarlo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listProfiles).mockResolvedValueOnce([{
+    id: "11111111-1111-1111-1111-111111111111", name: "HR en DEV", user: "HR",
+    db: "db.example.com:1521/DEV", role: "Normal", environment: "dev", save_password: false,
+  }]);
+  vi.mocked(api.loadWorkspace).mockResolvedValueOnce({ version: 1, tabs: [
+    { type: "sql", kind: "sql", title: "Consulta guardada", text: "SELECT 1 FROM DUAL" },
+  ] });
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.connect).mockResolvedValueOnce({ session_id: "s1", server_version: "12.1.0", compat: { kind: "Supported" } });
+  vi.mocked(api.sqlExecute).mockClear();
+  render(<App />);
+  const login = within(await screen.findByRole("dialog", { name: "Conectar a Oracle" }));
+  fireEvent.click(await login.findByRole("button", { name: /^HR en DEV/ }));
+  fireEvent.click(login.getByRole("button", { name: "Conectar" }));
+  expect(await screen.findByText("Restaurar 1 pestaña")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Restaurar" }));
+  expect(await screen.findByRole("textbox", { name: "SQL" })).toHaveTextContent("SELECT 1 FROM DUAL");
+  expect(api.loadWorkspace).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111");
+  expect(api.sqlExecute).not.toHaveBeenCalled();
+});
 
 test("abre una prueba desde Nuevo y reabre un .tst sin ejecutarlo", async () => {
   windowEvents.close.mockResolvedValue(() => {});

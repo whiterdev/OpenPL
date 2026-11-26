@@ -51,6 +51,7 @@ interface Props {
   onReadOnlyChange?: (readOnly: boolean) => void;
   onTestRoutine?: (name: string, x: number, y: number) => void;
   onDirty: (dirty: boolean) => void;
+  onWorkspaceChange?: (doc: Text) => void;
   ref?: Ref<ProgramActions>;
   fileName?: string;
   catalog?: ObjectCatalog;
@@ -97,7 +98,7 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
+  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
   const [compiling, setCompiling] = useState(false);
@@ -625,7 +626,8 @@ export function ProgramWindow({
                   const base = saved.current[index];
                   if (view && base && view.state.doc.eq(base)) saved.current[index] = view.state.doc;
                 }}
-                onChange={() => {
+                onChange={(doc) => {
+                  if (index === 0) onWorkspaceChange?.(doc);
                   if (declarationMenu) closeDeclarationMenu();
                   reportDirty();
                   if (settle.current) clearTimeout(settle.current);
