@@ -12,7 +12,13 @@ Redactado con palabras propias a partir del diseño (§7.3) y del mockup "1 · V
   delante en "Todos": `HR.PKG_A`), y "inválido" en rojo si el spec o el body no compilan.
   Contador de objetos junto a cada tipo una vez cargado.
 - Doble clic o Enter sobre un objeto lo abre (en v1 avisa que la edición llega después).
-- Refrescar (Ctrl R) vuelve a consultar los tipos expandidos.
+- Teclado: el árbol es un solo punto de tabulación; al volver con Tab el foco cae en la última
+  fila usada. ↑ y ↓ cambian de fila, Inicio y Fin van a la primera y a la última. → expande un
+  tipo o, si ya está abierto, baja a su primer objeto. ← lo contrae o, desde un objeto, sube a
+  su tipo. Las filas largas se desplazan para que la enfocada quede a la vista. Ctrl+C copia el
+  nombre.
+- Refrescar (Ctrl+Shift+R) vuelve a consultar los tipos expandidos. Ctrl+R quedó para
+  Reemplazar en el editor.
 - Si la conexión se pierde al consultar, la barra de conexión pasa a "Desconectado".
 - Listas largas (miles de objetos) se dibujan virtualizadas para no trabar la ventana.
 
@@ -26,7 +32,7 @@ existen se ven deshabilitadas para que se sepa dónde estarán.
   **Consultar datos** / **Editar datos** (Ctrl E) / Exportar datos (ver "Por tipo") · Describir · Propiedades ·
   **Recompilar** (código, vistas, Java; en producción pide confirmación) · **Copiar DDL**
   (DBMS_METADATA) · Comparar con… · **Copiar nombre** (Ctrl C) · **Copiar nombre con esquema** ·
-  Renombrar (tablas, vistas, secuencias, sinónimos) · Eliminar · **Refrescar** (Ctrl R).
+  Renombrar (tablas, vistas, secuencias, sinónimos) · Eliminar · **Refrescar** (Ctrl+Shift+R).
 - Por tipo (`app/src/objectMenu.ts`):
   - Tabla: **Consultar datos** abre una ventana SQL con `SELECT t.* FROM "DUEÑO"."NOMBRE" t`;
     **Editar datos** (Ctrl E) usa la misma consulta en modo edición. Exportar datos, deshabilitado.
@@ -36,3 +42,6 @@ existen se ven deshabilitadas para que se sepa dónde estarán.
 - **Carpeta de tipo:** Expandir / Contraer · Nuevo… · **Copiar nombres separados por coma** ·
   **Refrescar**.
 - En negrita: habilitado hoy. Al recompilar o copiar el DDL aparece un aviso breve.
+- Lo deshabilitado dice por qué: las opciones pendientes del menú llevan "Próximamente" y los
+  botones Buscar e Historial de la cabecera lo indican en su tooltip y en su descripción
+  accesible.

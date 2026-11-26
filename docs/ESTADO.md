@@ -1,76 +1,13 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-24 (candidata de OpenPL 1.0.0). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-26 (auditoría UX en `feat/auditoria-ux`, briefs 1 a 60). Mantener este archivo al día al terminar cada bloque de trabajo.
 
 ## Resumen
 
-- Auditoría UX: se recuperó el [plan de 61 briefs](superpowers/plans/2026-11-25-openpl-auditoria-ux.md).
-  El brief 11 pide confirmación antes de desconectar con transacciones SQL abiertas. Conserva
-  los editores, marca las sesiones afectadas y muestra los errores de desconexión.
-  El brief 12 comprueba las sesiones al volver a la ventana y permite reconectarlas.
-  El brief 13 actualiza el diálogo de conexión, permite cancelar y conserva la contraseña
-  ante errores ajenos a las credenciales. Última verificación: formato, Clippy, Rust,
-  TypeScript y 479 tests de frontend. El brief 14 agrega navegación por flechas y un solo
-  punto de tabulación al explorador. El brief 15 separa los bloques PL/SQL sin barra
-  y resuelve el cursor entre sentencias. El brief 16 interpreta los comandos SQL*Plus y
-  traduce `EXEC` a PL/SQL. El brief 17 calcula la posición de errores Oracle.
-  El brief 18 cuenta las variables de todo el script y respeta las comillas alternativas.
-  El brief 19 clasifica sentencias de lectura y escritura. TypeScript y 545 tests en verde.
-  El brief 20 agrega el formateador tabular para la consola. Los cinco controles pasaron,
-  con 551 tests de frontend. El brief 21 conserva DBMS_OUTPUT y el estado de transacción
-  al fallar un bloque. Los cinco controles pasaron, con 552 tests de frontend.
-  El brief 22 usa fechas ISO en binds, grilla y comparación de ediciones. Pasaron los
-  controles de Rust. El brief 23 limita a un millón de caracteres el texto LOB retenido
-  por celda y marca las columnas. LONG llega materializado desde el driver.
-  Quedan las verificaciones manuales contra Oracle. El brief 24 agrega los comandos IPC
-  de lectura de scripts y escritura de SPOOL. Pasaron los cinco controles, con 552 tests
-  de frontend. El brief 25 implementa el estado SQL*Plus y los comandos SET, DEFINE,
-  UNDEFINE, VARIABLE y PRINT. El brief 26 implementa SHOW USER, SHOW ERRORS y DESC
-  con SELECT y binds. Se verificaron las columnas del diccionario en DESA en solo
-  lectura. El brief 27 implementa scripts anidados y SPOOL con un contexto inyectado.
-  El brief 28 serializa TSV, CSV e INSERT para copiar y permite leer TSV entrecomillado.
-  El brief 29 mueve la celda con RePág y AvPág y la mantiene visible al desplazarse.
-  El brief 30 agrega selección de rangos, columna y copia de la selección. Ctrl+A
-  selecciona las filas cargadas. El brief 31 cancela la edición con Escape y prepara
-  el pegado TSV para el brief 50. El brief 32 ordena y filtra las filas cargadas.
-  El brief 33 distingue totales parciales y muestra tooltips para valores recortados.
-  El brief 34 agrega el visor de celda y evita editar columnas LOB en la grilla.
-  El brief 35 extrae la consola a su propio componente. TypeScript y 586 tests
-  en verde. El brief 36 integra el prompt redimensionable en la transcripción.
-  El brief 37 recupera el foco de la consola y conserva el desplazamiento al leer
-  salida anterior. El brief 38 conserva la sangría, admite Shift+Enter y evita
-  duplicados consecutivos en el historial. TypeScript y 589 tests en verde.
-  El brief 39 encola comandos ingresados durante la ejecución y muestra segundos
-  transcurridos. El brief 40 admite pegado multilínea y preguntas de sustitución.
-  El brief 41 usa Ctrl+C para copiar o cancelar, Ctrl+L para limpiar y conserva
-  Ctrl+A nativo en el prompt. El brief 42 publica salida por lotes, ubica errores
-  y deshabilita Commit y Rollback durante operaciones SQL. TypeScript y 594 tests
-  en verde. El brief 43 lista las variables del script y sustituye valores al pedir
-  el plan de ejecución. El brief 44 integra SQL*Plus en la ventana SQL y la consola.
-  El brief 45 conecta VARIABLE y PRINT a los binds. Los OUT se reconocen en
-  asignaciones directas; los IN OUT y los OUT reales requieren verificación aparte.
-  El brief 46 confirma escrituras en perfiles de producción, con pruebas simuladas.
-  El brief 47 pregunta antes de descartar ediciones de grilla al ejecutar o cerrar.
-  El brief 48 añade copia con encabezados y como INSERT y exporta CSV con BOM.
-  El brief 49 conecta el pegado de celdas y F3/Shift+F3. TypeScript y 599 tests
-  en verde. El brief 50 separa los atajos del editor de la consola. F5 sigue
-  bloqueado como tecla del webview. El brief 51 limita a 500 filas la salida
-  tabular de consola y libera el cursor. Los cinco controles pasaron, con 601
-  tests de frontend. El brief 52 mantiene visibles los errores hasta cerrarlos
-  y muestra los fallos al guardar la carpeta del cliente. TypeScript y 602 tests
-  en verde. El brief 53 abre archivos soltados en la ventana; el gesto en Windows
-  queda para prueba manual. El brief 54 permite recorrer y reordenar pestañas.
-  El brief 55 agrega el almacén local por perfil, con topes y reemplazo atómico.
-  El brief 56 expone el espacio de trabajo por IPC. Los cinco controles pasaron,
-  con 607 tests de frontend. El brief 57 guarda y ofrece restaurar pestañas por
-  perfil sin ejecutar su SQL. TypeScript y 610 tests en verde. Sigue el brief 58.
-  Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
-
-- Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
-  hermanas, las cierra con la conexión principal y expone su listado y ping a la interfaz.
-  Se verificaron el ping con sesión ocupada y la reconexión individual con conexiones simuladas.
-  Pasaron formato, Clippy, tests Rust, TypeScript y 473 tests de frontend el 2026-11-26.
-  La integración visual y la comprobación contra Oracle quedan pendientes.
+- Auditoría UX: los briefs 1 a 59 del [plan de 61 briefs](superpowers/plans/2026-11-25-openpl-auditoria-ux.md)
+  están implementados en `feat/auditoria-ux`, un commit por brief. El brief 60 deja esta
+  documentación y la [auditoría antislop](../anti-slop/audit-auditoria-ux-2026-11-24.md).
+  Falta el brief 61 (cierre). Detalle en "Auditoría UX (rama `feat/auditoria-ux`)".
 
 - Ctrl+C conserva la copia nativa del texto de paquetes. La grilla permite elegir un total por columna y lo muestra alineado en su pie. Los cálculos usan las filas cargadas.
 
@@ -115,7 +52,161 @@
   el resto de la validación contra base real (la corrida de lectura con `OPENPL_TEST_*` ya se hizo:
   `live.rs` 2 de 2, `live_catalog.rs` 2 de 4 antes de la corrección). El CI de `main` quedó verde en `8e630b8`.
 
+## Auditoría UX (rama `feat/auditoria-ux`)
+
+Plan: [2026-11-25-openpl-auditoria-ux.md](superpowers/plans/2026-11-25-openpl-auditoria-ux.md).
+Rama creada desde `main`, sin merge ni push. Auditoría:
+[audit-auditoria-ux-2026-11-24.md](../anti-slop/audit-auditoria-ux-2026-11-24.md).
+
+### Qué se hizo, por área
+
+- **Teclado (briefs 1, 5, 50).** `handleShortcut` solo bloquea una tecla si una acción la
+  atendió o si pertenece al webview (recarga, imprimir, ver fuente, herramientas de
+  desarrollo, zoom, atrás y adelante). `isWebviewKey` es el único punto de bloqueo. Una acción
+  puede devolver `false` para dejar pasar la tecla. Los comandos aceptan teclas alternativas
+  (`alt`) que funcionan pero no se muestran en menús. Con AltGr activo ningún atajo coincide.
+  Ctrl + rueda y los botones laterales del mouse no llegan al webview. En la consola no
+  actúan F8, F5, Ctrl+S, Ctrl+E ni Ctrl+Shift+X.
+- **Editor (briefs 3, 4, 6, 7, 8).** Teclas estándar de CodeMirror sin pisar Tab ni
+  `keymap.ts`. Enter conserva la sangría. El completado no preselecciona. Menú contextual
+  con Cortar, Copiar, Pegar, Seleccionar todo, Deshacer y Rehacer, también con Shift+F10 y la
+  tecla Menú. Foco al activar la pestaña y al cerrar la descripción. Una recarga desde Oracle
+  sin cambios locales reemplaza el texto y se puede deshacer. Tipear en un paquete grande ya
+  no recorre el documento por tecla: estructura, plegado y estado sucio se recalculan tras
+  una pausa de 150 ms o se comparan con `doc.eq`. F3 y Shift+F3 buscan siguiente y anterior.
+- **Conexión y sesiones (briefs 9 a 13).** ORA-12170, ORA-28000 y ORA-28001 tienen mensaje
+  propio. La conexión se corta a los 20 s y una conexión tardía se cierra. Las sesiones SQL
+  hermanas se registran por conexión, se cierran con ella y se comprueban con ping al volver
+  a la ventana (una vez cada 10 s como máximo). Desconectar con transacciones abiertas pide
+  confirmación. Reconectar la principal reconecta las hermanas, y cada pestaña SQL caída
+  ofrece su propio Reconectar. El diálogo de conexión muestra el progreso, permite cancelar y
+  solo borra la contraseña ante un error de credenciales.
+- **Explorador (brief 14).** Un solo punto de tabulación y navegación con flechas, Inicio y
+  Fin. Los ítems deshabilitados dicen por qué.
+- **Scripts y SQL*Plus (briefs 15 a 20, 24 a 27, 44, 45).** Los bloques PL/SQL sin `/` ya no
+  absorben la sentencia siguiente. `EXEC` se traduce a bloque. La ventana SQL y la consola
+  ejecutan SET, SHOW, DEFINE, UNDEFINE, VARIABLE, PRINT, SPOOL, `@`, `@@`, START y DESC; el
+  resto dice "Comando no admitido". SHOW y DESC solo hacen SELECT con binds. Los errores
+  ubican línea y columna sin inventar una posición. Las variables `&x` y `:x` se buscan en
+  todo el script e ignoran los literales `q'...'`.
+- **Ejecución SQL (briefs 21 a 23, 42, 43, 46, 47).** Un bloque que falla conserva su
+  DBMS_OUTPUT y el estado de transacción. Fechas y TIMESTAMP en formato ISO fijo en grilla,
+  binds y comparación de ediciones. Texto LOB acotado a 1.000.000 caracteres por celda.
+  Salida por lotes, con tope de líneas. Commit y Rollback deshabilitados mientras hay una
+  operación SQL. Las escrituras en perfiles de producción piden confirmación, una vez por
+  script. Ejecutar o cerrar con ediciones de grilla pendientes pregunta antes de descartarlas.
+- **Grilla (briefs 28 a 34, 48, 49).** La celda activa siempre visible, con RePág y AvPág.
+  Selección de rangos con Shift, Ctrl, arrastre y encabezados. Orden y filtro sobre las filas
+  cargadas. Totales parciales marcados. Tooltip en valores recortados. Visor de celda
+  (Shift+Space). Copia TSV, CSV, con encabezados y como INSERT. CSV con BOM. Pegado TSV en
+  edición. Escape cancela la edición de celda.
+- **Consola (briefs 35 a 41, 51).** Componente propio (`CommandConsole.tsx`). El prompt forma
+  parte de la transcripción. Continuación numerada, Shift+Enter, historial sin duplicados
+  consecutivos, escritura por adelantado con cola, pegado multilínea, preguntas de
+  sustitución, Ctrl+C para copiar o cancelar y Ctrl+L para limpiar. SELECT en texto tabular
+  hasta 500 filas.
+- **Pestañas, archivos y espacio de trabajo (briefs 53 a 57).** Soltar `.sql`, `.pks`, `.pkb`
+  o `.tst` los abre. Ctrl+Tab recorre pestañas, y Ctrl+Shift+RePág, Ctrl+Shift+AvPág o el
+  arrastre las reordenan. Las pestañas se guardan por perfil (`workspace.rs`) y se ofrecen al
+  reconectar, sin ejecutar SQL.
+- **Avisos, diálogos y menús (briefs 2, 52, 58, 59).** Portapapeles por plugin de Tauri y
+  ventana que recuerda tamaño y posición. Los errores quedan visibles hasta cerrarlos y un
+  aviso informativo no los tapa. Trampa de foco en los diálogos de conexión y temas, con
+  retorno del foco al origen. Alt abre la barra de menús, ← y → cambian de menú, y los ítems
+  deshabilitados muestran el motivo.
+
+### Teclas que cambiaron
+
+| Comando | Antes | Ahora |
+|---|---|---|
+| Reemplazar | Ctrl+H | Ctrl+R (Ctrl+H sigue como alternativa) |
+| Refrescar explorador | Ctrl+R | Ctrl+Shift+R |
+| Rehacer | Ctrl+Shift+Z | Ctrl+Shift+Z o Ctrl+Y |
+| Ejecutar | F8 | F8 o Ctrl+Enter |
+| Buscar siguiente / anterior | sin atajo | F3 / Shift+F3 |
+| Pestaña siguiente / anterior | sin atajo | Ctrl+Tab / Ctrl+Shift+Tab |
+| Mover pestaña a la izquierda / derecha | sin atajo | Ctrl+Shift+RePág / Ctrl+Shift+AvPág |
+| Limpiar consola | sin atajo | Ctrl+L |
+| Ver celda | sin atajo | Shift+Space |
+| Barra de menús | solo mouse | Alt solo, luego flechas |
+
+Ctrl+R, F5 y los demás atajos del webview siguen sin recargar la ventana donde no tienen acción.
+En el editor, Ctrl+Shift+End selecciona hasta el final; en la grilla sigue siendo Traer todas.
+En la consola, Ctrl+C copia la selección o, sin selección y con una ejecución en curso, la cancela.
+
+### Decisiones
+
+1. El bloqueo de teclas del webview vive solo en `isWebviewKey`. Cualquier otra tecla sin
+   acción pasa al control que tiene el foco.
+2. El timeout de conexión se aplica del lado de la app, porque el driver no tiene uno propio.
+   No se usa Easy Connect Plus, que un cliente 12.1 no soporta.
+3. Fechas en formato ISO fijo, sin depender del NLS de la sesión: así coinciden lo que se ve,
+   lo que se enlaza y lo que compara la edición optimista.
+4. `@archivo` y SPOOL leen y escriben por ruta con lista de extensiones (`lst`, `log`, `txt`,
+   `csv`, `sql`), tope de 2 MiB, rutas relativas a Documentos y escritura atómica.
+5. El espacio de trabajo guarda objetos (tipo, esquema y nombre) y el texto de ventanas SQL y
+   de prueba. No guarda consolas, historial ni claves. Restaurar es explícito.
+6. El arrastre de archivos usa eventos HTML5 (`dragDropEnabled: false`), porque el evento
+   nativo de Tauri tapaba el arrastre de texto en el editor.
+7. Orden, filtro, totales y copia trabajan sobre las filas cargadas y lo dicen en pantalla.
+
+### Limitaciones conocidas
+
+- Los anchos de columna de la grilla no se guardan: harían falta por consulta.
+- CONNECT, DISCONNECT, COLUMN, BREAK, HOST, EXIT y similares responden "Comando no admitido".
+  La consola no cambia de usuario.
+- El texto LOB se corta en 1.000.000 caracteres por celda. Esas columnas no se editan en la
+  grilla y el visor avisa cuando el valor llegó al tope.
+- Los archivos locales se restauran como borrador, sin ruta. Los archivos soltados tampoco
+  traen ruta: Guardar pide destino.
+- `@archivo` y SPOOL no tienen lista de carpetas permitidas.
+- El espacio de trabajo guarda texto SQL en la carpeta de configuración. Topes: 50 pestañas
+  y 2 MiB de texto.
+- PRINT reconoce valores OUT en asignaciones directas. IN OUT y OUT reales quedan sin
+  verificar.
+- La consola muestra hasta 500 filas por SELECT. Salida guarda hasta 10.000 líneas y la
+  consola hasta 2.000.
+- Orden y filtro se desactivan en modo edición.
+- Las rutas de `sql.rs` (bloque que falla, fechas, LOB) y EXEC, `@`, SPOOL y DESC solo tienen
+  pruebas con funciones puras o contextos falsos, sin base.
+- `App.test.tsx`, "cerrar una ventana SQL con transacción abierta...", sigue marcado como
+  inestable.
+
+### Verificaciones
+
+- Cada brief corrió sus controles. Última cifra registrada: TypeScript y 610 tests de
+  frontend en el brief 57. Los cinco controles completos se repiten en el brief 61.
+- Las columnas del diccionario que usan DESC y SHOW ERRORS se verificaron en desarrollo con
+  SELECT. Ninguna otra comprobación tocó una base.
+- No se abrió la app real durante la rama: foco, menús y fluidez solo tienen pruebas
+  automáticas.
+
+### Pruebas manuales pendientes
+
+Las hace el usuario. Ningún agente escribe ni compila en la base de desarrollo.
+
+1. Fluidez al editar un paquete grande (tipear, plegar, buscar).
+2. Menú contextual del editor (clic derecho, Shift+F10, tecla Menú) y foco del editor al
+   cambiar de pestaña, en la app real.
+3. Tamaño y posición de la ventana recordados al reabrir; Pegar desde el menú en Windows.
+4. Timeout de conexión contra un host inalcanzable, nunca contra la base de desarrollo.
+5. En una base de pruebas con escritura: DBMS_OUTPUT de un bloque que falla, fechas y
+   TIMESTAMP WITH TIME ZONE al ver y editar, y un CLOB grande.
+6. VARIABLE, PRINT y binds OUT e IN OUT reales.
+7. Arrastrar archivos a la ventana en Windows.
+8. Cerrar y restaurar pestañas con un perfil real.
+9. Recorrido visual: consola, grilla (rango, orden, filtro, visor), menús con Alt, foco de
+   diálogos y avisos de error.
+10. Confirmar si el test inestable de `App.test.tsx` falla en su máquina.
+
+### Siguiente tarea
+
+Brief 61: correr los cinco controles, revisar `git log main..feat/auditoria-ux` sin datos
+reales y reportar. Merge a `main` y push solo si el usuario lo pide.
+
 ## Siguiente paso
+
+Primero, el brief 61 de la auditoría UX y sus pruebas manuales (ver "Auditoría UX"). Después:
 
 1. Pruebas de lectura contra la base de desarrollo, solo `SELECT`: en `crates/openpl-oracle/tests/live.rs`,
    `conecta_y_lee_version` y `servicio_inexistente_da_unknown_service`; en
@@ -249,7 +340,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
 6. Confirmar si el test de `App.test.tsx` "cerrar una ventana SQL con transacción abierta pregunta qué
    hacer" falla de forma intermitente en su máquina.
 
-### Plan 2 — Primer incremento
+### Plan 2: Primer incremento
 
 - **Oracle:** `openpl-core/src/program.rs` lee `ALL_SOURCE` y `ALL_ERRORS` por esquema, nombre y tipo.
   `program_source` ejecuta la lectura en el hilo de la sesión. Se verificaron columnas y acceso de lectura
@@ -262,7 +353,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   [Comportamiento de la ventana](behavior/programa.md)
 - Queda pendiente el autocompletado de catálogo.
 
-### Plan 2 — Acciones de objeto desde el editor
+### Plan 2: Acciones de objeto desde el editor
 
 - **Clic derecho** y **Alt+Enter** reconocen nombres simples o calificados, incluidos identificadores
   entre comillas. El menú ofrece **Describir** tablas y vistas, **Ver fuente** de PL/SQL y copiar
@@ -277,7 +368,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
 - La prueba de interfaz usa un catálogo simulado y verifica que el clic derecho descrito muestra
   las columnas sin cambiar la sesión. El build de depuración de Windows incluye el menú.
 
-### Plan 2 — Comparación con Oracle
+### Plan 2: Comparación con Oracle
 
 - **Comparar con Oracle** (Alt+Shift+D) vuelve a consultar la fuente con la sesión original del
   programa. `ProgramComparison.tsx` muestra el borrador y el texto de Oracle con las diferencias
@@ -290,7 +381,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   desarrollo. De 1.096 filas con la primera línea de fuente, 1.094 tenían la marca visible. Queda
   pendiente la prueba de la comparación completa desde la aplicación nativa.
 
-### Plan 2 — Preparación de compilación
+### Plan 2: Preparación de compilación
 
 - **Reemplazada** en la tanda B1 a B13 por **Compilar** (F8). Lo que sigue es histórico.
 - **Preparar compilación** (F8) funciona en modo **Editar** sobre una fuente abierta desde Oracle.
@@ -303,7 +394,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
 - La ejecución de DDL y la actualización automática de diagnósticos tras compilar siguen fuera de
   este flujo.
 
-### Plan 2 — Estructura de los programas
+### Plan 2: Estructura de los programas
 
 - **Estructura** enumera las variables y constantes globales, los tipos, los cursores y las
   rutinas de un paquete. Las firmas distinguen sobrecargas y determinan qué entradas del Body
@@ -312,7 +403,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   es la navegación por el nivel de paquete y la cabecera de programas independientes. La prueba
   nativa de visualización del panel queda pendiente. [Comportamiento de la ventana](behavior/programa.md)
 
-### Plan 2 — Plegado PL/SQL
+### Plan 2: Plegado PL/SQL
 
 - **Plegar bloque** (Alt+Shift+P) y **Desplegar bloque** (Alt+Shift+A) están en **Ver** y se pueden
   usar con el cursor en la línea de apertura. El margen también permite plegar. La apertura y el
@@ -322,7 +413,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   rutinas anidadas, `DECLARE`, `BEGIN`, `IF`, `LOOP`, `CASE` y directivas `$IF` y `$END`.
   Las cabeceras se detectan para el primer programa del documento. [Comportamiento de la ventana](behavior/programa.md)
 
-### Plan 2 — Autocompletado
+### Plan 2: Autocompletado
 
 - **Completar** (Ctrl+Space o al escribir): palabras clave siempre; con conexión, objetos del
   esquema de trabajo y sinónimos públicos, objetos de `ESQUEMA.` y columnas tras `alias.`.
@@ -339,7 +430,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   función, trigger, tipo y vista (`app/src/newWindows.ts`).
 - El clic derecho fuera de campos de texto ya no abre el menú del navegador (WebView).
 
-### Plan 3 — Ventana SQL, incremento 1
+### Plan 3: Ventana SQL, incremento 1
 
 - [Plan 3](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md) y [nota de comportamiento](behavior/sql.md).
 - **Núcleo:** `crates/openpl-core/src/sql.rs` ejecuta una sentencia con binds tipados, entrega la primera
@@ -354,7 +445,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
 - **Sin verificar contra Oracle real:** la prueba `live` nueva (paginación, `DBMS_OUTPUT`, posición de
   error) espera credenciales `OPENPL_TEST_*`. Falta mirar la ventana en la app nativa.
 
-### Plan 3 — Ventana SQL, incremento 2 (edición en grilla)
+### Plan 3: Ventana SQL, incremento 2 (edición en grilla)
 
 - **Editar** (Ctrl E) reejecuta la consulta con el ROWID oculto (`app/src/sqlEdit.ts`); solo consultas
   sobre una tabla. Celdas editables con teclado, filas nuevas y borradas, Descartar, **Aplicar cambios**
@@ -367,7 +458,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   números con decimales, CLOB, `RETURNING ROWID` en inserciones y el aviso de producción.
 - **Siguiente:** ver "Siguiente paso" más abajo.
 
-### Plan 3 — Carga inicial y legibilidad de resultados
+### Plan 3: Carga inicial y legibilidad de resultados
 
 - `PAGE_SIZE` es 50. El núcleo comprueba si hay una fila adicional en el cursor y la conserva para
   la página siguiente. La grilla no solicita filas al desplazarse. **Traer todas** (Ctrl+Shift+End)
@@ -380,7 +471,7 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
   `DBMS_OUTPUT` incluso en consultas. Esa ruta no se usó contra una base en la verificación.
   [Auditoría de la grilla](../anti-slop/audit-002-2026-11-24.md)
 
-### Plan 4 — Firmas y sobrecargas
+### Plan 4: Firmas y sobrecargas
 
 - `crates/openpl-core/src/routine.rs` implementa T1 en solo lectura. `list_overloads` usa
   `ALL_PROCEDURES` para conservar rutinas sin argumentos y `ALL_ARGUMENTS` para detallar parámetros,
@@ -399,12 +490,12 @@ Las hace el usuario. Ningún agente compila ni escribe en la base de desarrollo.
 - [DESIGN.md](../DESIGN.md) es la dirección de diseño con sus motivos. Desde ahora toda interfaz
   nueva aplica antislop mientras se construye y cierra con su informe PASS/FAIL (`AGENTS.md`).
 
-### Plan 4 — Ventana de prueba (planificado)
+### Plan 4: Ventana de prueba (planificado)
 
 - [Plan 4](superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md) y
   [nota de comportamiento](behavior/prueba.md) escritos. Sin código todavía.
 
-### Plan 1 — [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
+### Plan 1: [docs/superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md](superpowers/plans/2026-11-23-openpl-01-base-y-explorador.md)
 
 | Área | Qué hace |
 |---|---|
@@ -509,21 +600,21 @@ producto; estas decisiones son posteriores y mandan sobre él:
 
 Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/superpowers/plans/`.
 
-### Plan 2 — Ventana de programa (implementado, pendiente de validar contra Oracle)
+### Plan 2: Ventana de programa (implementado, pendiente de validar contra Oracle)
 - Tareas de implementación terminadas. Falta la validación manual contra Oracle del [plan](superpowers/plans/2026-11-23-openpl-02-ventana-programa.md).
 - Validar manualmente la apertura de un paquete con y sin Body, la navegación a diagnósticos y el
   selector nativo en Windows y Linux. Las pruebas de la aplicación contra Oracle serán de solo lectura.
 
-### Plan 3 — Ventana SQL (en curso: solo validación contra Oracle)
+### Plan 3: Ventana SQL (en curso: solo validación contra Oracle)
 - Incrementos 1 y 2 hechos ([plan](superpowers/plans/2026-11-24-openpl-03-ventana-sql.md)). Falta la
   validación contra Oracle real: lectura corrida, con 2 de 4 OK en `live_catalog` y 2 fallos
   ORA-12704. La corrección de los binds de texto está pendiente de verificación. Las escrituras las prueba el usuario.
 
-### Plan 4 — Ventana de prueba (pendiente de calificación)
+### Plan 4: Ventana de prueba (pendiente de calificación)
 - [Plan de cierre](superpowers/plans/2026-11-24-openpl-04-cierre-v1.md) y [comportamiento](behavior/prueba.md).
 - Validar visualmente el flujo completo y comprobar resultados en Oracle en una sesión habilitada para pruebas manuales.
 
-### Plan 5 — Empaquetado
+### Plan 5: Empaquetado
 - Versión 1.0.0 y paquetes x64 MSI, NSIS, Debian y AppImage generados. [Calificación de la candidata](RELEASE-v1.md).
 - Pendiente: probar instalación y flujo de escritorio por plataforma. La firma y la publicación requieren preparar la distribución.
 
@@ -541,7 +632,8 @@ Cada plan se escribe antes de implementar, con el formato del plan 1, en `docs/s
 | Plan 2 (implementado, sin validar) | `docs/superpowers/plans/2026-11-23-openpl-02-ventana-programa.md` |
 | Plan 3 (en curso: validación) | `docs/superpowers/plans/2026-11-24-openpl-03-ventana-sql.md` |
 | Plan 4 (en curso) | `docs/superpowers/plans/2026-11-24-openpl-04-ventana-prueba.md` |
-| Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md`, `programa.md`, `sql.md`, `prueba.md` |
+| Auditoría UX (rama `feat/auditoria-ux`) | `docs/superpowers/plans/2026-11-25-openpl-auditoria-ux.md` |
+| Comportamiento observado | `docs/behavior/observaciones-referencia.md`, `conexion.md`, `explorador.md`, `programa.md`, `sql.md`, `comandos.md`, `prueba.md` |
 | Instrucciones para agentes | `AGENTS.md` |
 | Logo y guía | `design/logo/` |
 | Mockup (privado del dueño) | referencia privada |

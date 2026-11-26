@@ -23,7 +23,7 @@ RIESGOS
 13. **Tests y ejecución real.** `App.test.tsx` ("cerrar una ventana SQL con transacción abierta...") es inestable según ESTADO: reintentar una vez y anotarlo. EXEC, `@`, SPOOL y DESC no se ejecutan contra base; los tests usan un contexto falso. CONNECT queda fuera.
 14. **`dragDropEnabled: false`** anula el evento nativo de Tauri. Se usa DnD HTML5 con `File.text()`, que da nombre y contenido pero no ruta.
 
-**AGENTS.md sobre integrar.** La rama sale de `main` actualizado (`git pull`) y se llama `feat/&lt;tema&gt;`. Los commits son pequeños y en español. Al terminar, la feature queda en su rama. Merge a `main` y push solo si el usuario lo pide expresamente para esta entrega, sin reescribir historia. No hay regla de PR y no se trabaja en `main`. El brief 62 verifica, deja todo commiteado en la rama y reporta, sin merge, push ni PR.
+**AGENTS.md sobre integrar.** La rama sale de `main` actualizado (`git pull`) y se llama `feat/&lt;tema&gt;`. Los commits son pequeños y en español. Al terminar, la feature queda en su rama. Merge a `main` y push solo si el usuario lo pide expresamente para esta entrega, sin reescribir historia. No hay regla de PR y no se trabaja en `main`. El brief 61 verifica, deja todo commiteado en la rama y reporta, sin merge, push ni PR.
 
 PREÁMBULO (anteponer a cada brief)
 - Rama `feat/auditoria-ux`, nunca `main`.
