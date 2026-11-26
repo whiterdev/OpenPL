@@ -13,7 +13,8 @@
   TypeScript y 479 tests de frontend. El brief 14 agrega navegación por flechas y un solo
   punto de tabulación al explorador. El brief 15 separa los bloques PL/SQL sin barra
   y resuelve el cursor entre sentencias. El brief 16 interpreta los comandos SQL*Plus y
-  traduce `EXEC` a PL/SQL. TypeScript y 503 tests en verde. Sigue el brief 17.
+  traduce `EXEC` a PL/SQL. El brief 17 calcula la posición de errores Oracle.
+  TypeScript y 507 tests en verde. Sigue el brief 18.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
