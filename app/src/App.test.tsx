@@ -697,7 +697,7 @@ test("al recuperar el foco detecta una sesión SQL caída y permite reconectarla
   vi.mocked(api.listObjects).mockResolvedValue([]);
   vi.mocked(api.sqlOpen).mockResolvedValue("w2");
   vi.mocked(api.sessionSiblings).mockResolvedValueOnce(["w2"]);
-  vi.mocked(api.sessionPing).mockImplementation(async (id) => id !== "w2");
+  vi.mocked(api.sessionPing).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
   vi.mocked(api.reconnect).mockResolvedValue();
   render(<App />);
   await connectAs();
@@ -707,8 +707,10 @@ test("al recuperar el foco detecta una sesión SQL caída y permite reconectarla
   expect(await screen.findByText("Sesión caída")).toBeVisible();
   fireEvent.focus(window);
   expect(api.sessionPing).toHaveBeenCalledTimes(2);
-  fireEvent.keyDown(window, { key: "F8" });
-  expect(screen.getByRole("button", { name: "Reconectar sesión SQL" })).toHaveFocus();
+  await waitFor(() => {
+    fireEvent.keyDown(window, { key: "F8" });
+    expect(screen.getByRole("button", { name: "Reconectar sesión SQL" })).toHaveFocus();
+  });
   fireEvent.click(screen.getByRole("button", { name: "Reconectar sesión SQL" }));
   await waitFor(() => expect(screen.queryByText("Sesión caída")).toBeNull());
   expect(api.reconnect).toHaveBeenCalledExactlyOnceWith("w2");
