@@ -24,7 +24,8 @@
   por celda y marca las columnas. LONG llega materializado desde el driver.
   Quedan las verificaciones manuales contra Oracle. El brief 24 agrega los comandos IPC
   de lectura de scripts y escritura de SPOOL. Pasaron los cinco controles, con 552 tests
-  de frontend. Sigue el brief 25.
+  de frontend. El brief 25 implementa el estado SQL*Plus y los comandos SET, DEFINE,
+  UNDEFINE, VARIABLE y PRINT. TypeScript y 555 tests en verde. Sigue el brief 26.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
