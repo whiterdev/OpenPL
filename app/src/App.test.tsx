@@ -640,9 +640,8 @@ test.each(["cerrar", "desconectar"])("%s con transacción SQL abierta pide confi
   vi.mocked(api.sqlClose).mockResolvedValue();
   render(<App />);
   await connectAs();
-  await act(async () => {
-    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
   const editor = await screen.findByRole("textbox", { name: "SQL" });
   const view = EditorView.findFromDOM(
     editor.closest<HTMLElement>(".cm-editor")!,
