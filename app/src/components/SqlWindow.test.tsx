@@ -655,6 +655,21 @@ describe("edición en grilla", () => {
     expect(screen.getByText("Beto")).toBeInTheDocument();
   });
 
+  test("F8 conserva cambios pendientes si se cancela el descarte", async () => {
+    const { exec, ref } = await startEditing();
+    editCell(0, "NOMBRE", "Nuevo");
+    const calls = exec.mock.calls.length;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      await act(async () => ref.current!.execute!());
+      expect(confirm).toHaveBeenCalledWith("Hay 1 cambio sin aplicar. ¿Descartar?");
+      expect(exec).toHaveBeenCalledTimes(calls);
+      expect(screen.getByText("1 pendiente")).toBeVisible();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   test("borrar la selección completa prepara cambios sin aplicarlos", async () => {
     await startEditing();
     const apply = vi.spyOn(api, "sqlApply");

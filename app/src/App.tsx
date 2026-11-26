@@ -29,6 +29,7 @@ import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
 import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
 import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
 import type { ProgramActions } from "./components/ProgramWindow";
+import { pendingDiscardMessage } from "./gridEdits";
 import { Logo } from "./components/Logo";
 import { ContextMenu, type ContextItem } from "./components/ContextMenu";
 import { CommandPalette } from "./components/CommandPalette";
@@ -190,6 +191,7 @@ export default function App() {
   const dirtyPrograms = useRef(false);
   dirtyPrograms.current = programs.some((tab) => tab.dirty);
   const openTransactions = useRef(false);
+  const gridPending = useRef<Record<string, number>>({});
   openTransactions.current = programs.some((tab) => tab.sql?.transaction);
 
   const active = connections.find((c) => c.sessionId === activeId) ?? null;
@@ -353,6 +355,11 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     const listener = getCurrentWindow().onCloseRequested((event) => {
+      const pending = Object.values(gridPending.current).reduce((total, count) => total + count, 0);
+      if (pending && !window.confirm(pendingDiscardMessage(pending))) {
+        event.preventDefault();
+        return;
+      }
       if (
         dirtyPrograms.current &&
         !window.confirm("¿Descartar los cambios sin guardar?")
@@ -654,6 +661,7 @@ export default function App() {
   }
 
   function removeTab(tab: ProgramTab) {
+    delete gridPending.current[tab.id];
     if (tab.sql) void api.sqlClose(tab.sql.sessionId);
     setPrograms((all) => {
       const index = all.findIndex((item) => item.id === tab.id);
@@ -686,6 +694,9 @@ export default function App() {
   }
 
   function closeProgram(tab: ProgramTab) {
+    const pending = gridPending.current[tab.id] ??
+      (tab.id === programId && programActions.current?.hasPending?.() ? 1 : 0);
+    if (pending && !window.confirm(pendingDiscardMessage(pending))) return;
     if (tab.sql?.transaction) {
       setClosing(tab);
       return;
@@ -1141,6 +1152,7 @@ export default function App() {
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={dirtyHandler(tab.id)}
+                        onPendingChange={(count) => { gridPending.current[tab.id] = count; }}
                         onBusy={(busy) => setPrograms((all) => {
                           const current = all.find((item) => item.id === tab.id);
                           if (!current?.sql || !!current.sql.busy === busy) return all;

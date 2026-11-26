@@ -19,7 +19,7 @@ import { programStructure, type DeclarationKind, type ProgramDeclaration } from 
 import type { CompletionCatalog } from "../programCompletion";
 import { ContextMenu } from "./ContextMenu";
 
-export type ProgramActions = Partial<Record<CommandId, () => void>>;
+export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
 
 export interface ProgramCompiler {
   run: (sql: string) => Promise<unknown>;

@@ -830,6 +830,23 @@ test.each(["explorador", "consola"])("editar desde %s abre la grilla en edición
   if (entry === "consola") {
     fireEvent.click(screen.getByRole("button", { name: /^Comando \d+$/ }));
     expect(screen.getByRole("textbox", { name: "Comando SQL" })).toHaveFocus();
+  } else {
+    fireEvent.doubleClick(screen.getByRole("gridcell", { name: "ID 1" }));
+    const input = screen.getByRole("textbox", { name: "Editar ID" });
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("1 pendiente");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Cerrar HR.CLIENTES" }));
+      expect(confirm).toHaveBeenCalledWith("Hay 1 cambio sin aplicar. ¿Descartar?");
+      expect(screen.getByRole("button", { name: "HR.CLIENTES" })).toBeVisible();
+      const preventDefault = vi.fn();
+      windowEvents.close.mock.calls.slice(-1)[0]?.[0]({ preventDefault });
+      expect(preventDefault).toHaveBeenCalledOnce();
+    } finally {
+      confirm.mockRestore();
+    }
   }
 });
 

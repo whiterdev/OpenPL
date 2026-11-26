@@ -22,7 +22,7 @@ import {
   type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan, type CompletionObject,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
-import { appliedRows, buildChanges, emptyPending, pendingCount, type Cell, type Pending } from "../gridEdits";
+import { appliedRows, buildChanges, emptyPending, pendingCount, pendingDiscardMessage, type Cell, type Pending } from "../gridEdits";
 import { copyGridCells } from "../gridSelection";
 import { ResultGrid, type CellPosition, type RowStatus } from "./ResultGrid";
 import { splitScript, statementAt, type ScriptStatement } from "../sqlScript";
@@ -49,6 +49,7 @@ interface Props {
   environment?: Environment;
   onTransaction: (open: boolean) => void;
   onBusy?: (busy: boolean) => void;
+  onPendingChange?: (count: number) => void;
   onDirty: (dirty: boolean) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
@@ -121,7 +122,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export function SqlWindow({
-  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -185,6 +186,8 @@ export function SqlWindow({
   const lastQueryRef = useRef<{ sql: string; binds: BindValue[] } | null>(null);
   const [editSession, setEditSession] = useState<EditSession | null>(null);
   const [pending, setPending] = useState<Pending>(emptyPending);
+  const count = pendingCount(pending);
+  useEffect(() => { onPendingChange?.(count); }, [count, onPendingChange]);
   const [selected, setSelected] = useState<CellPosition | null>(null);
   const [conflicts, setConflicts] = useState<{ list: Conflict[]; rowsOf: number[] } | null>(null);
   const [applying, setApplying] = useState(false);
@@ -294,6 +297,7 @@ export function SqlWindow({
 
   async function run(list: ScriptStatement[], entered = false, exportQuery = false, io?: ConsoleIo) {
     if (running || applying || fetchingRef.current || !list.length) return;
+    if (count && !window.confirm(pendingDiscardMessage(count))) return;
     setAlert("");
     setNotice("");
     setTestResults([]);
@@ -731,6 +735,7 @@ export function SqlWindow({
   const busy = running || fetching || applying;
   useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
   const actions: ProgramActions = {
+    hasPending: () => count > 0,
     explainPlan: () => void explain(),
     execute: () => void run(targets().list),
     executeScript: () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
@@ -796,7 +801,6 @@ export function SqlWindow({
     const edit = pending.edits[row];
     return edit?.kind === "update" && col in edit.values;
   };
-  const count = pendingCount(pending);
   const rowCount = grid?.rows.length ?? 0;
   const footer = running ? null
     : grid && tab === "results"
