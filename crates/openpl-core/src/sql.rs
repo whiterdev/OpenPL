@@ -547,7 +547,7 @@ fn failed_outcome(
     }
 }
 
-/// Siguiente página del cursor abierto. Un cursor ya cerrado devuelve una página vacía.
+/// Siguiente página del cursor abierto. Un tamaño de cero libera ese cursor.
 pub fn fetch(cursor: u64, size: usize) -> Result<QueryPage, DbError> {
     CURSOR.with(|c| {
         let mut slot = c.borrow_mut();
@@ -557,6 +557,13 @@ pub fn fetch(cursor: u64, size: usize) -> Result<QueryPage, DbError> {
                 more: false,
             });
         };
+        if size == 0 {
+            *slot = None;
+            return Ok(QueryPage {
+                rows: Vec::new(),
+                more: false,
+            });
+        }
         let page = read_page(&mut open.rows, size, |row| row_cells(&row));
         if !matches!(&page, Ok(page) if page.more) {
             *slot = None;

@@ -295,6 +295,32 @@ export function SqlWindow({
     return false;
   }
 
+  async function consoleQuery(result: Extract<ExecOutcome["result"], { kind: "Query" }>) {
+    const limit = 500;
+    const rows = result.page.rows.slice(0, limit);
+    let cursorOpen = result.page.more;
+    let reportedMore = cursorOpen || result.page.rows.length > limit;
+    try {
+      while (cursorOpen && rows.length < limit && !stopFetchRef.current) {
+        const size = Math.min(100, limit - rows.length);
+        const page = await api.sqlFetch(sessionId, result.cursor, size);
+        rows.push(...page.rows.slice(0, size));
+        cursorOpen = page.more;
+        reportedMore = cursorOpen || page.rows.length > size;
+        if (!page.rows.length) break;
+      }
+    } finally {
+      if (cursorOpen) await api.sqlFetch(sessionId, result.cursor, 0);
+    }
+    formatTable(result.columns, rows, sqlplus.settings).forEach((line) => log("output", line));
+    const { feedback } = sqlplus.settings;
+    if (stopFetchRef.current) log("info", "Ejecución cancelada");
+    else if (reportedMore) log("info", `Se muestran ${rows.length} filas. Hay más.`);
+    else if (feedback === true || (typeof feedback === "number" && rows.length >= feedback)) {
+      log("info", feedbackLine(rows.length));
+    }
+  }
+
   async function run(list: ScriptStatement[], entered = false, exportQuery = false, io?: ConsoleIo) {
     if (running || applying || fetchingRef.current || !list.length) return;
     if (count && !window.confirm(pendingDiscardMessage(count))) return;
@@ -303,6 +329,7 @@ export function SqlWindow({
     setTestResults([]);
     setTestSelection({});
     setMarkers([]);
+    stopFetchRef.current = false;
     setRunning(true);
     let startedSql = false;
     let lastQuery = false;
@@ -442,16 +469,20 @@ export function SqlWindow({
         if (outcome.result.kind === "Query") {
           const { cursor: id, columns, page } = outcome.result;
           const result = { cursor: id, columns, rows: page.rows, more: page.more, elapsed: outcome.elapsed_ms, hiddenRowid: false };
-          setGrid(result);
-          if (exportQuery) await exportRows(result);
           setSummary(null);
           if (command) {
-            formatTable(columns, page.rows, sqlplus.settings).forEach((line) => log("output", line));
-            const { feedback } = sqlplus.settings;
-            if (!page.more && (feedback === true || (typeof feedback === "number" && page.rows.length >= feedback))) {
-              log("info", feedbackLine(page.rows.length));
+            try {
+              await consoleQuery(outcome.result);
+            } catch (error) {
+              const detail = describeError(error);
+              if (detail.code === CANCELLED) log("info", "Ejecución cancelada");
+              else formatConsoleError(detail.code, detail.message, locateError(sql, detail)).forEach((line) => log("error", line));
+              return false;
             }
-            if (page.more) log("info", `${page.rows.length} filas mostradas · ${formatKeys(commands.exportData.keys!)} para exportar todas`);
+            if (stopFetchRef.current) return false;
+          } else {
+            setGrid(result);
+            if (exportQuery) await exportRows(result);
           }
           lastQuery = true;
         } else if (outcome.result.kind === "Done") {
@@ -759,7 +790,7 @@ export function SqlWindow({
     fetchAllRows: !command && grid?.more && !busy ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
     cancel: running || fetching ? () => {
-      if (fetchingRef.current) stopFetchRef.current = true;
+      if (command || fetchingRef.current) stopFetchRef.current = true;
       void api.sqlCancel(sessionId);
     } : undefined,
     editData: !command && grid ? () => void toggleEdit() : undefined,

@@ -101,6 +101,20 @@ test("la consola no expone acciones del editor SQL", () => {
   }
 });
 
+test("la consola muestra hasta 500 filas, avisa si hay más y libera el cursor", async () => {
+  const rows = (count: number) => Array.from({ length: count }, (_, index) => [String(index + 1), "Ana"]);
+  vi.spyOn(api, "sqlExecute").mockResolvedValue(query(rows(50), true));
+  const fetch = vi.spyOn(api, "sqlFetch").mockImplementation(async (_session, _cursor, size) =>
+    ({ rows: rows(size ?? 50), more: size !== 0 }));
+  setup("", { command: true });
+  const prompt = screen.getByRole("textbox", { name: "Comando SQL" });
+  fireEvent.change(prompt, { target: { value: "SELECT 1 FROM DUAL;" } });
+  await act(async () => { fireEvent.submit(prompt.closest("form")!); });
+  expect(await screen.findByText("Se muestran 500 filas. Hay más.")).toBeVisible();
+  expect(fetch).toHaveBeenLastCalledWith("w1", 1, 0);
+  expect(fetch.mock.calls.reduce((sum, [, , size]) => sum + (size ?? 50), 0)).toBe(450);
+});
+
 test("el prompt crece con el contenido dentro de la transcripción", () => {
   setup("", { command: true });
   const prompt = screen.getByLabelText("Comando SQL");
