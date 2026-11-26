@@ -65,6 +65,8 @@ pub fn run() {
             commands::program_source,
             commands::open_program_file,
             commands::save_program_file,
+            commands::read_script_file,
+            commands::write_spool_file,
             commands::recompile,
         ])
         .run(tauri::generate_context!())

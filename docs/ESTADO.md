@@ -22,7 +22,9 @@
   El brief 22 usa fechas ISO en binds, grilla y comparación de ediciones. Pasaron los
   controles de Rust. El brief 23 limita a un millón de caracteres el texto LOB retenido
   por celda y marca las columnas. LONG llega materializado desde el driver.
-  Pasaron los cinco controles. Quedan las verificaciones manuales contra Oracle. Sigue el brief 24.
+  Quedan las verificaciones manuales contra Oracle. El brief 24 agrega los comandos IPC
+  de lectura de scripts y escritura de SPOOL. Pasaron los cinco controles, con 552 tests
+  de frontend. Sigue el brief 25.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

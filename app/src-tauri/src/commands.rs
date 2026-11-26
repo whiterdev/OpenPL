@@ -564,6 +564,101 @@ fn replace_program_file(path: &std::path::Path, source: &str) -> std::io::Result
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct ScriptFile {
+    name: String,
+    path: String,
+    source: String,
+}
+
+fn sqlplus_path(
+    input: &str,
+    documents: Option<&std::path::Path>,
+    extension: &str,
+) -> Result<std::path::PathBuf, CoreError> {
+    use std::path::Path;
+
+    let path = Path::new(input.trim());
+    if path.file_name().is_none() {
+        return Err(CoreError::Io("Indica un nombre de archivo.".into()));
+    }
+    let mut resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        documents
+            .ok_or_else(|| CoreError::Io("No se encontró la carpeta Documentos.".into()))?
+            .join(path)
+    };
+    if resolved.extension().is_none() {
+        resolved.set_extension(extension);
+    }
+    Ok(resolved)
+}
+
+fn read_script_file_impl(
+    input: &str,
+    documents: Option<&std::path::Path>,
+) -> Result<ScriptFile, CoreError> {
+    use std::io::Read;
+
+    const LIMIT: u64 = 2 * 1024 * 1024;
+    let path = sqlplus_path(input, documents, "sql")?;
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| CoreError::Io(format!("No se pudo abrir el script: {error}")))?;
+    if !metadata.is_file() {
+        return Err(CoreError::Io("Selecciona un archivo de script.".into()));
+    }
+    if metadata.len() > LIMIT {
+        return Err(CoreError::Io("El script supera 2 MiB.".into()));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)?
+        .take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| CoreError::Io(format!("No se pudo leer el script: {error}")))?;
+    if bytes.len() as u64 > LIMIT {
+        return Err(CoreError::Io("El script supera 2 MiB.".into()));
+    }
+    Ok(ScriptFile {
+        name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        path: path.to_string_lossy().into_owned(),
+        source: String::from_utf8_lossy(&bytes).into_owned(),
+    })
+}
+
+fn write_spool_file_impl(
+    input: &str,
+    text: &str,
+    documents: Option<&std::path::Path>,
+) -> Result<String, CoreError> {
+    let path = sqlplus_path(input, documents, "lst")?;
+    let extension = path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "lst" | "log" | "txt" | "csv" | "sql") {
+        return Err(CoreError::Io("Extensión de salida inválida.".into()));
+    }
+    replace_program_file(&path, text)
+        .map_err(|error| CoreError::Io(format!("No se pudo guardar la salida: {error}")))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn read_script_file(path: String) -> Result<ScriptFile, CoreError> {
+    read_script_file_impl(&path, dirs::document_dir().as_deref())
+}
+
+#[tauri::command]
+pub async fn write_spool_file(path: String, text: String) -> Result<String, CoreError> {
+    write_spool_file_impl(&path, &text, dirs::document_dir().as_deref())
+}
+
 #[tauri::command]
 pub async fn recompile(
     st: St<'_>,
@@ -581,6 +676,34 @@ pub async fn recompile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archivos_sqlplus_extensiones_tope_y_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        std::fs::write(base.join("demo.sql"), b"SELECT \xff").unwrap();
+        let script = read_script_file_impl("demo", Some(base)).unwrap();
+        assert_eq!(script.name, "demo.sql");
+        assert_eq!(script.path, base.join("demo.sql").to_string_lossy());
+        assert_eq!(script.source, "SELECT �");
+        let path = write_spool_file_impl("salida", "primera", Some(base)).unwrap();
+        assert_eq!(path, base.join("salida.lst").to_string_lossy());
+        write_spool_file_impl("salida.lst", "segunda", Some(base)).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "segunda");
+        assert!(write_spool_file_impl("salida.exe", "x", Some(base))
+            .unwrap_err()
+            .to_string()
+            .contains("Extensión"));
+        std::fs::File::create(base.join("enorme.sql"))
+            .unwrap()
+            .set_len(2 * 1024 * 1024 + 1)
+            .unwrap();
+        assert!(read_script_file_impl("enorme.sql", Some(base))
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("2 MiB"));
+    }
     use openpl_core::session::fake::FakeConnector;
     use openpl_core::session::SessionManager;
     use openpl_core::{Environment, MemoryStore, ProfileStore};

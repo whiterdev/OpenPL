@@ -147,6 +147,10 @@ export const api = {
     invoke<{ name: string; source: string } | null>("open_program_file"),
   saveProgramFile: (source: string, extension: string, name: string | null) =>
     invoke<string | null>("save_program_file", { source, extension, name }),
+  readScriptFile: (path: string) =>
+    invoke<{ name: string; path: string; source: string }>("read_script_file", { path }),
+  writeSpoolFile: (path: string, text: string) =>
+    invoke<string>("write_spool_file", { path, text }),
   recompile: (
     sessionId: string,
     objectType: ObjectType,
