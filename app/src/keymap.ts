@@ -56,7 +56,8 @@ export type CommandId =
   | "moveTabLeft"
   | "moveTabRight"
   | "clearConsole"
-  | "viewCell";
+  | "viewCell"
+  | "checkUpdates";
 
 export interface Command {
   id: CommandId;
@@ -145,6 +146,7 @@ const list: Command[] = [
   },
   { id: "clearConsole", label: "Limpiar consola", keys: "Ctrl+L" },
   { id: "viewCell", label: "Ver celda", keys: "Shift+Space" },
+  { id: "checkUpdates", label: "Buscar actualizaciones" },
 ];
 
 export const commands = Object.fromEntries(

@@ -32,6 +32,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::client_info,
@@ -86,5 +88,63 @@ mod tests {
         let window = &conf["app"]["windows"][0];
         assert_eq!(window["maximized"], true);
         assert_eq!(window["center"], true);
+    }
+
+    #[test]
+    fn el_updater_apunta_al_release_fijo() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["bundle"]["createUpdaterArtifacts"], true);
+        let updater = &conf["plugins"]["updater"];
+        assert_eq!(
+            updater["endpoints"],
+            serde_json::json!([
+                "https://github.com/whiterdev/OpenPL/releases/download/updater/latest.json"
+            ])
+        );
+        let pubkey = updater["pubkey"].as_str().unwrap_or_default();
+        assert!(!pubkey.trim().is_empty(), "falta la pubkey del updater");
+    }
+
+    fn es_semver(version: &str) -> bool {
+        let (nucleo, pre) = match version.split_once('-') {
+            Some((nucleo, pre)) => (nucleo, Some(pre)),
+            None => (version, None),
+        };
+        let partes: Vec<&str> = nucleo.split('.').collect();
+        let nucleo_ok = partes.len() == 3
+            && partes.iter().all(|p| {
+                !p.is_empty()
+                    && p.chars().all(|c| c.is_ascii_digit())
+                    && (*p == "0" || !p.starts_with('0'))
+            });
+        let pre_ok = pre.is_none_or(|pre| {
+            pre.split('.').all(|id| {
+                !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            })
+        });
+        nucleo_ok && pre_ok
+    }
+
+    #[test]
+    fn la_version_es_la_misma_en_todos_lados() {
+        let cargo = env!("CARGO_PKG_VERSION");
+        let tauri: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let npm: serde_json::Value =
+            serde_json::from_str(include_str!("../../package.json")).unwrap();
+        assert!(es_semver(cargo), "la versión {cargo} no es semver");
+        assert_eq!(tauri["version"], cargo, "tauri.conf.json");
+        assert_eq!(npm["version"], cargo, "package.json");
+    }
+
+    #[test]
+    fn es_semver_acepta_pre_release_y_rechaza_formas_rotas() {
+        assert!(es_semver("1.0.0"));
+        assert!(es_semver("1.0.0-beta.5"));
+        assert!(!es_semver("1.0"));
+        assert!(!es_semver("1.0.0-"));
+        assert!(!es_semver("01.0.0"));
+        assert!(!es_semver("1.0.0-beta..5"));
     }
 }

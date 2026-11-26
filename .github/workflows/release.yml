@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # actions/checkout no trae el objeto del tag anotado; sin él no hay mensaje del tag.
+      - name: Traer el tag anotado
+        shell: bash
+        run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+      - name: La versión coincide
+        shell: pwsh
+        run: |
+          $conf = Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($tagVersion -ne $conf.version) {
+            Write-Error "El tag $env:GITHUB_REF_NAME no coincide con la versión $($conf.version) de tauri.conf.json"
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($conf.plugins.updater.pubkey)) {
+            Write-Error "plugins.updater.pubkey está vacía en tauri.conf.json"
+            exit 1
+          }
+
+      - name: Título y notas
+        id: notas
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-beta\.([0-9]+)$ ]]; then
+            titulo="OpenPL ${BASH_REMATCH[1]} Beta ${BASH_REMATCH[2]}"
+          else
+            titulo="OpenPL $version"
+          fi
+          if [ "$(git cat-file -t "refs/tags/$tag")" = "tag" ]; then
+            mensaje="$(git tag -l --format='%(contents)' "$tag")"
+          else
+            mensaje=""
+          fi
+          corto="$(git rev-parse --short HEAD)"
+          delim="NOTAS_$(date +%s%N)"
+          {
+            echo "titulo=$titulo"
+            echo "cuerpo<<$delim"
+            if [ -n "$mensaje" ]; then
+              printf '%s\n\n' "$mensaje"
+            fi
+            echo "Compilada desde $corto."
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Compilar no necesita Instant Client: ODPI-C lo carga al ejecutar.
+      - name: Tests Rust (las pruebas live hacen SKIP)
+        run: cargo test --workspace
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Tests frontend
+        working-directory: app
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run
+
+      - name: Compilar y publicar
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ steps.notas.outputs.titulo }}
+          releaseBody: ${{ steps.notas.outputs.cuerpo }}
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --bundles nsis
+
+      - name: Publicar latest.json en el release updater
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          mkdir -p updater-json
+          gh release download "$tag" -p latest.json -D updater-json --clobber
+          if ! gh release view updater > /dev/null 2>&1; then
+            gh release create updater --prerelease --latest=false \
+              --target "$GITHUB_SHA" \
+              --title "Updater (no descargar)" \
+              --notes "Archivo de actualización automática. No descargar."
+          fi
+          gh release upload updater updater-json/latest.json --clobber
+          # El release updater nunca queda como latest.
+          gh release edit updater --prerelease --latest=false

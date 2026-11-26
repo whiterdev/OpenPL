@@ -40,6 +40,8 @@ import { routineDraft, type RoutineOverload } from "./routineTest";
 import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
+import { UpdateDialog } from "./components/UpdateDialog";
+import { runCheck, tauriUpdater, type AvailableUpdate } from "./updater";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
 import { activeTheme } from "./themes";
 import { completionCatalog } from "./useCompletionCatalog";
@@ -214,6 +216,8 @@ export default function App() {
   const latestWorkspace = useRef({ programs, connections });
   latestWorkspace.current = { programs, connections };
   const saveBeforeClose = useRef<() => boolean>(() => false);
+  const [updateOffer, setUpdateOffer] = useState<AvailableUpdate | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<number | null | undefined>(undefined);
   // Un catálogo estable por sesión de ventana SQL: completado contra su propia sesión.
   const sqlCatalogs = useRef(new Map<string, CompletionCatalog>());
   const sqlCatalog = (sessionId: string) => {
@@ -337,6 +341,7 @@ export default function App() {
     reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
     palette: () => setShowPalette(true),
+    checkUpdates: () => void checkUpdates(false),
   };
 
   useLayoutEffect(() => {
@@ -344,7 +349,7 @@ export default function App() {
       if (e.defaultPrevented) return;
       // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.
       if (matches(e, commands.copyGrid.keys!)) return;
-      if (showLogin || showTheme || showPalette || inspection || draft) {
+      if (showLogin || showTheme || showPalette || inspection || draft || updateOffer) {
         if (isWebviewKey(e)) e.preventDefault();
         return;
       }
@@ -391,28 +396,20 @@ export default function App() {
     };
   }, []);
 
+  /** Confirmaciones antes de salir de la app: cerrar la ventana o instalar una actualización. */
+  function confirmExit(): boolean {
+    const pending = Object.values(gridPending.current).reduce((total, count) => total + count, 0);
+    if (pending && !window.confirm(pendingDiscardMessage(pending))) return false;
+    if (dirtyPrograms.current && !window.confirm("¿Descartar los cambios sin guardar?")) return false;
+    // Al cerrar la conexión, Oracle descarta la transacción pendiente.
+    return !openTransactions.current ||
+      window.confirm("Hay transacciones abiertas en ventanas SQL. ¿Salir con rollback?");
+  }
+
   useEffect(() => {
     if (!isTauri()) return;
     const listener = getCurrentWindow().onCloseRequested((event) => {
-      const pending = Object.values(gridPending.current).reduce((total, count) => total + count, 0);
-      if (pending && !window.confirm(pendingDiscardMessage(pending))) {
-        event.preventDefault();
-        return;
-      }
-      if (
-        dirtyPrograms.current &&
-        !window.confirm("¿Descartar los cambios sin guardar?")
-      ) {
-        event.preventDefault();
-        return;
-      }
-      // Al cerrar la conexión, Oracle descarta la transacción pendiente.
-      if (
-        openTransactions.current &&
-        !window.confirm(
-          "Hay transacciones abiertas en ventanas SQL. ¿Salir con rollback?",
-        )
-      ) {
+      if (!confirmExit()) {
         event.preventDefault();
         return;
       }
@@ -564,6 +561,33 @@ export default function App() {
       .catch((error) => showNotice(describeError(error).message, "error"));
     return true;
   };
+
+  async function checkUpdates(silent: boolean) {
+    const result = await runCheck(tauriUpdater, silent);
+    if (result.kind === "available") setUpdateOffer(result.update);
+    else if (result.kind === "upToDate" && !silent) showNotice("Estás al día");
+    else if (result.kind === "error") showNotice(result.message, "error");
+  }
+  const updateChecked = useRef(false);
+  useEffect(() => {
+    if (updateChecked.current) return;
+    updateChecked.current = true;
+    void checkUpdates(true);
+  }, []);
+
+  async function installUpdate(update: AvailableUpdate) {
+    if (!confirmExit()) return;
+    clearTimeout(workspaceTimer.current);
+    setUpdateProgress(null);
+    try {
+      await persistWorkspaces();
+      await update.install(setUpdateProgress);
+    } catch (error) {
+      setUpdateOffer(null);
+      setUpdateProgress(undefined);
+      showNotice(describeError(error).message, "error");
+    }
+  }
 
   async function offerWorkspace(connection: ActiveConnection) {
     const id = connection.profileId;
@@ -1085,6 +1109,7 @@ export default function App() {
       ],
     },
     { label: "Herramientas", items: [run("test"), run("editData")] },
+    { label: "Ayuda", items: [run("checkUpdates")] },
   ];
 
   if (!client)
@@ -1514,6 +1539,14 @@ export default function App() {
             setShowTheme(false);
             setThemeMode(activeTheme().mode);
           }}
+        />
+      )}
+      {updateOffer && (
+        <UpdateDialog
+          update={updateOffer}
+          progress={updateProgress}
+          onInstall={() => void installUpdate(updateOffer)}
+          onLater={() => setUpdateOffer(null)}
         />
       )}
       {inspection && <ObjectInspector {...inspection} onClose={() => setInspection(null)} />}

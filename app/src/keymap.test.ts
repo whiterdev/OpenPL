@@ -152,6 +152,12 @@ describe("keymap", () => {
     expect(run).toHaveBeenCalled();
   });
 
+  test("Buscar actualizaciones existe sin atajo", () => {
+    expect(commands.checkUpdates.label).toBe("Buscar actualizaciones");
+    expect(commands.checkUpdates.keys).toBeUndefined();
+    expect(commands.checkUpdates.alt).toBeUndefined();
+  });
+
   test("ningún atajo está repetido, alias incluidos", () => {
     const keys = Object.values(commands)
       .flatMap((c) => [c.keys, ...(c.alt ?? [])])

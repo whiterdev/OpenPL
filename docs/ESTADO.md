@@ -555,6 +555,19 @@ producto; estas decisiones son posteriores y mandan sobre él:
    de AG Grid: sin dependencia nueva y con el estilo del tema. Se revisa en el incremento 2 si la
    edición lo exige.
 10. Variables `:x` y `&x` en un panel al costado del editor (mockup v2), no en un diálogo previo.
+11. **Versión y actualizador (WAL-114, en curso):** una sola versión semver, hoy `1.0.0-beta.5`,
+    en `Cargo.toml`, `app/package.json`, `app/package-lock.json` y `tauri.conf.json`; el test
+    `la_version_es_la_misma_en_todos_lados` (`app/src-tauri/src/lib.rs`) falla si no coinciden.
+    La regla 9 de AGENTS.md admite, además de la base, el chequeo de actualizaciones: lee
+    `latest.json` de GitHub, sin datos del usuario.
+    Publicación: `.github/workflows/release.yml` corre al subir un tag `v*`. Comprueba que el tag
+    coincida con la versión de `tauri.conf.json` y que haya `pubkey`, corre los tests, compila el
+    instalador NSIS firmado (secrets `TAURI_SIGNING_PRIVATE_KEY*`), publica el release (pre-release
+    si el tag tiene sufijo; título "OpenPL 1.0.0 Beta N"; cuerpo = mensaje del tag anotado más
+    "Compilada desde <hash>.") y sube `latest.json` con `--clobber` al release fijo `updater`, que
+    nunca queda como latest. Pasos en [RELEASE-v1.md](RELEASE-v1.md#publicar). Paso manual: la
+    beta.5 se instala a mano con el `*-setup.exe`; el `.exe` suelto de betas anteriores no se
+    actualiza solo. El workflow todavía no se corrió en GitHub.
 
 ## Pendiente inmediato
 

@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { beforeAll, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 import { startCompletion } from "@codemirror/autocomplete";
 import { Profiler } from "react";
@@ -74,6 +74,16 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested: windowEvents.close }),
 }));
+
+const updater = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("./updater", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./updater")>()),
+  tauriUpdater: updater,
+}));
+beforeEach(() => {
+  updater.check.mockReset();
+  updater.check.mockResolvedValue(null);
+});
 
 vi.mock("./api", () => ({
   api: {
@@ -446,9 +456,11 @@ test("sin conexión ofrece conectar o abrir un programa, y lo pendiente se marca
     await screen.findByRole("textbox", { name: "Fuente" }),
   ).toBeInTheDocument();
 
+  fireEvent.click(screen.getByRole("button", { name: "Ayuda" }));
   expect(
-    screen.queryByRole("button", { name: "Ayuda" }),
-  ).not.toBeInTheDocument();
+    within(screen.getByRole("menu", { name: "Ayuda" })).getByRole("menuitem", { name: "Buscar actualizaciones" }),
+  ).toBeEnabled();
+  fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.getByRole("button", { name: /^Commit/ })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
   const menu = within(screen.getByRole("menu", { name: "Nuevo" }));
@@ -1037,4 +1049,135 @@ test("el botón Sol/Luna alterna entre tema oscuro y claro", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Tema oscuro" }));
   expect(document.documentElement.dataset.theme).toBe("grafito");
   localStorage.clear();
+});
+
+function availableUpdate(install = vi.fn(async (_progress?: (pct: number | null) => void) => {})) {
+  return { version: "1.0.0", notes: "Arreglos varios", install };
+}
+
+async function checkUpdatesFromMenu() {
+  fireEvent.click(screen.getByRole("button", { name: "Ayuda" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Buscar actualizaciones" }));
+  });
+}
+
+test("al abrir busca actualizaciones una vez y sin versión no muestra nada", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  await waitFor(() => expect(updater.check).toHaveBeenCalledOnce());
+  await act(async () => {});
+  expect(screen.queryByRole("dialog", { name: /^OpenPL/ })).not.toBeInTheDocument();
+  expect(screen.queryByText("Estás al día")).not.toBeInTheDocument();
+});
+
+test("un error en la búsqueda silenciosa no muestra aviso", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockRejectedValue(new Error("sin red"));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  await waitFor(() => expect(updater.check).toHaveBeenCalledOnce());
+  await act(async () => {});
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("con una versión nueva muestra el diálogo con versión y notas", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockResolvedValue(availableUpdate());
+  render(<App />);
+  const dialog = within(await screen.findByRole("dialog", { name: "OpenPL 1.0.0" }));
+  expect(dialog.getByText("Arreglos varios")).toBeVisible();
+  fireEvent.click(dialog.getByRole("button", { name: "Más tarde" }));
+  expect(screen.queryByRole("dialog", { name: "OpenPL 1.0.0" })).not.toBeInTheDocument();
+});
+
+test("Actualizar con cambios sin guardar y confirmación cancelada no instala", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue({ name: "demo.pks", source: "PACKAGE demo AS\nEND;" });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  try {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+    fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+    const editor = await screen.findByRole("textbox", { name: "Spec" });
+    const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: "\n-- cambio" } }));
+    await screen.findByRole("button", { name: /demo\.pks \*/ });
+
+    const update = availableUpdate();
+    updater.check.mockResolvedValue(update);
+    await checkUpdatesFromMenu();
+    const dialog = within(await screen.findByRole("dialog", { name: "OpenPL 1.0.0" }));
+    await act(async () => { fireEvent.click(dialog.getByRole("button", { name: "Actualizar" })); });
+    expect(confirm).toHaveBeenCalledWith("¿Descartar los cambios sin guardar?");
+    expect(update.install).not.toHaveBeenCalled();
+  } finally {
+    confirm.mockRestore();
+  }
+});
+
+test("Actualizar guarda las pestañas y después instala", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listProfiles).mockResolvedValueOnce([{
+    id: "22222222-2222-2222-2222-222222222222", name: "HR en DEV", user: "HR",
+    db: "db.example.com:1521/DEV", role: "Normal", environment: "dev", save_password: false,
+  }]);
+  vi.mocked(api.loadWorkspace).mockResolvedValueOnce(null);
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.connect).mockResolvedValueOnce({ session_id: "s1", server_version: "12.1.0", compat: { kind: "Supported" } });
+  let release = () => {};
+  const saved = new Promise<void>((resolve) => { release = resolve; });
+  vi.mocked(api.saveWorkspace).mockClear();
+  vi.mocked(api.saveWorkspace).mockImplementation(() => saved);
+  try {
+    render(<App />);
+    const login = within(await screen.findByRole("dialog", { name: "Conectar a Oracle" }));
+    fireEvent.click(await login.findByRole("button", { name: /^HR en DEV/ }));
+    fireEvent.click(login.getByRole("button", { name: "Conectar" }));
+    await waitFor(() => expect(api.loadWorkspace).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
+    await screen.findByRole("textbox", { name: "SQL" });
+
+    const update = availableUpdate(vi.fn(async (progress?: (pct: number | null) => void) => { progress?.(42); }));
+    updater.check.mockResolvedValue(update);
+    await checkUpdatesFromMenu();
+    const dialog = within(await screen.findByRole("dialog", { name: "OpenPL 1.0.0" }));
+    await act(async () => { fireEvent.click(dialog.getByRole("button", { name: "Actualizar" })); });
+    await waitFor(() => expect(api.saveWorkspace).toHaveBeenCalled());
+    expect(update.install).not.toHaveBeenCalled();
+    expect(dialog.getByRole("button", { name: "Actualizar" })).toBeDisabled();
+    await act(async () => { release(); });
+    await waitFor(() => expect(update.install).toHaveBeenCalledOnce());
+    expect(await dialog.findByText("Descargando 42%")).toBeVisible();
+  } finally {
+    vi.mocked(api.saveWorkspace).mockImplementation(async () => {});
+  }
+});
+
+test("si la instalación falla muestra el error y cierra el diálogo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const update = availableUpdate(vi.fn(async () => { throw new Error("firma inválida"); }));
+  updater.check.mockResolvedValue(update);
+  render(<App />);
+  const dialog = await screen.findByRole("dialog", { name: "OpenPL 1.0.0" });
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("button", { name: "Actualizar" }));
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent("firma inválida");
+  expect(dialog).not.toBeInTheDocument();
+});
+
+test("Ayuda > Buscar actualizaciones avisa si está al día o si falla", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  await waitFor(() => expect(updater.check).toHaveBeenCalledOnce());
+  await checkUpdatesFromMenu();
+  expect(await screen.findByRole("status")).toHaveTextContent("Estás al día");
+  updater.check.mockRejectedValue(new Error("sin red"));
+  await checkUpdatesFromMenu();
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo buscar actualizaciones");
 });
