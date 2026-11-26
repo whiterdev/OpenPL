@@ -43,7 +43,9 @@
   El brief 39 encola comandos ingresados durante la ejecución y muestra segundos
   transcurridos. El brief 40 admite pegado multilínea y preguntas de sustitución.
   El brief 41 usa Ctrl+C para copiar o cancelar, Ctrl+L para limpiar y conserva
-  Ctrl+A nativo en el prompt. TypeScript y 593 tests en verde. Sigue el brief 42.
+  Ctrl+A nativo en el prompt. El brief 42 publica salida por lotes, ubica errores
+  y deshabilita Commit y Rollback durante operaciones SQL. TypeScript y 594 tests
+  en verde. Sigue el brief 43.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

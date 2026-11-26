@@ -385,6 +385,8 @@ test("un error marca la posición, va a Salida y detiene el script", async () =>
   expect(exec).toHaveBeenCalledTimes(1);
   const output = screen.getByRole("tabpanel", { name: "Salida" });
   expect(within(output).getByText("ORA-00942: la tabla o vista no existe")).toBeInTheDocument();
+  expect(within(output).getByText("Línea 1, columna 15")).toBeInTheDocument();
+  expect(view.state.selection.main.head).toBe(14);
   await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).not.toBeNull());
 });
 
@@ -397,7 +399,7 @@ test("conserva DBMS_OUTPUT y la transacción de un bloque fallido", async () => 
   await act(async () => ref.current!.executeScript!());
   const output = within(screen.getByRole("tabpanel", { name: "Salida" }));
   expect(output.getByText("Antes del error")).toBeVisible();
-  expect(output.getByText("ORA-20000 Error de prueba")).toBeVisible();
+  expect(output.getByText("ORA-20000: Error de prueba")).toBeVisible();
   expect(onTransaction).toHaveBeenLastCalledWith(true);
   expect(exec).toHaveBeenCalledTimes(1);
 });

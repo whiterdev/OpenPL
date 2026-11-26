@@ -1,5 +1,7 @@
 import { CommandConsole, type OutputLine } from "./CommandConsole";
-import { useCallback, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { locateError, formatConsoleError } from "../sqlError";
+import { useLineBuffer } from "../useLineBuffer";
 import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } from "@phosphor-icons/react";
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
@@ -40,6 +42,7 @@ interface Props {
   editOnOpen?: boolean;
   environment?: Environment;
   onTransaction: (open: boolean) => void;
+  onBusy?: (busy: boolean) => void;
   onDirty: (dirty: boolean) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
@@ -82,7 +85,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 };
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export function SqlWindow({
-  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onDirty, completion, ref,
+  sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onDirty, completion, ref,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -104,7 +107,11 @@ export function SqlWindow({
   ];
   const [grid, setGrid] = useState<Grid | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
-  const [output, setOutput] = useState<OutputLine[]>([]);
+  const { lines, omitted: omittedLines, append, flush: flushOutput, clear: clearOutput } =
+    useLineBuffer<OutputLine>(command ? 2000 : 10000);
+  const output = useMemo(() => omittedLines
+    ? [{ id: 0, kind: "info" as const, text: `… ${omittedLines} líneas anteriores omitidas` }, ...lines]
+    : lines, [lines, omittedLines]);
   const commandOptions = useRef({ echo: true, serverOutput: true });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
@@ -152,8 +159,8 @@ export function SqlWindow({
   }
 
   const log = useCallback((kind: OutputLine["kind"], text: string) => {
-    setOutput((lines) => [...lines, { id: ++lineId.current, kind, text }]);
-  }, []);
+    append({ id: ++lineId.current, kind, text });
+  }, [append]);
 
   function targets(): { list: ScriptStatement[]; script: boolean } {
     const editor = view.current;
@@ -201,7 +208,7 @@ export function SqlWindow({
       case "REMARK":
         return;
       case "CLEAR":
-        if (syntax === "SCREEN") { setOutput([]); return; }
+        if (syntax === "SCREEN") { clearOutput(); return; }
         break;
       case "SET":
         if (/^(ECHO|SERVEROUTPUT) (ON|OFF)$/.test(syntax)) {
@@ -273,10 +280,18 @@ export function SqlWindow({
           if (detail.code === CANCELLED) {
             log("info", "Ejecución cancelada");
           } else {
-            log("error", detail.message.startsWith(detail.code ?? "\u0000") || !detail.code
-              ? detail.message : `${detail.code} ${detail.message}`);
-            const at = statement.from + (detail.offset ?? 0);
-            setMarkers([{ from: at, to: at + 1, message: detail.message }]);
+            const location = locateError(sql, detail);
+            formatConsoleError(detail.code, detail.message, location).forEach((line) => log("error", line));
+            const editor = view.current;
+            if (location && editor && sql === statement.text &&
+                editor.state.sliceDoc(statement.from, statement.to) === statement.text) {
+              const lines = sql.split("\n");
+              const beforeLine = lines.slice(0, location.line - 1).reduce((sum, line) => sum + line.length + 1, 0);
+              const column = Array.from(location.snippet).slice(0, location.column - 1).join("").length;
+              const at = statement.from + beforeLine + column;
+              setMarkers([{ from: at, to: Math.min(at + 1, editor.state.doc.length), message: detail.message }]);
+              editor.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at) });
+            }
           }
           setTab("output");
           return;
@@ -309,6 +324,7 @@ export function SqlWindow({
       }
       setTab(command ? "output" : lastQuery ? "results" : declaredOutputs?.length ? "variables" : "output");
     } finally {
+      flushOutput();
       setRunning(false);
     }
   }
@@ -372,7 +388,7 @@ export function SqlWindow({
   }
 
   async function transaction(action: "commit" | "rollback") {
-    if (fetchingRef.current) return;
+    if (running || applying || fetchingRef.current) return;
     try {
       const open = action === "commit" ? await api.sqlCommit(sessionId) : await api.sqlRollback(sessionId);
       if (action === "rollback") setGrid((current) => current?.more ? { ...current, more: false } : current);
@@ -381,6 +397,8 @@ export function SqlWindow({
     } catch (error) {
       log("error", describeError(error).message);
       setTab("output");
+    } finally {
+      flushOutput();
     }
   }
 
@@ -570,6 +588,8 @@ export function SqlWindow({
     if (view.current) action(view.current);
   };
 
+  const busy = running || fetching || applying;
+  useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
   const actions: ProgramActions = {
     explainPlan: () => void explain(),
     execute: () => void run(targets().list),
@@ -583,8 +603,8 @@ export function SqlWindow({
     } : undefined,
     editData: grid ? () => void toggleEdit() : undefined,
     applyChanges: editSession && pendingCount(pending) ? () => void applyChanges() : undefined,
-    commit: () => void transaction("commit"),
-    rollback: () => void transaction("rollback"),
+    commit: busy ? undefined : () => void transaction("commit"),
+    rollback: busy ? undefined : () => void transaction("rollback"),
     save: () => void save(),
     complete: inEditor(startCompletion),
     foldBlock: inEditor(foldCode),
@@ -670,7 +690,7 @@ export function SqlWindow({
 
   if (command) return <CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
     lines={output} running={running} alert={alert} notice={notice} log={log} onEditObject={onEditObject}
-    onRun={(source) => run(splitScript(source), true)} onCancel={actions.cancel} onClear={() => setOutput([])} />;
+    onRun={(source) => run(splitScript(source), true)} onCancel={actions.cancel} onClear={clearOutput} />;
 
   return (
     <section className="sql-window" aria-label="Ventana SQL">
@@ -800,7 +820,7 @@ export function SqlWindow({
             </>
           )}
           {tab === "output" && output.length > 0 && (
-            <button className="ib" aria-label="Limpiar salida" title="Limpiar salida" onClick={() => setOutput([])}>
+            <button className="ib" aria-label="Limpiar salida" title="Limpiar salida" onClick={clearOutput}>
               <Trash size={15} aria-hidden />
             </button>
           )}

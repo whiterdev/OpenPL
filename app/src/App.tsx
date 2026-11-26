@@ -117,6 +117,7 @@ interface ProgramTab {
     test?: TestSettings;
     command?: boolean;
     transaction: boolean;
+    busy?: boolean;
   };
 }
 
@@ -208,7 +209,7 @@ export default function App() {
           .filter(
             (id) =>
               (id !== "commit" && id !== "rollback") ||
-              program.sql!.transaction,
+              (program.sql!.transaction && !program.sql!.busy),
           )
           .map((id) => [id, () => {
             if (id === "execute" && states[program.sql!.sessionId] === "Disconnected") {
@@ -1140,6 +1141,13 @@ export default function App() {
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={dirtyHandler(tab.id)}
+                        onBusy={(busy) => setPrograms((all) => {
+                          const current = all.find((item) => item.id === tab.id);
+                          if (!current?.sql || !!current.sql.busy === busy) return all;
+                          return all.map((item) => item.id === tab.id && item.sql
+                            ? { ...item, sql: { ...item.sql, busy } }
+                            : item);
+                        })}
                         onTransaction={(open) =>
                           setPrograms((all) =>
                             all.map((item) =>
