@@ -12,7 +12,7 @@ import { FloppyDisk, Lock, LockOpen, Minus, Play, Plus, Stop, Trash, Warning } f
 import { EditorView } from "@codemirror/view";
 import { foldCode, unfoldCode } from "@codemirror/language";
 import { gotoLine } from "@codemirror/search";
-import { openFind, openReplace } from "./EditorSearch";
+import { findNextMatch, findPrevMatch, openFind, openReplace } from "./EditorSearch";
 import { startCompletion } from "@codemirror/autocomplete";
 import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, undo } from "@codemirror/commands";
 import { api } from "../api";
@@ -625,6 +625,22 @@ export function SqlWindow({
     setSelected({ row: grid.rows.length + pending.inserts.length, col: firstEditable });
   }
 
+  function pasteCells({ row, col }: CellPosition, matrix: string[][]): number {
+    if (!grid || !editSession) return 0;
+    let pasted = 0;
+    matrix.forEach((line, rowOffset) => {
+      const targetRow = row + rowOffset;
+      if (pending.edits[targetRow]?.kind === "delete") return;
+      line.forEach((value, colOffset) => {
+        const targetCol = col + colOffset;
+        if (!editSession.names[targetCol] || grid.columns[targetCol + 1]?.lob) return;
+        editCell({ row: targetRow, col: targetCol }, value === "" ? null : value);
+        pasted++;
+      });
+    });
+    return pasted;
+  }
+
   function deleteRow() {
     if (!grid || !editSession || !selected || applying || fetchingRef.current) return;
     if (selected.scope === "all") {
@@ -757,6 +773,8 @@ export function SqlWindow({
     goToLine: inEditor(gotoLine),
     find: inEditor(openFind),
     replace: inEditor(openReplace),
+    findNext: inEditor(findNextMatch),
+    findPrev: inEditor(findPrevMatch),
     comment: inEditor(toggleComment),
     duplicateLine: inEditor(copyLineDown),
     deleteLine: inEditor(deleteLine),
@@ -1043,7 +1061,7 @@ export function SqlWindow({
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
                     selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
                     scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} more={grid.more}
-                    onNotice={setNotice} insertTable={insertTable
+                    onNotice={setNotice} onPasteCells={editSession ? pasteCells : undefined} insertTable={insertTable
                       ? (insertTable.owner ? [insertTable.owner, insertTable.name] : [insertTable.name])
                       : undefined} />
                 </>

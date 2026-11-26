@@ -26,7 +26,7 @@ interface Props {
   selected: CellPosition | null;
   onSelect: (position: CellPosition) => void;
   onEdit: (position: CellPosition, value: Cell) => void;
-  onPasteCells?: (position: CellPosition, matrix: string[][]) => void;
+  onPasteCells?: (position: CellPosition, matrix: string[][]) => number | void;
   onNotice?: (message: string) => void;
   scrollRef?: RefObject<HTMLDivElement | null>;
   fetching: boolean;
@@ -364,8 +364,8 @@ export function ResultGrid(props: Props) {
                             const clipped = matrix.slice(0, rows.length - row).map((line) => line.slice(0, columns.length - col));
                             const count = (lines: string[][]) => lines.reduce((sum, line) => sum + line.length, 0);
                             closeEditor();
-                            props.onPasteCells({ row, col }, clipped);
-                            props.onNotice?.(`Se pegaron ${count(clipped)} de ${count(matrix)} celdas`);
+                            const pasted = props.onPasteCells({ row, col }, clipped) ?? count(clipped);
+                            props.onNotice?.(`Se pegaron ${pasted} de ${count(matrix)} celdas`);
                           }}
                           onKeyDown={(e) => {
                             if (matches(e, commands.fetchAllRows.keys!)) { e.stopPropagation(); }

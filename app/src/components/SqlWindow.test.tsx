@@ -670,6 +670,17 @@ describe("edición en grilla", () => {
     }
   });
 
+  test("pegar TSV en edición prepara cada celda sin agregar filas", async () => {
+    await startEditing();
+    fireEvent.doubleClick(screen.getByRole("gridcell", { name: "NOMBRE Ana" }));
+    const input = screen.getByRole("textbox", { name: "Editar NOMBRE" });
+    fireEvent.paste(input, { clipboardData: { getData: () => "A\tsobra\nB\tsobra\nC" } });
+    expect(screen.getByText("2 pendientes")).toBeVisible();
+    expect(screen.getByText("Se pegaron 2 de 5 celdas")).toBeVisible();
+    expect(screen.getByRole("gridcell", { name: "NOMBRE A" })).toBeVisible();
+    expect(screen.getByRole("gridcell", { name: "NOMBRE B" })).toBeVisible();
+  });
+
   test("borrar la selección completa prepara cambios sin aplicarlos", async () => {
     await startEditing();
     const apply = vi.spyOn(api, "sqlApply");

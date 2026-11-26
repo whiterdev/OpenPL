@@ -88,6 +88,8 @@ const sqlTabActions = [
   "goToLine",
   "find",
   "replace",
+  "findNext",
+  "findPrev",
   "comment",
   "duplicateLine",
   "deleteLine",
