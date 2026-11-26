@@ -1013,7 +1013,7 @@ export function SqlWindow({
                   <ResultGrid queryKey={grid.cursor} columns={visibleColumns} rows={displayRows} status={status}
                     isModified={isModified} editable={editSession ? editSession.names.map(Boolean) : null}
                     selected={selected} onSelect={fetching ? () => {} : setSelected} onEdit={editCell}
-                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} />
+                    scrollRef={gridScroll} fetching={fetching} fetchError={fetchError} more={grid.more} />
                 </>
               )}
         </div>

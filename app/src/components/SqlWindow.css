@@ -53,6 +53,9 @@ body.resizing-rows { cursor: row-resize; user-select: none; }
 .sql-grid-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
 .sql-grid-header [role="alert"] { color: var(--err); overflow-wrap: anywhere; }
 .sql-grid-scroll { flex: 1; min-height: 0; overflow: auto; }
+.sql-row.sql-filter-row { top: 24px; }
+.sql-filter { width: 100%; min-width: 0; }
+.sql-sort { flex: 0 0 auto; margin-inline-start: auto; width: 18px; height: 18px; }
 .sql-grid { font-family: var(--font-code); font-size: 12px; }
 .sql-row { display: grid; height: 24px; position: absolute; left: 0; right: 0; top: 0; }
 .sql-row-alt { background: var(--s1); }

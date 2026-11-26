@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, ArrowsDownUp, Funnel, Minus, PencilSimple, Plus, SelectionAll, WarningCircle } from "@phosphor-icons/react";
 import type { SqlColumn } from "../types";
 import type { Cell } from "../gridEdits";
 import { commands, matches } from "../keymap";
 import { copyGridCells, gridTotal, parseTsv, type GridTotal } from "../gridSelection";
 import { inSelection, moveCell, selectedCells, selectRange, type GridSelection } from "../gridNav";
+import { viewIndexes, type GridSort } from "../gridView";
 import { ContextMenu } from "./ContextMenu";
 
 export type RowStatus = "update" | "delete" | "insert" | "conflict";
@@ -28,6 +29,7 @@ interface Props {
   scrollRef?: RefObject<HTMLDivElement | null>;
   fetching: boolean;
   fetchError: string | null;
+  more?: boolean;
 }
 
 const ROW = 24;
@@ -52,7 +54,17 @@ const RESIZE = { min: 40, max: 1200, step: 16 };
 const clampWidth = (width: number) => Math.min(RESIZE.max, Math.max(RESIZE.min, Math.round(width)));
 
 export function ResultGrid(props: Props) {
-  const { queryKey, columns, rows, status, isModified, editable, selected, onSelect, onEdit, fetching, fetchError } = props;
+  const { queryKey, columns, rows: sourceRows, status: sourceStatus, isModified, editable, selected, onSelect, onEdit, fetching, fetchError } = props;
+  const [view, setView] = useState<{ queryKey: number; sort?: GridSort; filters: Record<number, string>; open: boolean } | null>(null);
+  const activeView = view?.queryKey === queryKey && !editable ? view : null;
+  const indexes = useMemo(() => activeView ? viewIndexes(sourceRows, columns, activeView) : null, [activeView, sourceRows, columns]);
+  const rows = useMemo(() => indexes ? indexes.map((index) => sourceRows[index]) : sourceRows, [indexes, sourceRows]);
+  const status = useMemo(() => indexes ? indexes.map((index) => sourceStatus[index]) : sourceStatus, [indexes, sourceStatus]);
+  const sort = activeView?.sort;
+  const headerHeight = activeView?.open ? ROW * 2 : ROW;
+  function updateView(change: Partial<NonNullable<typeof view>>) {
+    setView({ queryKey, filters: {}, open: false, ...activeView, ...change });
+  }
   const localScroll = useRef<HTMLDivElement>(null);
   const cellPrefix = useId();
   const scroll = props.scrollRef ?? localScroll;
@@ -115,7 +127,7 @@ export function ResultGrid(props: Props) {
   useEffect(() => {
     const viewport = scroll.current;
     if (!viewport || selectedRow === undefined || selectedColumn === undefined) return;
-    const height = viewport.clientHeight - ROW - footerHeight;
+    const height = viewport.clientHeight - headerHeight - footerHeight;
     if (height > 0) {
       const top = selectedRow * ROW;
       if (top < viewport.scrollTop) viewport.scrollTop = top;
@@ -128,7 +140,7 @@ export function ResultGrid(props: Props) {
       if (left < viewport.scrollLeft) viewport.scrollLeft = left;
       else if (right > viewport.scrollLeft + width) viewport.scrollLeft = Math.min(left, right - width);
     }
-  }, [scroll, selectedRow, selectedColumn, widths, footerHeight]);
+  }, [scroll, selectedRow, selectedColumn, widths, footerHeight, headerHeight]);
   const totalValues = useMemo(() => Object.entries(totals ?? {}).map(([column, operation]) => [
     column, gridTotal(rows.filter((_, row) => status[row] !== "delete").map((row) => row[Number(column)] ?? null), operation),
   ] as const), [totals, rows, status]);
@@ -158,7 +170,7 @@ export function ResultGrid(props: Props) {
     const position = !matches(event, commands.fetchAllRows.keys!) && moveCell(at, event, {
       rows: rows.length,
       cols: columns.length,
-      page: Math.floor((event.currentTarget.clientHeight - ROW - footerHeight) / ROW),
+      page: Math.floor((event.currentTarget.clientHeight - headerHeight - footerHeight) / ROW),
     });
     if (position) {
       event.preventDefault();
@@ -181,7 +193,7 @@ export function ResultGrid(props: Props) {
     }
   }
 
-  if (!rows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
+  if (!sourceRows.length) return <p className="sql-empty">La consulta no devolvió filas</p>;
   const activeId = selected ? `${cellPrefix}-cell-${selected.row}-${selected.col}` : undefined;
   const table = (
     <div className="sql-grid-scroll" ref={scroll} tabIndex={0} role="presentation" onKeyDown={onKeyDown}
@@ -205,6 +217,7 @@ export function ResultGrid(props: Props) {
           </div>
           {columns.map((c, i) => (
             <div key={`${c.name}-${i}`} role="columnheader" aria-label={c.name} data-sql-column={i} className={`sql-cell${c.numeric ? " num" : ""}`}
+              aria-sort={sort?.column === i ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}
               onClick={(event) => {
                 if (fetching || event.target !== event.currentTarget) return;
                 onSelect(selectRange({ row: 0, col: i }, { row: rows.length - 1, col: i }, "extend"));
@@ -212,6 +225,14 @@ export function ResultGrid(props: Props) {
               }}
               title={editable && !editable[i] ? `${c.type_name} · solo lectura` : c.type_name}>
               {c.name}
+              <button type="button" className="ib sql-sort" aria-label={`Ordenar por ${c.name}`} disabled={!!editable || fetching}
+                title={`Ordenar por ${c.name}`}
+                onClick={() => updateView({
+                  sort: sort?.column !== i ? { column: i, direction: "asc" }
+                    : sort.direction === "asc" ? { column: i, direction: "desc" } : undefined,
+                })}>
+                {sort?.column !== i ? <ArrowsDownUp size={12} /> : sort.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+              </button>
               <div role="separator" aria-orientation="vertical" aria-label={`Ancho de ${c.name}`} tabIndex={0}
                 className="sql-col-resizer" aria-valuemin={RESIZE.min} aria-valuemax={RESIZE.max} aria-valuenow={widths[i]}
                 onDoubleClick={() => setWidth(i, autoWidths[i])}
@@ -241,6 +262,15 @@ export function ResultGrid(props: Props) {
             </div>
           ))}
         </div>
+        {activeView?.open && <div role="row" className="sql-row sql-head sql-filter-row" style={{ gridTemplateColumns: template }}>
+          <div role="gridcell" className="sql-cell sql-rownum" />
+          {columns.map((column, index) => <div role="gridcell" className="sql-cell" key={index}>
+            <input className="fld sql-filter" aria-label={`Filtrar ${column.name}`}
+              value={activeView.filters[index] ?? ""}
+              onChange={(event) => updateView({ filters: { ...activeView.filters, [index]: event.target.value } })} />
+          </div>)}
+        </div>}
+        {!rows.length && <p className="sql-empty">Sin coincidencias</p>}
         <div style={{ height: rows.length * ROW, position: "relative" }}>
           {items.map((item) => {
             const row = item.index;
@@ -337,6 +367,11 @@ export function ResultGrid(props: Props) {
         </header>
       )}
       {copyError && <div className="sql-grid-header"><span role="alert">No se pudo copiar</span></div>}
+      <div className="sql-grid-header">
+        <button className="ib" type="button" aria-label="Filtros" title="Filtros" aria-pressed={!!activeView?.open}
+          disabled={!!editable || fetching} onClick={() => updateView({ open: !activeView?.open })}><Funnel size={14} /></button>
+        {sort && props.more && <span role="status">Ordenado sobre {sourceRows.length} filas cargadas</span>}
+      </div>
       {table}
       {menu && <ContextMenu key={menu.totals ? "totals" : "grid"} {...menu}
         label={menu.totals ? `Totales de ${columns[menu.column]?.name}` : "Grilla de resultados"} onClose={closeMenu} items={menu.totals ? [
