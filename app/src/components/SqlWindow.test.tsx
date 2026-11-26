@@ -194,7 +194,7 @@ test("io.ask consume una respuesta sin ejecutar otro comando y Escape la cancela
   const answers: (string | null)[] = [];
   const onRun = vi.fn(async (_source: string, io: ConsoleIo) => { answers.push(await io.ask("cliente")); });
   render(<CommandConsole sessionId="w1" tabPrefix="prompt-test" active lines={[]} running={false}
-    alert={null} notice={null} log={vi.fn()} onRun={onRun} />);
+    alert={null} notice={null} log={vi.fn()} onRun={onRun} onClear={vi.fn()} />);
   const prompt = screen.getByLabelText("Comando SQL");
   const submit = async (value: string) => {
     fireEvent.change(prompt, { target: { value } });
@@ -208,6 +208,28 @@ test("io.ask consume una respuesta sin ejecutar otro comando y Escape la cancela
   await submit("SELECT &cliente FROM DUAL;");
   fireEvent.keyDown(prompt, { key: "Escape" });
   await waitFor(() => expect(answers).toEqual(["Ana", null]));
+});
+
+test("Ctrl+C copia una selección o cancela y Ctrl+L limpia la consola", () => {
+  const onCancel = vi.fn();
+  const onClear = vi.fn();
+  render(<CommandConsole sessionId="w1" tabPrefix="keys-test" active lines={[]} running
+    alert={null} notice={null} log={vi.fn()} onRun={vi.fn()} onCancel={onCancel} onClear={onClear} />);
+  const prompt = screen.getByLabelText<HTMLTextAreaElement>("Comando SQL");
+  fireEvent.change(prompt, { target: { value: "SELECT" } });
+  prompt.focus();
+  prompt.setSelectionRange(0, 6);
+  expect(fireEvent.keyDown(prompt, { key: "a", ctrlKey: true })).toBe(true);
+  expect(fireEvent.keyDown(prompt, { key: "c", ctrlKey: true })).toBe(true);
+  expect(onCancel).not.toHaveBeenCalled();
+  prompt.setSelectionRange(0, 0);
+  expect(fireEvent.keyDown(prompt, { key: "c", ctrlKey: true })).toBe(false);
+  expect(onCancel).toHaveBeenCalledOnce();
+  fireEvent.keyDown(prompt, { key: "l", ctrlKey: true });
+  expect(onClear).toHaveBeenCalledOnce();
+  fireEvent.keyDown(prompt, { key: "Escape" });
+  expect(prompt).toHaveValue("");
+  expect(fireEvent.keyDown(prompt, { key: "Escape" })).toBe(true);
 });
 
 test("exporta CSV con encabezado y todas las páginas del cursor", async () => {

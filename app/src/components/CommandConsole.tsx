@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { commands, formatKeys } from "../keymap";
+import { commands, formatKeys, matches } from "../keymap";
 import { splitScript } from "../sqlScript";
 import { describeError, type CompletionObject } from "../types";
 import "./CommandConsole.css";
@@ -20,6 +20,8 @@ interface Props {
   log(kind: OutputLine["kind"], text: string): void;
   onEditObject?: (object: CompletionObject) => void;
   onRun(source: string, io: ConsoleIo): Promise<void>;
+  onCancel?: () => void;
+  onClear(): void;
 }
 
 export interface OutputLine {
@@ -31,7 +33,7 @@ export interface OutputLine {
 const editCommand = /^edit(?:\s|$)/i;
 const editTarget = /^edit\s+(?:([\w$#]+)\.)?([\w$#]+);?$/i;
 
-export function CommandConsole({ sessionId, tabPrefix, active, lines, running, alert, notice, log, onEditObject, onRun }: Props) {
+export function CommandConsole({ sessionId, tabPrefix, active, lines, running, alert, notice, log, onEditObject, onRun, onCancel, onClear }: Props) {
   const key = () => formatKeys(commands.cancel.keys!);
   const terminal = useRef<HTMLDivElement>(null);
   const commandInput = useRef<HTMLTextAreaElement>(null);
@@ -171,6 +173,19 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
   return (
     <section className="sql-window" aria-label="Ventana de comando">
       <div className="sql-terminal" ref={terminal} role="log" aria-label="Transcripción"
+        onKeyDown={(event) => {
+          if (matches(event, commands.clearConsole.keys!)) {
+            event.preventDefault();
+            onClear();
+          } else if (running && onCancel && matches(event, commands.copyGrid.keys!)) {
+            const input = commandInput.current;
+            const selection = window.getSelection();
+            if (input && document.activeElement === input && input.selectionStart !== input.selectionEnd) return;
+            if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return;
+            event.preventDefault();
+            onCancel();
+          }
+        }}
         onScroll={({ currentTarget: area }) => {
           followOutput.current = area.scrollHeight - area.clientHeight - area.scrollTop <= 8;
         }}
@@ -234,8 +249,9 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
                 }
                 return;
               }
-              if (commandLines.length && event.key === "Escape") {
+              if ((commandLines.length || (prompt && !candidates.length)) && event.key === "Escape") {
                 event.preventDefault();
+                event.stopPropagation();
                 setCommandLines([]);
                 setPrompt("");
                 return;

@@ -670,7 +670,7 @@ export function SqlWindow({
 
   if (command) return <CommandConsole sessionId={sessionId} tabPrefix={tabPrefix} active={active}
     lines={output} running={running} alert={alert} notice={notice} log={log} onEditObject={onEditObject}
-    onRun={(source) => run(splitScript(source), true)} />;
+    onRun={(source) => run(splitScript(source), true)} onCancel={actions.cancel} onClear={() => setOutput([])} />;
 
   return (
     <section className="sql-window" aria-label="Ventana SQL">
