@@ -1,5 +1,7 @@
 // Divide un script en sentencias para la Ventana SQL. Las posiciones son del texto original.
 
+import { parseSqlplus, type SqlplusCommand } from "./sqlplus";
+
 export type StatementKind = "sql" | "plsql" | "sqlplus";
 
 export interface ScriptStatement {
@@ -8,44 +10,9 @@ export interface ScriptStatement {
   text: string;
   from: number;
   to: number;
+  command?: SqlplusCommand;
 }
 
-const SQLPLUS = new Set([
-  "SET",
-  "PROMPT",
-  "SPOOL",
-  "DEFINE",
-  "UNDEFINE",
-  "SHOW",
-  "EXEC",
-  "EXECUTE",
-  "VARIABLE",
-  "VAR",
-  "PRINT",
-  "COLUMN",
-  "COL",
-  "CONNECT",
-  "CONN",
-  "DISCONNECT",
-  "WHENEVER",
-  "ACCEPT",
-  "PAUSE",
-  "REM",
-  "REMARK",
-  "CLEAR",
-  "BREAK",
-  "COMPUTE",
-  "TTITLE",
-  "BTITLE",
-  "DESC",
-  "DESCRIBE",
-  "HOST",
-  "START",
-  "EXIT",
-  "QUIT",
-  "TIMING",
-  "SPO",
-]);
 const PLSQL_UNITS =
   /^(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER|TYPE|LIBRARY|JAVA)\b/;
 const CLOSERS: Record<string, string> = {
@@ -150,11 +117,16 @@ export function splitScript(source: string): ScriptStatement[] {
 
     const start = i;
     const head = firstWords(source, start);
-    const firstWord = /^[A-Z_$#]+/.exec(head)?.[0] ?? "";
-    if (source[start] === "@" || SQLPLUS.has(firstWord)) {
-      const end = source.indexOf("\n", start);
-      const stop = end < 0 ? source.length : end;
-      push("sqlplus", start, stop);
+    const lineEnd = source.indexOf("\n", start);
+    const stop = lineEnd < 0 ? source.length : lineEnd;
+    const command = parseSqlplus(source.slice(start, stop));
+    if (command) {
+      const to = trimEnd(source, start, stop);
+      if (command.kind === "exec") {
+        out.push({ kind: "plsql", text: command.block, from: start, to });
+      } else {
+        out.push({ kind: "sqlplus", text: source.slice(start, to), from: start, to, command });
+      }
       i = stop;
       continue;
     }
