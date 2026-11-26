@@ -28,7 +28,8 @@
   UNDEFINE, VARIABLE y PRINT. El brief 26 implementa SHOW USER, SHOW ERRORS y DESC
   con SELECT y binds. Se verificaron las columnas del diccionario en DESA en solo
   lectura. El brief 27 implementa scripts anidados y SPOOL con un contexto inyectado.
-  TypeScript y 563 tests en verde. Sigue el brief 28.
+  El brief 28 serializa TSV, CSV e INSERT para copiar y permite leer TSV entrecomillado.
+  TypeScript y 567 tests en verde. Sigue el brief 29.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL
