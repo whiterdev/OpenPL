@@ -32,6 +32,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::client_info,
@@ -86,6 +88,22 @@ mod tests {
         let window = &conf["app"]["windows"][0];
         assert_eq!(window["maximized"], true);
         assert_eq!(window["center"], true);
+    }
+
+    #[test]
+    fn el_updater_apunta_al_release_fijo() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["bundle"]["createUpdaterArtifacts"], true);
+        let updater = &conf["plugins"]["updater"];
+        assert_eq!(
+            updater["endpoints"],
+            serde_json::json!([
+                "https://github.com/whiterdev/OpenPL/releases/download/updater/latest.json"
+            ])
+        );
+        let pubkey = updater["pubkey"].as_str().unwrap_or_default();
+        assert!(!pubkey.trim().is_empty(), "falta la pubkey del updater");
     }
 
     fn es_semver(version: &str) -> bool {

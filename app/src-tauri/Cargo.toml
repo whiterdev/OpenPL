@@ -24,6 +24,8 @@ openpl-core = { path = "../../crates/openpl-core" }
 tauri-plugin-dialog = "2"
 tempfile = "3"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [dev-dependencies]
 openpl-core = { path = "../../crates/openpl-core", features = ["testing"] }
