@@ -2,6 +2,7 @@ import { applySubstitutions, findVariables } from "./sqlBinds";
 import type { SqlplusCommand } from "./sqlplus";
 import type { SqlplusState } from "./sqlplusState";
 import type { BindKind, BindValue, ExecOutcome } from "./types";
+import { createdObject, describeObject, printQuery, showErrorsQuery, showUserQuery } from "./sqlplusQueries";
 
 export interface SqlplusCtx {
   print(line: string, kind?: "info" | "output" | "error"): void;
@@ -80,6 +81,24 @@ function variableType(input: string): BindKind | null {
 
 export async function runSqlplus(cmd: SqlplusCommand, state: SqlplusState, ctx: SqlplusCtx): Promise<void> {
   switch (cmd.kind) {
+    case "show": {
+      const option = cmd.what.trim().toUpperCase();
+      if (option === "USER") {
+        const { sql, binds } = showUserQuery;
+        printQuery(await ctx.query(sql, binds), state, ctx);
+      } else if (option === "ERRORS") {
+        const object = state.lastCreated && createdObject(state.lastCreated);
+        if (!object) ctx.print("Sin objeto reciente");
+        else {
+          const { sql, binds } = showErrorsQuery(object);
+          printQuery(await ctx.query(sql, binds), state, ctx);
+        }
+      } else ctx.print("Comando no admitido: SHOW " + cmd.what);
+      return;
+    }
+    case "desc":
+      await describeObject(cmd.target, state, ctx);
+      return;
     case "set":
       setOption(cmd.option, cmd.value, state, ctx);
       return;
