@@ -548,38 +548,61 @@ export default function App() {
   async function openProgram() {
     try {
       const file = await api.openProgramFile();
-      if (!file) return;
-      const name = file.name.toLowerCase();
-      if (name.endsWith(".tst")) {
-        if (!active) throw new Error("Conéctate para abrir la prueba.");
-        const { source, bindKinds, outputs } = parseTestFile(file.source);
-        await openSql(active, source, false, false, { bindKinds, outputs, fileName: file.name });
-        return;
-      }
-      const kind = name.endsWith(".pks")
-        ? "PACKAGE"
-        : name.endsWith(".pkb")
-          ? "PACKAGE BODY"
-          : "SQL";
-      addProgram({
-        id: crypto.randomUUID(),
-        label: file.name,
-        fileName: file.name,
-        readOnly: false,
-        dirty: false,
-        parts: [
-          {
-            kind,
-            source: file.source.replace(/\r\n?/g, "\n"),
-            last_ddl_time: null,
-            diagnostics: [],
-          },
-        ],
-      });
+      if (file) await openFileContent(file.name, file.source);
     } catch (error) {
       showNotice(describeError(error).message, "error");
     }
   }
+
+  async function openFileContent(fileName: string, contents: string) {
+    const name = fileName.toLowerCase();
+    if (name.endsWith(".tst")) {
+      if (!active) throw new Error("Conéctate para abrir la prueba.");
+      const { source, bindKinds, outputs } = parseTestFile(contents);
+      await openSql(active, source, false, false, { bindKinds, outputs, fileName });
+      return;
+    }
+    const kind = name.endsWith(".pks") ? "PACKAGE" : name.endsWith(".pkb") ? "PACKAGE BODY" : "SQL";
+    addProgram({
+      id: crypto.randomUUID(),
+      label: fileName,
+      fileName,
+      readOnly: false,
+      dirty: false,
+      parts: [{ kind, source: contents.replace(/\r\n?/g, "\n"), last_ddl_time: null, diagnostics: [] }],
+    });
+  }
+
+  useLayoutEffect(() => {
+    function fileDrag(event: DragEvent) {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    }
+    async function openDroppedFiles(files: File[]) {
+      for (const file of files) {
+        if (!/\.(?:sql|pks|pkb|tst)$/i.test(file.name)) {
+          showNotice(`Tipo no admitido: ${file.name}`, "error");
+          continue;
+        }
+        try {
+          await openFileContent(file.name, await file.text());
+        } catch (error) {
+          showNotice(describeError(error).message, "error");
+        }
+      }
+    }
+    function drop(event: DragEvent) {
+      const transfer = event.dataTransfer;
+      if (!transfer?.types.includes("Files")) return;
+      event.preventDefault();
+      void openDroppedFiles(Array.from(transfer.files));
+    }
+    window.addEventListener("dragover", fileDrag);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", fileDrag);
+      window.removeEventListener("drop", drop);
+    };
+  });
 
   async function openSql(
     connection: ActiveConnection,

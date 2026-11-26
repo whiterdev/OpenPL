@@ -58,7 +58,8 @@
   tabular de consola y libera el cursor. Los cinco controles pasaron, con 601
   tests de frontend. El brief 52 mantiene visibles los errores hasta cerrarlos
   y muestra los fallos al guardar la carpeta del cliente. TypeScript y 602 tests
-  en verde. Sigue el brief 53.
+  en verde. El brief 53 abre archivos soltados en la ventana; el gesto en Windows
+  queda para prueba manual. Los cinco controles pasaron, con 603 tests. Sigue el brief 54.
   Ctrl+A queda en el alcance de los briefs 30 (grilla), 41 (consola) y 58 (diálogos).
 
 - Brief 10 de la auditoría UX, en `feat/auditoria-ux`: el backend registra las sesiones SQL

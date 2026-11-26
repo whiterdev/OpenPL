@@ -34,6 +34,21 @@ test("Ctrl K busca y ejecuta una acción disponible", async () => {
   expect(screen.queryByRole("dialog", { name: "Buscar comando" })).not.toBeInTheDocument();
 });
 
+test("soltar un archivo abre su contenido y soltar texto conserva el comportamiento nativo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  expect(fireEvent.drop(window, { dataTransfer: { types: ["text/plain"], files: [] } })).toBe(true);
+  expect(fireEvent.drop(window, {
+    dataTransfer: { types: ["Files"], files: [{ name: "demo.sql", text: async () => "select 1 from dual" }] },
+  })).toBe(false);
+  expect(await screen.findByRole("button", { name: "demo.sql" })).toBeVisible();
+  fireEvent.drop(window, {
+    dataTransfer: { types: ["Files"], files: [{ name: "demo.zip", text: async () => "" }] },
+  });
+  expect(await screen.findByText("Tipo no admitido: demo.zip")).toBeVisible();
+});
+
 const windowEvents = vi.hoisted(() => ({ close: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("@tauri-apps/api/window", () => ({
