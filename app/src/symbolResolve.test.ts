@@ -226,7 +226,9 @@ test("un alias en un paquete grande no vuelve a parsear todo el paquete", async 
   const parse = vi.spyOn(oracleDialect.language.parser, "parse");
   const found = await resolveSymbol(context, path(["C", "ID"]));
   expect(found[0]).toMatchObject({ kind: "column", table: "CLIENTES" });
-  for (const [input] of parse.mock.calls) expect(String(input).length).toBeLessThan(2000);
+  // Solo una ventana acotada alrededor del cursor (unos 8.000 caracteres); el paquete tiene más de 150.000.
+  expect(body.length).toBeGreaterThan(150_000);
+  for (const [input] of parse.mock.calls) expect(String(input).length).toBeLessThan(10_000);
   parse.mockRestore();
 });
 
@@ -286,4 +288,40 @@ test("atributos y métodos de un tipo objeto", async () => {
   expect(field[0]).toMatchObject({ kind: "symbol", symbol: { kind: "field", dataType: "VARCHAR2(50)" }, location: { where: "object", partKind: "TYPE", line: 2 } });
   const method = await resolveSymbol(at([source], "saludo;", { lookup }), path(["P", "SALUDO"]));
   expect(method.map((item) => item.kind === "symbol" && item.location.where === "object" && item.location.partKind)).toEqual(["TYPE", "TYPE BODY"]);
+});
+
+test("después del LOOP de un FOR con consulta, el registro vuelve a ser la variable", async () => {
+  const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table"), OTRA: info("OTRA", "Table") });
+  const source = "DECLARE r clientes%ROWTYPE; BEGIN FOR x IN (SELECT * FROM otra r) LOOP v := r.nombre; END LOOP; END;";
+  const found = await resolveSymbol(at([source], "nombre;", { lookup }), path(["R", "NOMBRE"]));
+  expect(found).toMatchObject([{ kind: "column", table: "CLIENTES", column: { name: "NOMBRE" } }]);
+});
+
+test("el destino de INTO no es un alias", async () => {
+  const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table") });
+  const source = "DECLARE r clientes%ROWTYPE; BEGIN SELECT * INTO r FROM clientes c WHERE c.id = r.id; END;";
+  const found = await resolveSymbol(at([source], "id;", { lookup }), path(["R", "ID"]));
+  expect(found).toMatchObject([{ kind: "column", table: "CLIENTES", column: { name: "ID" } }]);
+});
+
+test("un punto y coma dentro de un texto o un comentario no corta la sentencia", async () => {
+  const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table") });
+  const literal = "BEGIN SELECT LISTAGG(c.nombre, ';') WITHIN GROUP (ORDER BY 1) INTO x FROM clientes c; END;";
+  expect(await resolveSymbol(at([literal], "nombre", { lookup }), path(["C", "NOMBRE"])))
+    .toMatchObject([{ kind: "column", table: "CLIENTES" }]);
+  const comment = "BEGIN SELECT c.nombre -- fin; ok\n INTO x FROM clientes c; END;";
+  expect(await resolveSymbol(at([comment], "nombre", { lookup }), path(["C", "NOMBRE"])))
+    .toMatchObject([{ kind: "column", table: "CLIENTES" }]);
+});
+
+test("atributos de un subtipo UNDER, propios y heredados", async () => {
+  const lookup = fakeLookup({ T_EMP: info("T_EMP", "Type"), T_PERSONA: info("T_PERSONA", "Type") }, {
+    T_EMP: [{ kind: "TYPE", source: "CREATE OR REPLACE TYPE t_emp UNDER t_persona (\n  sueldo NUMBER\n);" }],
+    T_PERSONA: [{ kind: "TYPE", source: "CREATE OR REPLACE TYPE t_persona AS OBJECT (\n  nombre VARCHAR2(50)\n) NOT FINAL;" }],
+  });
+  const source = "DECLARE e t_emp; BEGIN x := e.sueldo; y := e.nombre; END;";
+  expect(await resolveSymbol(at([source], "sueldo;", { lookup }), path(["E", "SUELDO"])))
+    .toMatchObject([{ kind: "symbol", symbol: { name: "SUELDO", container: "T_EMP" } }]);
+  expect(await resolveSymbol(at([source], "nombre;", { lookup }), path(["E", "NOMBRE"])))
+    .toMatchObject([{ kind: "symbol", symbol: { name: "NOMBRE", container: "T_PERSONA" } }]);
 });

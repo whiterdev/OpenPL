@@ -17,7 +17,8 @@ tiene ficha.
   muestra la columna de la tabla. Una columna de cursor que es una expresión muestra
   "Expresión".
 - **Tipos objeto:** `variable.atributo` y `variable.metodo` muestran el atributo o el método del
-  tipo (`CREATE TYPE … AS OBJECT`); un método lleva a su implementación en el `TYPE BODY`.
+  tipo (`CREATE TYPE … AS OBJECT` o `UNDER padre`, con lo heredado); un método lleva a su
+  implementación en el `TYPE BODY`.
 - **Cursores de otro paquete:** `pkg.cursor%ROWTYPE` resuelve las columnas de ese cursor.
 - **Tablas y vistas:** columnas con tipo y `NOT NULL`, hasta 30.
 - Cada ficha dice dónde está la declaración (línea, y objeto y parte si es de otro objeto) y el
@@ -31,7 +32,9 @@ tiene ficha.
 1. Declaraciones locales visibles en el cursor: la más interna gana sobre una global con el
    mismo nombre.
 2. Declaraciones del paquete abierto, en Spec y Body.
-3. Dentro de una sentencia SQL, sus alias y tablas van antes que las variables (como en Oracle).
+3. Dentro del texto de una sentencia SQL, sus alias y tablas van antes que las variables (como en
+   Oracle). El destino de `INTO` no cuenta como alias, y después del `LOOP` de un FOR con consulta
+   vuelven a valer las variables.
 4. Objetos del catálogo, con la conexión principal. Un paquete abierto en otra pestaña se lee del
    editor, aunque tenga cambios sin guardar.
 
@@ -47,7 +50,8 @@ por conexión y se vuelve a pedir al compilar, refrescar el explorador o reconec
 | Ir a la implementación | Ctrl+Shift+F12 | El cuerpo; sin cuerpo, la declaración y el aviso "Cuerpo no disponible" |
 
 - Con Ctrl apretado, el nombre bajo el puntero se subraya. Ctrl+clic donde no hay destino ubica el
-  cursor como un clic normal. Agregar un cursor pasa a Alt+clic.
+  cursor como un clic normal. Agregar un cursor pasa a Alt+clic y la selección en columna a
+  Alt+Shift+arrastrar.
 - Con varias firmas, un selector lista cada destino.
 - Un destino en otro objeto abre ese objeto (o activa su pestaña) en la línea de la declaración.
 - Si mientras se busca el destino se escribe, se mueve el cursor o se cambia de pestaña, no se navega.

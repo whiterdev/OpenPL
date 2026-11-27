@@ -967,3 +967,16 @@ test("una ventana que recibe su objeto después se registra entonces, una sola v
   rerender(<ProgramWindow {...props} registerSource={(read) => registerSource(read)} sourceKey="s1|HR|PKG_A" />);
   expect(registerSource).toHaveBeenCalledOnce();
 });
+
+test("Ctrl+clic sin contexto de símbolos igual ubica el cursor", async () => {
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_w.f;\nEND;";
+  const symbols = { object: vi.fn(async () => null), parts: vi.fn(async () => []), columns: vi.fn(async () => []) };
+  render(<ProgramWindow readOnly onDirty={vi.fn()} symbols={symbols} parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  const position = source.indexOf("pkg_w") + 2;
+  vi.spyOn(view, "posAtCoords").mockReturnValue(position);
+  const resolveAt = await import("../editorNavigation");
+  vi.spyOn(resolveAt, "resolveAt").mockResolvedValue(null);
+  fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+  await waitFor(() => expect(view.state.selection.main.head).toBe(position));
+});

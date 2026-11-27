@@ -131,6 +131,7 @@ Rama creada desde `main`, sin merge ni push. Auditoría:
 | Ir a la implementación (WAL-119) | (no existía) | Ctrl+Shift+F12 |
 | Mostrar ficha (WAL-119) | (no existía) | Ctrl+Shift+Espacio |
 | Agregar un cursor (WAL-121) | Ctrl+clic | Alt+clic |
+| Selección en columna (WAL-121) | Alt+arrastrar | Alt+Shift+arrastrar |
 | Ejecutar | F8 | F8 o Ctrl+Enter |
 | Buscar siguiente / anterior | sin atajo | F3 / Shift+F3 |
 | Pestaña siguiente / anterior | sin atajo | Ctrl+Tab / Ctrl+Shift+Tab |

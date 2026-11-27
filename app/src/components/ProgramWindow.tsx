@@ -330,7 +330,11 @@ export function ProgramWindow({
     const head = view.state.selection.main.head;
     const found = await resolveAt(view, position, symbolContext);
     // Si mientras tanto se escribió o se movió el cursor, el destino ya no corresponde.
-    if (!found || !activeRef.current || view.state.doc !== doc || view.state.selection.main.head !== head) return;
+    if (!activeRef.current || view.state.doc !== doc || view.state.selection.main.head !== head) return;
+    if (!found) {
+      onMiss?.();
+      return;
+    }
     const { name, items } = found;
     const relation = items.find((item) => item.kind === "relation");
     if (relation?.kind === "relation") {

@@ -836,7 +836,11 @@ export function SqlWindow({
     const head = editor.state.selection.main.head;
     const found = await resolveAt(editor, position, symbolContext);
     // Si mientras tanto se escribió o se movió el cursor, el destino ya no corresponde.
-    if (!found || !activeRef.current || editor.state.doc !== doc || editor.state.selection.main.head !== head) return;
+    if (!activeRef.current || editor.state.doc !== doc || editor.state.selection.main.head !== head) return;
+    if (!found) {
+      onMiss?.();
+      return;
+    }
     const relation = found.items.find((item) => item.kind === "relation");
     if (relation?.kind === "relation") {
       openObject?.(relation.object);

@@ -1,5 +1,5 @@
 import type { NamePath } from "./editorReference";
-import { statementAliases, statementTables } from "./programCompletion";
+import { statementTables, type TableReference } from "./programCompletion";
 import { isIdentifier, nameOf, tokenize, type Token } from "./programStructure";
 import { programSymbols, type ProgramSymbol, type Tree } from "./programSymbols";
 import type { SourcePart, SymbolLookup } from "./symbolSources";
@@ -97,12 +97,48 @@ function located(home: Home, part: number, symbol: ProgramSymbol): Resolved {
   };
 }
 
-/** Alias de la sentencia en `position`, tokenizando solo entre los `;` que la rodean. */
-function aliasesAround(source: string, position: number) {
-  const start = source.lastIndexOf(";", Math.max(0, position - 1)) + 1;
-  const next = source.indexOf(";", position);
-  const end = next < 0 ? source.length : next;
-  return statementAliases(source.slice(start, end), position - start);
+const sqlStarts = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "WITH"]);
+const ALIAS_WINDOW = 4000;
+
+/**
+ * Tablas y alias visibles en `position`, solo si está dentro del texto de una sentencia SQL
+ * (no en el PL/SQL que la rodea, p. ej. después del LOOP de un FOR con consulta). Tokeniza una
+ * ventana acotada, así un `;` dentro de un texto o un comentario no corta la sentencia.
+ */
+function sqlAliasesAt(source: string, position: number) {
+  const aliases = new Map<string, TableReference>();
+  const from = source.lastIndexOf("\n", Math.max(0, position - ALIAS_WINDOW)) + 1;
+  const next = source.indexOf("\n", position + ALIAS_WINDOW);
+  const text = source.slice(from, next < 0 ? source.length : next);
+  const at = position - from;
+  const tokens = tokenize(text);
+  let first = 0;
+  let last = tokens.length;
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (tokens[i].key !== ";") continue;
+    if (tokens[i].from < at) first = i + 1;
+    else {
+      last = i;
+      break;
+    }
+  }
+  const inside = tokens.slice(first, last).some((token, offset) => {
+    if (!sqlStarts.has(token.key) || token.from > at) return false;
+    // La sentencia termina en el paréntesis que la cierra o al final.
+    let depth = 0;
+    for (let j = first + offset + 1; j < last; j += 1) {
+      const { key } = tokens[j];
+      if (key === "(") depth += 1;
+      else if (key === ")" && depth-- === 0) return at <= tokens[j].from;
+    }
+    return true;
+  });
+  if (!inside) return aliases;
+  for (const { ref, alias } of statementTables(text, at)) {
+    aliases.set(ref.name, ref);
+    if (alias) aliases.set(alias, ref);
+  }
+  return aliases;
 }
 
 /** Nombre con puntos, respetando comillas: `hr."Mi Tabla"` → ["HR", "Mi Tabla"]. */
@@ -227,7 +263,7 @@ class Resolver {
   private async firstEntity(name: string): Promise<Entity | null> {
     // Dentro de una sentencia SQL, Oracle resuelve primero sus alias y tablas.
     const { current, position } = this.ctx;
-    const table = aliasesAround(this.ctx.parts[current]?.source ?? "", position).get(name);
+    const table = sqlAliasesAt(this.ctx.parts[current]?.source ?? "", position).get(name);
     if (table) return { t: "relation", owner: table.owner, name: table.name };
     const visible = this.visible(name);
     const fromSymbol = this.entityFromSymbol(visible.find((item) =>
@@ -329,7 +365,8 @@ class Resolver {
     if (!type || !typeHome) return [];
     const found = type;
     const typeName = found.symbol.name;
-    if (found.symbol.dataType === "OBJECT") {
+    const parent = /^UNDER (.+)$/.exec(found.symbol.dataType ?? "")?.[1];
+    if (found.symbol.dataType === "OBJECT" || parent) {
       const members: Resolved[] = [];
       typeHome.symbols.forEach((symbols, part) => {
         for (const symbol of symbols) {
@@ -338,7 +375,8 @@ class Resolver {
           }
         }
       });
-      return members;
+      // Lo heredado se busca en el tipo padre.
+      return members.length || !parent ? members : this.typeMembers(typeHome, parent, name, depth + 1);
     }
     if (found.symbol.kind === "type" && /^RECORD\b/i.test(found.symbol.dataType ?? "")) {
       return typeHome.symbols[found.part]

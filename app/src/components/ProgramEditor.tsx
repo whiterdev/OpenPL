@@ -165,7 +165,7 @@ export function ProgramEditor(props: Props) {
       parent: host.current!,
       doc: latest.current.part.source,
       extensions: [
-        lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
+        lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection({ eventFilter: (event) => event.altKey && event.shiftKey }), history(),
         highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax), indentUnit.of(INDENT),
         editing.of(editingExtensions(latest.current.readOnly, label)),

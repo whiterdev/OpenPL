@@ -195,7 +195,8 @@ class Analyzer {
   }
 
   /** Elementos separados por comas dentro del paréntesis que abre en `open`. */
-  private list(open: number) {
+  /** `stopAtBody`: un paréntesis sin cerrar termina en IS, AS o `;` (no sirve dentro de `AS OBJECT (…)`). */
+  private list(open: number, stopAtBody = true) {
     const items: [number, number][] = [];
     if (this.tokens[open]?.key !== "(") return { items, after: open };
     let depth = 0;
@@ -203,7 +204,7 @@ class Analyzer {
     for (let i = open; i < this.tokens.length; i += 1) {
       const { key } = this.tokens[i];
       // Paréntesis sin cerrar: la lista termina donde empieza el cuerpo o la sentencia.
-      if (listStops.has(key)) {
+      if (stopAtBody && listStops.has(key)) {
         if (i > start) items.push([start, i]);
         return { items, after: i };
       }
@@ -382,8 +383,10 @@ class Analyzer {
     const name = tokens[nameIndex];
     if (!isIdentifier(name)) return;
     const typeName = nameOf(name);
-    const header = boundary(tokens, nameIndex + 1, routineMarkers);
-    if (tokens[header]?.key !== "IS" && tokens[header]?.key !== "AS") return;
+    // `TYPE t UNDER padre (…)` no lleva IS ni AS.
+    const under = !isBody && tokens[nameIndex + 1]?.key === "UNDER";
+    const header = under ? nameIndex : boundary(tokens, nameIndex + 1, routineMarkers);
+    if (!under && tokens[header]?.key !== "IS" && tokens[header]?.key !== "AS") return;
     if (isBody) {
       this.typeName = typeName;
       this.section(header + 1, null);
@@ -391,12 +394,13 @@ class Analyzer {
       return;
     }
     const end = this.statementEnd(header);
-    const object = tokens[header + 1]?.key === "OBJECT" || tokens[header + 1]?.key === "UNDER";
+    const object = under || tokens[header + 1]?.key === "OBJECT";
+    const parent = under ? tokens[readName(tokens, nameIndex + 2)] : undefined;
     this.push({
       kind: "type",
       name: typeName,
       signature: `TYPE ${this.text(unit + 1, nameIndex + 1)}`,
-      dataType: object ? "OBJECT" : this.text(header + 1, end) || null,
+      dataType: parent && isIdentifier(parent) ? `UNDER ${nameOf(parent)}` : object ? "OBJECT" : this.text(header + 1, end) || null,
       value: null,
       comment: this.comment(unit, nameIndex),
       from: name.from,
@@ -406,7 +410,7 @@ class Analyzer {
     });
     if (!object) return;
     const open = boundary(tokens, header + 1, new Set(["("]), end);
-    for (const [from, to] of this.list(open).items) {
+    for (const [from, to] of this.list(open, false).items) {
       let first = from;
       while (first < to && methodPrefixes.has(tokens[first].key)) first += 1;
       if (tokens[first]?.key === "PROCEDURE" || tokens[first]?.key === "FUNCTION") {
@@ -482,7 +486,11 @@ class Analyzer {
     }
     if (!definition) return marker + 1;
     own.to = this.source.length;
+    // Lo declarado dentro de un método no pertenece al tipo.
+    const outerType = this.typeName;
+    this.typeName = null;
     const stop = this.section(marker + 1, own);
+    this.typeName = outerType;
     const closing = tokens[stop]?.key === "BEGIN" ? this.blocks.get(stop) : tokens[stop]?.key === "END" ? stop : undefined;
     if (closing === undefined) {
       // Cuerpo sin END (se está escribiendo): sigue en la próxima rutina que empieza una sentencia.

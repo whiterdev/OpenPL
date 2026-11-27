@@ -194,3 +194,23 @@ test("tipo objeto: atributos y métodos en spec y body", () => {
   const typeBody = "CREATE OR REPLACE TYPE BODY t_persona AS\n  MEMBER FUNCTION saludo RETURN VARCHAR2 IS BEGIN RETURN nombre; END;\nEND;";
   expect(one(programSymbols(typeBody), "SALUDO")).toMatchObject({ kind: "function", container: "T_PERSONA", definition: true });
 });
+
+test("el constructor empareja spec y body, y lo que sigue a SELF AS RESULT se lee", () => {
+  const typeSpec = "CREATE OR REPLACE TYPE t_p AS OBJECT (\n  CONSTRUCTOR FUNCTION t_p(n VARCHAR2) RETURN SELF AS RESULT,\n  edad NUMBER\n);";
+  const typeBody = "CREATE OR REPLACE TYPE BODY t_p AS\n  CONSTRUCTOR FUNCTION t_p(n VARCHAR2) RETURN SELF AS RESULT IS BEGIN RETURN; END;\nEND;";
+  const declared = programSymbols(typeSpec);
+  expect(one(declared, "EDAD")).toMatchObject({ kind: "field", container: "T_P" });
+  const specKey = declared.find((symbol) => symbol.kind === "function")?.key;
+  const bodyKey = programSymbols(typeBody).find((symbol) => symbol.kind === "function")?.key;
+  expect(specKey).toBeDefined();
+  expect(specKey).toBe(bodyKey);
+});
+
+test("las rutinas y variables internas de un método no son del tipo", () => {
+  const typeBody =
+    "CREATE OR REPLACE TYPE BODY t_p AS\n  MEMBER FUNCTION f RETURN NUMBER IS\n    map NUMBER;\n    PROCEDURE helper IS BEGIN NULL; END;\n  BEGIN RETURN 1; END;\nEND;";
+  const symbols = programSymbols(typeBody);
+  expect(one(symbols, "F")).toMatchObject({ container: "T_P" });
+  expect(one(symbols, "HELPER")).toMatchObject({ container: null });
+  expect(one(symbols, "MAP")).toMatchObject({ kind: "variable" });
+});
