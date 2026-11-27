@@ -30,6 +30,7 @@ const DATA_TYPES = new Set<ObjectType>(["Table", "View", "MaterializedView"]);
 const TESTABLE = new Set<ObjectType>(["Package", "Procedure", "Function"]);
 const RECOMPILABLE = new Set<ObjectType>([...CODE_TYPES, "View", "MaterializedView"]);
 const NO_DDL = new Set<ObjectType>(["JavaClass", "DbmsJob", "RecycleBin"]);
+export const hasObjectDdl = (type: ObjectType) => !NO_DDL.has(type);
 
 function dataGroup(t: ObjectType, h: ObjectMenuHandlers): MenuEntry[] {
   const editKeys = commands.editData.keys;
@@ -60,7 +61,7 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Ver", run: h.view },
     { label: "Editar", run: h.edit },
   );
-  else if ((code || data) && !NO_DDL.has(t)) items.push({ label: "Ver", run: h.view }, { label: "Editar", run: h.edit });
+  else if ((code || data) && hasObjectDdl(t)) items.push({ label: "Ver", run: h.view }, { label: "Editar", run: h.edit });
   if (TESTABLE.has(t)) items.push({ label: commands.test.label, keys: h.test ? undefined : commands.test.keys,
     run: h.test, pending: h.test ? undefined : true });
   if (data) items.push(...dataGroup(t, h));
@@ -76,8 +77,8 @@ export function objectMenuItems(t: ObjectType, h: ObjectMenuHandlers): MenuEntry
     { label: "Propiedades", run: inspect && (() => inspect("properties")) },
   );
   if (RECOMPILABLE.has(t)) items.push({ label: "Recompilar", run: h.recompile });
-  if (!user && !NO_DDL.has(t)) items.push({ label: "Copiar DDL", run: h.copyDdl });
-  if ((code || data) && !NO_DDL.has(t)) items.push({ label: "Comparar con…", run: inspect && (() => inspect("compare")) });
+  if (!user && hasObjectDdl(t)) items.push({ label: "Copiar DDL", run: h.copyDdl });
+  if ((code || data) && hasObjectDdl(t)) items.push({ label: "Comparar con…", run: inspect && (() => inspect("compare")) });
   items.push(
     "sep",
     { label: "Copiar nombre", keys: "Ctrl+C", run: h.copyName },

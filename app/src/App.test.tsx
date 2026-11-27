@@ -14,6 +14,12 @@ import App from "./App";
 import { api } from "./api";
 
 beforeAll(async () => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+      configurable: true,
+      value(this: HTMLDialogElement) { this.open = true; },
+    });
+  }
   // La latencia de los módulos del runner no forma parte del flujo de sesión.
   await Promise.all([
     import("./components/ProgramWindow"),
@@ -49,6 +55,43 @@ test("busca por nombre y tipo en el esquema y abre el resultado", async () => {
   fireEvent.click(dialog.getByRole("button", { name: "Buscar" }));
   fireEvent.click(await dialog.findByRole("button", { name: "HR.PKG_VENTAS" }));
   expect(await screen.findByRole("textbox", { name: "Spec" })).toHaveTextContent("PACKAGE PKG_VENTAS");
+});
+
+test.each([
+  ["Table", "CREATE TABLE HR.CLIENTES (ID NUMBER);"],
+  ["View", "CREATE VIEW HR.CLIENTES AS SELECT 1 AS ID FROM DUAL;"],
+  ["Sequence", "CREATE SEQUENCE HR.CLIENTES;"],
+] as const)("Buscar en el esquema abre el DDL de %s en una pestaña de solo lectura", async (type, ddl) => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([{
+    owner: "HR", name: "CLIENTES", object_type: type, status: "Valid", last_ddl_time: "",
+  }]);
+  const readDdl = vi.mocked(api.objectDdl).mockClear().mockResolvedValue(ddl);
+  const openSql = vi.mocked(api.sqlOpen).mockClear();
+  const execute = vi.mocked(api.sqlExecute).mockClear();
+  render(<App />);
+  await connectAs();
+
+  async function selectResult() {
+    fireEvent.click(screen.getByRole("button", { name: "Buscar en el esquema" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Buscar en el esquema" }));
+    fireEvent.change(dialog.getByLabelText("Nombre"), { target: { value: "clientes" } });
+    fireEvent.change(dialog.getByLabelText("Tipo"), { target: { value: type } });
+    fireEvent.click(dialog.getByRole("button", { name: "Buscar" }));
+    fireEvent.click(await dialog.findByRole("button", { name: "HR.CLIENTES" }));
+  }
+
+  await selectResult();
+  const editor = await screen.findByRole("textbox", { name: "DDL" });
+  expect(editor).toHaveTextContent(ddl);
+  expect(editor).toHaveAttribute("aria-readonly", "true");
+  expect(readDdl).toHaveBeenCalledWith("s1", type, "HR", "CLIENTES");
+  fireEvent.keyDown(window, { key: "F8" });
+  await selectResult();
+  expect(screen.getAllByRole("textbox", { name: "DDL" })).toHaveLength(1);
+  expect(readDdl).toHaveBeenCalledOnce();
+  expect(openSql).not.toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
 });
 
 test("el historial de sentencias permite recuperar SQL de una pestaña cerrada", async () => {
@@ -199,6 +242,7 @@ vi.mock("./api", () => ({
     sessionSiblings: vi.fn(async (): Promise<string[]> => []),
     sessionPing: vi.fn(async () => true),
     listObjects: vi.fn(),
+    objectDdl: vi.fn(),
     programSource: vi.fn(),
     editorObject: vi.fn(async () => null),
     describeColumns: vi.fn(async () => []),

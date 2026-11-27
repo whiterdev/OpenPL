@@ -10,3 +10,8 @@ Dirección de `DESIGN.md`, ENERGY 1, RHYTHM 1 y MOTION 1. Diálogos rectos con c
 | Contenido y forma | PASS revisión de código | Etiquetas breves, botones con acción, íconos existentes, ancho acotado al viewport y listas desplazables que envuelven SQL e identificadores largos. Sin activos gráficos nuevos ni animaciones nuevas. |
 | Compilación | PASS | Vite y Tauri de depuración generaron la aplicación. |
 | Validación visual nativa | Pendiente | Los recorridos se ejecutaron con Vitest y jsdom. Falta la revisión visual en WebView y la consulta de catálogo contra Oracle real. |
+
+## Apertura desde los resultados (WAL-126)
+
+- **PASS automatizado.** Lupa, nombre y tipo, Buscar, clic en el resultado. Un paquete conserva la pestaña Spec. Una tabla, una vista y una secuencia abren su DDL en el editor de solo lectura. Al elegir el mismo resultado otra vez se reutiliza la pestaña. F8 no ejecuta el DDL.
+- **PASS revisión de código.** La pestaña reutiliza el editor y los estados de carga y error existentes. Se conservan los tokens, el foco y los controles. La comprobación en escritorio contra Oracle queda pendiente.

@@ -32,6 +32,7 @@ import { ToolsDialog } from "./components/ToolsDialog";
 import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
 import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
 import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
+import { hasObjectDdl } from "./objectMenu";
 import type { ProgramActions } from "./components/ProgramWindow";
 import { pendingDiscardMessage } from "./gridEdits";
 import { neighbor, reorder } from "./tabs";
@@ -965,12 +966,14 @@ export default function App() {
 
   async function onOpenObject(
     object: ObjectInfo,
-    mode: "view" | "edit" = "view",
+    mode: "view" | "edit" | "definition" = "view",
     connection = active,
     at?: { partKind: string; line: number; column: number },
   ) {
     if (!connection) return;
-    if (!supportsProgram.has(object.object_type)) {
+    const opensSource = supportsProgram.has(object.object_type);
+    const opensDdl = mode === "definition" && !opensSource && hasObjectDdl(object.object_type);
+    if (!opensSource && !opensDdl) {
       if (mode === "edit") {
         try {
           const ddl = await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name);
@@ -1001,17 +1004,25 @@ export default function App() {
       addProgram({
         id,
         connection,
-        object,
-        label: `${object.owner}.${object.name} @ ${connection.label}`,
-        readOnly: mode === "view",
+        object: opensDdl ? undefined : object,
+        label: `${object.owner ? `${object.owner}.` : ""}${object.name} @ ${connection.label}`,
+        readOnly: mode !== "edit",
         dirty: false,
         load,
         target: at,
       });
     }
     try {
-      const parts = [...(await fetchProgram(connection.sessionId, object))];
+      const parts: ProgramPart[] = opensDdl
+        ? [{
+            kind: "DDL",
+            source: await api.objectDdl(connection.sessionId, object.object_type, object.owner, object.name),
+            last_ddl_time: object.last_ddl_time,
+            diagnostics: [],
+          }]
+        : [...(await fetchProgram(connection.sessionId, object))];
       if (parts.length === 0) throw new Error("Fuente no disponible.");
+      if (opensDdl && !parts[0].source.trim()) throw new Error("DDL no disponible.");
       const first = parts[0]?.kind;
       if (parts.length === 1 && (first === "PACKAGE" || first === "TYPE")) {
         parts.push({
@@ -1024,6 +1035,9 @@ export default function App() {
       updateProgram(id, { parts, load: undefined }, load);
     } catch (error) {
       const detail = describeError(error);
+      if (opensDdl && detail.kind === "ConnectionLost") {
+        setStates((all) => ({ ...all, [connection.sessionId]: "Disconnected" }));
+      }
       updateProgram(
         id,
         {
@@ -1501,7 +1515,8 @@ export default function App() {
                             }, read)
                           : undefined}
                         readOnly={tab.readOnly}
-                        onReadOnlyChange={(readOnly) => updateProgram(tab.id, { readOnly })}
+                        onReadOnlyChange={tab.parts[0]?.kind === "DDL"
+                          ? undefined : (readOnly) => updateProgram(tab.id, { readOnly })}
                         fileName={tab.fileName}
                         active={tab.id === programId}
                         catalog={
@@ -1625,7 +1640,7 @@ export default function App() {
       {tool === "scripts" && <AutoReplaceDialog close={() => setTool(null)} />}
       {tool === "search" && active && <SchemaSearch key={active.sessionId} connection={active}
         close={() => setTool(null)} onConnectionLost={onConnectionLost}
-        open={(object) => { setTool(null); void onOpenObject(object, "view", active); }} />}
+        open={(object) => { setTool(null); void onOpenObject(object, "definition", active); }} />}
       {tool === "history" && active && (() => {
         const entries = statementHistory.filter((entry) => entry.connectionId === active.sessionId);
         return <ToolsDialog title={commands.statementHistory.label} close={() => setTool(null)}>

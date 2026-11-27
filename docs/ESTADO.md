@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- Beta 11 (WAL-126): los resultados de Buscar en el esquema abren la fuente de los programas o una pestaña DDL de solo lectura para tablas, vistas y los demás tipos con DDL. Los tipos sin DDL conservan el inspector. Pasaron 779 pruebas Vitest, TypeScript, build web, fmt, Clippy y las pruebas Rust sin conexión a Oracle. Queda pendiente la comprobación manual en la app instalada. [Comportamiento](behavior/busqueda-historial-scripts.md).
+
 - Beta 9 publicada y validada por el usuario. Los issues de las betas 8 y 9 están en Done en Linear. [Validación de Beta 8](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-511a7819) y [validación de Beta 9](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-031e4038).
 - La rama `feat/ficha-todas-las-columnas` muestra todas las columnas al pasar el puntero sobre tablas y vistas. La ficha mantiene su altura máxima y permite desplazarse por la lista. Pasaron 776 pruebas Vitest, TypeScript, fmt, Clippy y pruebas Rust sin conexión a Oracle. La prueba de regresión usa una tabla simulada de 64 columnas. [Comportamiento](behavior/editor-inteligente.md).
 
