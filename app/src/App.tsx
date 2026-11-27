@@ -159,6 +159,7 @@ const commandObjectTypes = {
   TYPE: "Type", SEQUENCE: "Sequence", SYNONYM: "Synonym", INDEX: "Index",
   "JAVA SOURCE": "JavaSource", LIBRARY: "Library", CLUSTER: "Cluster",
 } satisfies Record<string, ObjectInfo["object_type"]>;
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 // En inputs y textareas estas teclas editan o seleccionan el texto del campo, no la ventana activa.
 const fieldKeys = [
   "comment",
@@ -371,7 +372,7 @@ export default function App() {
     statementHistory: active ? () => setTool("history") : undefined,
     autoReplace: () => setTool("scripts"),
     palette: () => setShowPalette(true),
-    checkUpdates: () => void checkUpdates(false),
+    checkUpdates: () => void checkUpdates("manual"),
   };
 
   useLayoutEffect(() => {
@@ -593,25 +594,36 @@ export default function App() {
     return true;
   };
 
-  async function checkUpdates(silent: boolean) {
-    const result = await runCheck(tauriUpdater, silent);
+  const updateRequest = useRef<ReturnType<typeof runCheck> | null>(null);
+  const checkUpdates = useCallback(async (mode: "startup" | "background" | "manual") => {
+    const request = updateRequest.current ??= runCheck(tauriUpdater, false);
+    const result = await request;
+    if (updateRequest.current === request) updateRequest.current = null;
+
     if (result.kind === "available") {
       setPendingUpdate(result.update);
-      setUpdateOffer(result.update);
-    }
-    else if (result.kind === "upToDate") {
+      if (mode !== "background") setUpdateOffer(result.update);
+    } else if (result.kind === "upToDate") {
       // La versión anunciada ya no está publicada: el ícono no debe seguir prometiéndola.
       setPendingUpdate(null);
-      if (!silent) showNotice("Estás al día");
+      if (mode === "manual") showNotice("Estás al día");
+    } else if (result.kind === "error" && mode === "manual") {
+      showNotice(result.message, "error");
     }
-    else if (result.kind === "error") showNotice(result.message, "error");
-  }
+  }, [showNotice]);
+
   const updateChecked = useRef(false);
   useEffect(() => {
     if (updateChecked.current) return;
     updateChecked.current = true;
-    void checkUpdates(true);
-  }, []);
+    void checkUpdates("startup");
+  }, [checkUpdates]);
+
+  useEffect(() => {
+    if (!isTauri() || pendingUpdate) return;
+    const timer = window.setInterval(() => void checkUpdates("background"), UPDATE_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [checkUpdates, pendingUpdate]);
 
   async function installUpdate(update: AvailableUpdate) {
     if (!confirmExit()) return;
