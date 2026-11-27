@@ -347,6 +347,70 @@ describe("menú contextual", () => {
   });
 });
 
+describe("insertar en paquetes", () => {
+  const body = "PACKAGE BODY pkg_ventas AS\n  \nEND pkg_ventas;";
+  const emptyLine = "PACKAGE BODY pkg_ventas AS\n".length;
+  const inserts = ["Insertar función", "Insertar procedimiento", "Insertar cursor", "Insertar tipo registro",
+    "Insertar excepción", "Insertar constante"];
+
+  function open(kind: string, source: string, readOnly = false) {
+    let view: EditorView | null = null;
+    render(
+      <ProgramEditor
+        part={{ kind, source, last_ddl_time: null, diagnostics: [] }}
+        label="Cuerpo" readOnly={readOnly} onView={(v) => { if (v) view = v; }} onChange={() => {}} activate={() => {}}
+      />,
+    );
+    return view!;
+  }
+  const labels = () => Array.from(screen.getByRole("menu", { name: "Editor" }).querySelectorAll(".menu-label"),
+    (label) => label.textContent);
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("en una línea vacía del cuerpo muestra Insertar y la función queda implementada", () => {
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: emptyLine + 1, assoc: 1 });
+    const view = open("PACKAGE BODY", body);
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    expect(labels().slice(0, 6)).toEqual(inserts);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Insertar función" }));
+    expect(view.state.doc.toString()).toBe(
+      "PACKAGE BODY pkg_ventas AS\n  FUNCTION nueva_funcion RETURN NUMBER IS\n  BEGIN\n    RETURN NULL;\n"
+      + "  END nueva_funcion;\nEND pkg_ventas;",
+    );
+    const { from, to } = view.state.selection.main;
+    expect(view.state.sliceDoc(from, to)).toBe("nueva_funcion");
+    undo(view);
+    expect(view.state.doc.toString()).toBe(body);
+  });
+
+  it("en la especificación inserta la declaración", () => {
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: "PACKAGE pkg AS\n".length, assoc: 1 });
+    const view = open("PACKAGE", "PACKAGE pkg AS\n\nEND pkg;");
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Insertar procedimiento" }));
+    expect(view.state.doc.toString()).toBe("PACKAGE pkg AS\nPROCEDURE nuevo_procedimiento;\nEND pkg;");
+  });
+
+  it("en una línea con texto no aparece", () => {
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: 3, assoc: 1 });
+    const view = open("PACKAGE BODY", body);
+    fireEvent.contextMenu(view.contentDOM, { clientX: 100, clientY: 120 });
+    expect(labels()).not.toContain("Insertar función");
+  });
+
+  it("fuera de un paquete o en solo lectura no aparece", () => {
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: emptyLine + 1, assoc: 1 });
+    const procedure = open("PROCEDURE", body);
+    fireEvent.contextMenu(procedure.contentDOM, { clientX: 100, clientY: 120 });
+    expect(labels()).not.toContain("Insertar función");
+    fireEvent.keyDown(document, { key: "Escape" });
+    const locked = open("PACKAGE BODY", body, true);
+    fireEvent.contextMenu(locked.contentDOM, { clientX: 100, clientY: 120 });
+    expect(labels()).not.toContain("Insertar función");
+  });
+});
+
 describe("paquete grande", () => {
   const source = ["PACKAGE BODY PKG_VENTAS AS", ...Array.from({ length: 20000 }, (_, i) => `  -- línea ${i}`), "END;"].join("\n");
 
