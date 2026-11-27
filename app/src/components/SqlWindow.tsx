@@ -800,6 +800,8 @@ export function SqlWindow({
     if (view.current) action(view.current);
   };
 
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const symbolsRef = useRef(symbols);
   symbolsRef.current = symbols;
   const symbolContext = useCallback<ContextFor>((editor, position) => ({
@@ -830,8 +832,11 @@ export function SqlWindow({
     const editor = view.current;
     if (!editor) return;
     const position = at ?? editor.state.selection.main.from;
+    const { doc } = editor.state;
+    const head = editor.state.selection.main.head;
     const found = await resolveAt(editor, position, symbolContext);
-    if (!found) return;
+    // Si mientras tanto se escribió o se movió el cursor, el destino ya no corresponde.
+    if (!found || !activeRef.current || editor.state.doc !== doc || editor.state.selection.main.head !== head) return;
     const relation = found.items.find((item) => item.kind === "relation");
     if (relation?.kind === "relation") {
       openObject?.(relation.object);

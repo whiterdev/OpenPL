@@ -161,6 +161,8 @@ export function ProgramWindow({
     return view ? editorPart(entry.kind, view) : { kind: entry.kind, source: entry.source };
   }), []);
   useEffect(() => registerRef.current?.(liveSources), [liveSources]);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const symbolRefs = useRef({ symbols, symbolSelf });
   symbolRefs.current = { symbols, symbolSelf };
   const symbolContext = useCallback<ContextFor>((view, position) => {
@@ -321,8 +323,11 @@ export function ProgramWindow({
     const view = views.current[index];
     if (!view) return;
     const position = at ?? view.state.selection.main.from;
+    const { doc } = view.state;
+    const head = view.state.selection.main.head;
     const found = await resolveAt(view, position, symbolContext);
-    if (!found) return;
+    // Si mientras tanto se escribió o se movió el cursor, el destino ya no corresponde.
+    if (!found || !activeRef.current || view.state.doc !== doc || view.state.selection.main.head !== head) return;
     const { name, items } = found;
     const relation = items.find((item) => item.kind === "relation");
     if (relation?.kind === "relation") {

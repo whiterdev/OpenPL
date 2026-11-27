@@ -902,3 +902,47 @@ test("un destino pedido se ubica por línea y columna, aunque esté fuera del te
     initialTarget={{ partKind: "PACKAGE", line: 99, column: 99 }} />);
   expect(view.state.selection.main.head).toBe(source.length);
 });
+
+test("F12 no navega si el usuario escribió mientras se resolvía", async () => {
+  const ref = createRef<ProgramActions>();
+  const onNavigate = vi.fn();
+  const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof other) => void = () => {};
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof other>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+  render(<ProgramWindow readOnly={false} onDirty={vi.fn()} ref={ref} symbols={symbols} onNavigate={onNavigate}
+    parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  act(() => view.dispatch({ changes: { from: 0, insert: "-- " } }));
+  await act(async () => { answer(other); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onNavigate).not.toHaveBeenCalled();
+});
+
+test("F12 no abre otro objeto si el usuario cambió de pestaña mientras se resolvía", async () => {
+  const ref = createRef<ProgramActions>();
+  const onNavigate = vi.fn();
+  const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof other) => void = () => {};
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof other>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+  const props = { onDirty: vi.fn(), ref, symbols, onNavigate, parts: [{ ...parts[1], source }] };
+  const { rerender } = render(<ProgramWindow readOnly {...props} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  rerender(<ProgramWindow readOnly {...props} active={false} />);
+  await act(async () => { answer(other); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onNavigate).not.toHaveBeenCalled();
+});

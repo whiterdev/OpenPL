@@ -857,3 +857,22 @@ describe("ficha y navegación", () => {
     expect(await screen.findByRole("menuitem", { name: /Ir a la definición/ })).toBeInTheDocument();
   });
 });
+
+test("F12 no salta si el cursor se movió mientras se resolvía", async () => {
+  const table = { owner: "HR", name: "PKG_X", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof table) => void = () => {};
+  const openObject = vi.fn();
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof table>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_x AS\n  PROCEDURE f;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "BEGIN pkg_x.f; END;";
+  const { ref, view } = setup(source, { symbols, openObject });
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("f;") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  await act(async () => { answer(table); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(openObject).not.toHaveBeenCalled();
+});
