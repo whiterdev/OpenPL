@@ -21,6 +21,100 @@ beforeAll(async () => {
   ]);
 });
 
+test("busca por nombre y tipo en el esquema y abre el resultado", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  const object = {
+    owner: "HR", name: "PKG_VENTAS", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "",
+  };
+  vi.mocked(api.listObjects)
+    .mockResolvedValueOnce([])
+    .mockRejectedValueOnce(new Error("Catálogo no disponible"))
+    .mockResolvedValue([object]);
+  vi.mocked(api.programSource).mockResolvedValue([{
+    kind: "PACKAGE", source: "PACKAGE PKG_VENTAS AS END;", diagnostics: [], last_ddl_time: null,
+  }]);
+  render(<App />);
+  await connectAs();
+  fireEvent.click(screen.getByRole("button", { name: "Buscar en el esquema" }));
+  const dialog = within(screen.getByRole("dialog", { name: "Buscar en el esquema" }));
+  expect(dialog.getByLabelText("Nombre")).toHaveFocus();
+  fireEvent.change(dialog.getByLabelText("Nombre"), { target: { value: "ventas" } });
+  fireEvent.change(dialog.getByLabelText("Tipo"), { target: { value: "Package" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Buscar" }));
+  expect(dialog.getByRole("status")).toHaveTextContent("Buscando");
+  expect(api.listObjects).toHaveBeenLastCalledWith("s1", "Mine", "Package", "ventas");
+  await dialog.findByText("Sin coincidencias");
+  fireEvent.click(dialog.getByRole("button", { name: "Buscar" }));
+  expect(await dialog.findByRole("alert")).toHaveTextContent("Catálogo no disponible");
+  fireEvent.click(dialog.getByRole("button", { name: "Buscar" }));
+  fireEvent.click(await dialog.findByRole("button", { name: "HR.PKG_VENTAS" }));
+  expect(await screen.findByRole("textbox", { name: "Spec" })).toHaveTextContent("PACKAGE PKG_VENTAS");
+});
+
+test("el historial de sentencias permite recuperar SQL de una pestaña cerrada", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.sqlOpen).mockResolvedValueOnce("w1").mockResolvedValueOnce("w2");
+  const execute = vi.mocked(api.sqlExecute).mockClear().mockResolvedValue({
+    result: { kind: "Done", message: "Consulta ejecutada" }, elapsed_ms: 1, output: [], transaction: false,
+  });
+  render(<App />);
+  await connectAs();
+  fireEvent.click(screen.getByRole("button", { name: "Historial de sentencias" }));
+  const emptyHistory = within(screen.getByRole("dialog", { name: "Historial de sentencias" }));
+  expect(emptyHistory.getByText("Sin sentencias ejecutadas")).toBeVisible();
+  fireEvent.keyDown(emptyHistory.getByRole("button", { name: "Cerrar" }), { key: "Escape" });
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "select 1 from dual" } }));
+  fireEvent.keyDown(window, { key: "F8" });
+  await screen.findByText("Consulta ejecutada");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: /^Cerrar SQL/ }));
+    await waitFor(() => expect(editor).not.toBeInTheDocument());
+  } finally {
+    confirm.mockRestore();
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Historial de sentencias" }));
+  const dialog = within(screen.getByRole("dialog", { name: "Historial de sentencias" }));
+  fireEvent.click(dialog.getByRole("button", { name: /select 1 from dual/ }));
+  expect(await screen.findByRole("textbox", { name: "SQL" })).toHaveTextContent("select 1 from dual");
+  expect(execute).toHaveBeenCalledOnce();
+});
+
+test("un script configurable persiste y se expande con Tab en el editor", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.openProgramFile).mockResolvedValue({ name: "demo.pks", source: "demo" });
+  const first = render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "r", ctrlKey: true, altKey: true });
+  const dialog = within(screen.getByRole("dialog", { name: "Auto Replace" }));
+  fireEvent.click(dialog.getByRole("button", { name: "SEL" }));
+  expect(dialog.getByRole("button", { name: "SEL" })).toHaveAttribute("aria-pressed", "true");
+  expect(dialog.getByLabelText("Script")).toHaveValue("select * from tabla");
+  fireEvent.click(dialog.getByRole("button", { name: "Eliminar" }));
+  expect(dialog.queryByRole("button", { name: "SEL" })).not.toBeInTheDocument();
+  fireEvent.click(dialog.getByRole("button", { name: "Nuevo" }));
+  fireEvent.change(dialog.getByLabelText("Abreviatura"), { target: { value: "DEMO" } });
+  fireEvent.change(dialog.getByLabelText("Script"), { target: { value: "select 1" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Guardar" }));
+  fireEvent.click(dialog.getByRole("button", { name: "DEMO" }));
+  fireEvent.change(dialog.getByLabelText("Script"), { target: { value: "select 1\nfrom dual;" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Guardar" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Cerrar" }));
+  first.unmount();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+  const editor = await screen.findByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: 4 } }));
+  fireEvent.keyDown(editor, { key: "Tab" });
+  expect(view.state.doc.toString()).toBe("select 1\nfrom dual;");
+  localStorage.removeItem("openpl.autoReplace");
+});
+
 test("Ctrl K busca y ejecuta una acción disponible", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.openProgramFile).mockResolvedValue(null);

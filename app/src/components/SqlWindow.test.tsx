@@ -30,6 +30,23 @@ function setup(source: string, props: Partial<Parameters<typeof SqlWindow>[0]> =
   return { ref, view, onTransaction };
 }
 
+test("Tab expande SEL en la consola sin enviar el comando", () => {
+  const execute = vi.spyOn(api, "sqlExecute");
+  setup("", { command: true });
+  const prompt = screen.getByLabelText<HTMLTextAreaElement>("Comando SQL");
+  fireEvent.change(prompt, { target: { value: "sel" } });
+  prompt.setSelectionRange(3, 3);
+  expect(fireEvent.keyDown(prompt, { key: "Tab" })).toBe(false);
+  expect(prompt).toHaveValue("select * from tabla");
+  expect(prompt.selectionStart).toBe(prompt.value.length);
+  expect(execute).not.toHaveBeenCalled();
+
+  fireEvent.change(prompt, { target: { value: "SEL_RESULTADO" } });
+  prompt.setSelectionRange(3, 3);
+  expect(fireEvent.keyDown(prompt, { key: "Tab" })).toBe(true);
+  expect(prompt).toHaveValue("SEL_RESULTADO");
+});
+
 test("EDIT sugiere objetos y abre la selección sin ejecutar SQL", async () => {
   const table = { owner: "HR", name: "VENTAS", object_type: "TABLE" };
   const view = { owner: "HR", name: "VENTAS_V", object_type: "VIEW" };
