@@ -249,3 +249,12 @@ test("un cuerpo envuelto deja ver la spec", async () => {
   expect(found).toHaveLength(1);
   expect(found[0]).toMatchObject({ kind: "symbol", symbol: { name: "F" } });
 });
+
+test("dentro de un SELECT el alias gana a una variable con el mismo nombre", async () => {
+  const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table") });
+  const source = "DECLARE c NUMBER; x VARCHAR2(9); BEGIN SELECT c.nombre INTO x FROM clientes c; END;";
+  const found = await resolveSymbol(at([source], "nombre", { lookup }), path(["C", "NOMBRE"]));
+  expect(found).toEqual([
+    { kind: "column", table: "CLIENTES", column: { name: "NOMBRE", data_type: "VARCHAR2(100)", nullable: true } },
+  ]);
+});

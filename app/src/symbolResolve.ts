@@ -225,13 +225,14 @@ class Resolver {
   }
 
   private async firstEntity(name: string): Promise<Entity | null> {
+    // Dentro de una sentencia SQL, Oracle resuelve primero sus alias y tablas.
+    const { current, position } = this.ctx;
+    const table = aliasesAround(this.ctx.parts[current]?.source ?? "", position).get(name);
+    if (table) return { t: "relation", owner: table.owner, name: table.name };
     const visible = this.visible(name);
     const fromSymbol = this.entityFromSymbol(visible.find((item) =>
       item.kind === "symbol" && (valueKinds.has(item.symbol.kind) || item.symbol.kind === "package")));
     if (fromSymbol) return fromSymbol;
-    const { current, position } = this.ctx;
-    const table = aliasesAround(this.ctx.parts[current]?.source ?? "", position).get(name);
-    if (table) return { t: "relation", owner: table.owner, name: table.name };
     if (!this.ctx.lookup) return null;
     return this.entityFromObject(await this.object(null, name), name);
   }
