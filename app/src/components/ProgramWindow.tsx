@@ -11,6 +11,11 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import { describeError, type ObjectInfo, type ProgramPart } from "../types";
 import { editorReference } from "../editorReference";
+import {
+  NAVIGATION_TITLES, navigationMenuItems, navigationTargets, resolveAt,
+  type NavigationGoal, type NavigationTarget,
+} from "../editorNavigation";
+import { partCaption } from "./SymbolCard";
 import { positionAt, ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
 import { ProgramComparison, type ComparisonResult } from "./ProgramComparison";
@@ -18,6 +23,8 @@ import { compileStatement, type CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
 import { useCompletionCatalog } from "../useCompletionCatalog";
 import { ContextMenu } from "./ContextMenu";
+import type { SourcePart, SymbolLookup } from "../symbolSources";
+import { editorPart, showSymbolCard, type ContextFor } from "../symbolHover";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
 
@@ -59,6 +66,18 @@ interface Props {
   readCurrentProgram?: () => Promise<ProgramPart[]>;
   compilationTarget?: CompilationTarget;
   compile?: ProgramCompiler;
+  /** Registra el texto vivo para la ficha y la navegación de otras ventanas. */
+  registerSource?: (read: () => SourcePart[]) => () => void;
+  /** Identifica el objeto registrado; al cambiar (p. ej. tras la primera compilación) se vuelve a registrar. */
+  sourceKey?: string;
+  /** Catálogo para la ficha y la navegación; null o ausente: solo lo del documento. */
+  symbols?: SymbolLookup | null;
+  /** Objeto que muestra la ventana, para ubicar sus propias declaraciones. */
+  symbolSelf?: Pick<ObjectInfo, "owner" | "name" | "object_type"> | null;
+  /** Destinos en otro objeto: la ventana pide abrirlo. */
+  onNavigate?: (target: NavigationTarget) => void;
+  /** Posición a la que ir al abrir o al pedir un destino nuevo. */
+  initialTarget?: { partKind: string; line: number; column: number };
 }
 
 const caption = (kind: string) => {
@@ -92,13 +111,10 @@ function storedOutlineWidth() {
   }
 }
 
-interface DeclarationTarget {
-  index: number;
-  entry: ProgramDeclaration;
-}
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
+  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource, sourceKey, symbols, symbolSelf,
+  onNavigate, initialTarget,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
   const [compiling, setCompiling] = useState(false);
@@ -109,8 +125,8 @@ export function ProgramWindow({
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [comparison, setComparison] = useState<{ index: number; result: ComparisonResult } | null>(null);
-  const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number }) | null>(null);
-  const [declarationMenu, setDeclarationMenu] = useState<{ name: string; x: number; y: number; targets: DeclarationTarget[] } | null>(null);
+  const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number; part: number; position: number }) | null>(null);
+  const [declarationMenu, setDeclarationMenu] = useState<{ title: string; x: number; y: number; targets: NavigationTarget[] } | null>(null);
   const [routineMenu, setRoutineMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   const closeRoutineMenu = useCallback(() => setRoutineMenu(null), []);
   const [description, setDescription] = useState<{ object: ObjectInfo; sessionId: string; id: number } | null>(null);
@@ -138,6 +154,30 @@ export function ProgramWindow({
   const root = useRef<HTMLElement>(null);
   const shownParts = useRef(parts);
   const wasActive = useRef(active);
+  const liveParts = useRef(parts);
+  liveParts.current = parts;
+  const registerRef = useRef(registerSource);
+  registerRef.current = registerSource;
+  const liveSources = useCallback(() => liveParts.current.map((entry, index): SourcePart => {
+    const view = views.current[index];
+    return view ? editorPart(entry.kind, view) : { kind: entry.kind, source: entry.source };
+  }), []);
+  useEffect(() => (sourceKey ? registerRef.current?.(liveSources) : undefined), [liveSources, sourceKey]);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const symbolRefs = useRef({ symbols, symbolSelf });
+  symbolRefs.current = { symbols, symbolSelf };
+  const symbolContext = useCallback<ContextFor>((view, position) => {
+    const current = views.current.indexOf(view);
+    if (current < 0) return null;
+    return {
+      parts: liveSources(),
+      current,
+      position,
+      self: symbolRefs.current.symbolSelf ?? null,
+      lookup: symbolRefs.current.symbols ?? null,
+    };
+  }, [liveSources]);
 
   function currentTexts() {
     return parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);
@@ -268,34 +308,62 @@ export function ProgramWindow({
     if (view) navigateAt(index, positionAt(view, line, column));
   }
 
-  function declaration() {
-    if (comparison) return;
-    const view = views.current[selected];
-    if (!view) return;
-    const position = view.state.selection.main.from;
-    const reference = editorReference(view.state, position)
-      ?? (position > 0 ? editorReference(view.state, position - 1) : null);
-    if (!reference || (reference.owner && compilationTarget && reference.owner !== compilationTarget.name)) return;
+  function openTarget(target: NavigationTarget) {
+    const { location } = target;
+    if (location.where === "here") navigateAt(location.part, location.from);
+    else onNavigate?.(target);
+  }
 
-    const { first, second } = structureNow();
-    const bySignature = new Map<string, DeclarationTarget>();
-    for (const entry of selected === 0 ? first : second) {
-      if (entry.name === reference.name) bySignature.set(entry.key, { index: selected, entry });
+  function targetLabel({ location, label }: NavigationTarget) {
+    if (location.where === "object") return `${location.object.name} · ${partCaption(location.partKind)} · ${label}`;
+    return canSplit ? `${caption(parts[location.part].kind)} · ${label}` : label;
+  }
+
+  /** Definición, declaración o implementación del nombre en `at` (o en el cursor). */
+  /** `onMiss`: el nombre no lleva a ningún lado (Ctrl+clic lo usa para ubicar el cursor). */
+  async function goTo(goal: NavigationGoal, index = selected, at?: number, onMiss?: () => void) {
+    if (comparison) return;
+    const view = views.current[index];
+    if (!view) return;
+    const position = at ?? view.state.selection.main.from;
+    const { doc } = view.state;
+    const head = view.state.selection.main.head;
+    const found = await resolveAt(view, position, symbolContext);
+    // Si mientras tanto se escribió o se movió el cursor, el destino ya no corresponde.
+    if (!activeRef.current || view.state.doc !== doc || view.state.selection.main.head !== head) return;
+    if (!found) {
+      onMiss?.();
+      return;
     }
-    if (canSplit && selected === 1) {
-      for (const entry of first) {
-        if (entry.name === reference.name) bySignature.set(entry.key, { index: 0, entry });
-      }
+    const { name, items } = found;
+    const relation = items.find((item) => item.kind === "relation");
+    if (relation?.kind === "relation") {
+      if (catalog) setDescription({ object: relation.object, sessionId: catalog.sessionId, id: ++objectRequestId.current });
+      return;
     }
-    const targets = [...bySignature.values()];
+    const { targets, notice } = navigationTargets(items, goal);
+    if (notice) setMessage(notice);
     if (targets.length === 1) {
-      navigateAt(targets[0].index, targets[0].entry.from);
+      openTarget(targets[0]);
     } else if (targets.length > 1) {
       const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
       closeObjectMenu();
-      setDeclarationMenu({ name: reference.name, x: coords.left, y: coords.bottom, targets });
+      setDeclarationMenu({
+        title: `${NAVIGATION_TITLES[goal]} de ${name}`,
+        x: coords.left, y: coords.bottom, targets,
+      });
+    } else {
+      onMiss?.();
     }
   }
+
+  useEffect(() => {
+    if (!initialTarget) return;
+    const index = parts.findIndex((part) => part.kind === initialTarget.partKind);
+    if (index >= 0) navigate(index, initialTarget.line, initialTarget.column);
+    // Solo al pedir un destino nuevo; `parts` llega junto con él.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTarget]);
 
   async function save() {
     if (saving) return;
@@ -448,7 +516,9 @@ export function ProgramWindow({
       setComparison(null);
       setSplit((value) => !value);
     } : undefined,
-    goToDeclaration: declaration,
+    goToDefinition: () => void goTo("definition"),
+    goToDeclaration: () => void goTo("declaration"),
+    goToImplementation: () => void goTo("implementation"),
     foldBlock: runInEditor(foldCode),
     unfoldBlock: runInEditor(unfoldCode),
     compareProgram: readCurrentProgram ? () => void compare() : undefined,
@@ -467,9 +537,10 @@ export function ProgramWindow({
       if (!reference) return;
       const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
       closeDeclarationMenu();
-      setObjectMenu({ reference, x: coords.left, y: coords.bottom, id: ++objectRequestId.current });
+      setObjectMenu({ reference, x: coords.left, y: coords.bottom, id: ++objectRequestId.current, part: selected, position });
     }) : undefined,
     complete: readOnly ? undefined : runInEditor(startCompletion),
+    showSymbolCard: runInEditor(showSymbolCard),
     goToLine: runInEditor(gotoLine),
     find: runInEditor(openFind),
     findNext: runInEditor(findNextMatch),
@@ -586,6 +657,7 @@ export function ProgramWindow({
               {split && <span className="program-pane-label">{caption(entry.kind)}</span>}
               <ProgramEditor
                 part={entry}
+                symbolContext={symbolContext}
                 label={caption(entry.kind)}
                 readOnly={readOnly}
                 completion={completion}
@@ -600,8 +672,11 @@ export function ProgramWindow({
                   }
                   closeRoutineMenu();
                   closeDeclarationMenu();
-                  setObjectMenu({ reference, x, y, id: ++objectRequestId.current });
+                  setObjectMenu({ reference, x, y, id: ++objectRequestId.current, part: index, position });
                 } : undefined}
+                onCtrlClick={(position) => void goTo("definition", index, position, () => {
+                  views.current[index]?.dispatch({ selection: { anchor: position } });
+                })}
                 onView={(view) => {
                   views.current[index] = view;
                   const base = saved.current[index];
@@ -637,6 +712,7 @@ export function ProgramWindow({
       {active && catalog && objectMenu && (
         <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
           readOnlyItem={readOnlyItem}
+          navigation={navigationMenuItems((goal) => void goTo(goal, objectMenu.part, objectMenu.position))}
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
       )}
@@ -646,10 +722,10 @@ export function ProgramWindow({
       )}
       {active && declarationMenu && !comparison && (
         <ContextMenu x={declarationMenu.x} y={declarationMenu.y}
-          label={`Declaraciones de ${declarationMenu.name}`} width={360} className="program-declaration-menu"
-          items={declarationMenu.targets.map(({ entry, index }) => ({
-            label: canSplit ? `${caption(parts[index].kind)} · ${entry.label}` : entry.label,
-            run: () => navigateAt(index, entry.from),
+          label={declarationMenu.title} width={360} className="program-declaration-menu"
+          items={declarationMenu.targets.map((target) => ({
+            label: targetLabel(target),
+            run: () => openTarget(target),
           }))}
           onClose={closeDeclarationMenu} />
       )}

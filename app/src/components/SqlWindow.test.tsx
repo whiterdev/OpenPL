@@ -811,3 +811,68 @@ describe("WAL-115: la selección manda", () => {
     await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).not.toBeNull());
   });
 });
+
+describe("ficha y navegación", () => {
+  const table = { owner: "HR", name: "CLIENTES", object_type: "Table" as const, status: "Valid" as const, last_ddl_time: "" };
+  const symbols = () => ({
+    object: vi.fn(async (_owner: string | null, name: string) => (name === "CLIENTES" ? table : null)),
+    parts: vi.fn(async () => []),
+    columns: vi.fn(async () => [{ name: "NOMBRE", data_type: "VARCHAR2(100)", nullable: true }]),
+  });
+
+  test("ficha de tabla en una ventana SQL", async () => {
+    const source = "SELECT * FROM clientes";
+    const { ref, view } = setup(source, { symbols: symbols() });
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("clientes") + 1 } }));
+    act(() => ref.current!.showSymbolCard!());
+    expect(await screen.findByText("VARCHAR2(100)")).toBeInTheDocument();
+  });
+
+  test("F12 sobre una variable del bloque anónimo va a su declaración", async () => {
+    const source = "DECLARE v NUMBER := 1; BEGIN v := 2; END;";
+    const { ref, view } = setup(source);
+    act(() => view.dispatch({ selection: { anchor: source.lastIndexOf("v :=") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(view.state.selection.main.head).toBe(source.indexOf("v NUMBER")));
+  });
+
+  test("F12 sobre una tabla la abre", async () => {
+    const openObject = vi.fn();
+    const source = "SELECT * FROM clientes";
+    const { ref, view } = setup(source, { symbols: symbols(), openObject });
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("clientes") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(openObject).toHaveBeenCalledWith(table));
+  });
+
+  test("clic derecho sobre un nombre ofrece navegación", async () => {
+    vi.spyOn(api, "editorObject").mockResolvedValue(table);
+    const source = "SELECT * FROM clientes";
+    const { view } = setup(source, {
+      symbols: symbols(),
+      catalog: { sessionId: "s1", owner: null, openProgram: vi.fn() },
+    });
+    vi.spyOn(EditorView.prototype, "posAndSideAtCoords").mockReturnValue({ pos: source.indexOf("clientes") + 1, assoc: 1 });
+    fireEvent.contextMenu(view.contentDOM, { clientX: 5, clientY: 5 });
+    expect(await screen.findByRole("menuitem", { name: /Ir a la definición/ })).toBeInTheDocument();
+  });
+});
+
+test("F12 no salta si el cursor se movió mientras se resolvía", async () => {
+  const table = { owner: "HR", name: "PKG_X", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof table) => void = () => {};
+  const openObject = vi.fn();
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof table>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_x AS\n  PROCEDURE f;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "BEGIN pkg_x.f; END;";
+  const { ref, view } = setup(source, { symbols, openObject });
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("f;") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  await act(async () => { answer(table); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(openObject).not.toHaveBeenCalled();
+});

@@ -16,6 +16,8 @@ import { sql } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
+import { symbolHover, type ContextFor } from "../symbolHover";
+import { symbolLink } from "../symbolLink";
 import { programFolding } from "../programFolding";
 import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
 import { editorSearch } from "./EditorSearch";
@@ -81,6 +83,10 @@ interface Props {
   onSelection?: (head: number) => void;
   /** Marcas con posiciones absolutas; reemplazan a los diagnósticos de la parte. */
   markers?: EditorMarker[];
+  /** Contexto para la ficha de símbolos; sin él no hay ficha. */
+  symbolContext?: ContextFor;
+  /** Ctrl+clic sobre un nombre: ir a su definición. */
+  onCtrlClick?: (position: number) => void;
 }
 
 function markerDiagnostics(markers: EditorMarker[], length: number): Diagnostic[] {
@@ -159,7 +165,7 @@ export function ProgramEditor(props: Props) {
       parent: host.current!,
       doc: latest.current.part.source,
       extensions: [
-        lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection(), history(),
+        lineNumbers(), programFolding, foldGutter(), drawSelection(), rectangularSelection({ eventFilter: (event) => event.altKey && event.shiftKey }), history(),
         highlightActiveLine(), editorSearch(), highlightSelectionMatches(), sql({ dialect: oracleDialect }),
         syntaxHighlighting(programSyntax), indentUnit.of(INDENT),
         editing.of(editingExtensions(latest.current.readOnly, label)),
@@ -173,6 +179,8 @@ export function ProgramEditor(props: Props) {
           to: "a", "folded code": "Código plegado", unfold: "Desplegar",
         }),
         EditorState.allowMultipleSelections.of(true),
+        symbolHover(() => latest.current.symbolContext ?? null),
+        symbolLink(() => latest.current.onCtrlClick),
         EditorView.domEventHandlers({
           focus: () => { latest.current.activate(); },
           keydown: (event) => {

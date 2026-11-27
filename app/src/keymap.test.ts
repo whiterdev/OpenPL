@@ -234,7 +234,7 @@ describe("keymap", () => {
     expect(find).toHaveBeenCalled();
     expect(f.preventDefault).toHaveBeenCalled();
     const declined = key("F12");
-    expect(handleShortcut(declined, { goToDeclaration: () => false })).toBe(false);
+    expect(handleShortcut(declined, { goToDefinition: () => false })).toBe(false);
     expect(declined.preventDefault).toHaveBeenCalled();
   });
 

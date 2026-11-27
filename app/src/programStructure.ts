@@ -26,11 +26,11 @@ export interface Token {
   from: number;
 }
 
-const isIdentifier = (token: Token | undefined): token is Token =>
+export const isIdentifier = (token: Token | undefined): token is Token =>
   !!token && /^(?:"[^"]+"|[\p{L}][\p{L}\p{N}_$#]*)$/u.test(token.text);
-const nameOf = (token: Token) =>
+export const nameOf = (token: Token) =>
   token.text.startsWith('"') ? token.text.slice(1, -1) : token.key;
-const storedUnits = new Set([
+export const storedUnits = new Set([
   "PROCEDURE",
   "FUNCTION",
   "TRIGGER",
@@ -39,7 +39,7 @@ const storedUnits = new Set([
 ]);
 const routines = new Set(["PROCEDURE", "FUNCTION", "CURSOR"]);
 const bodyMarkers = new Set([";", "AS", "IS"]);
-const signatureModifiers = new Set([
+export const signatureModifiers = new Set([
   "ACCESSIBLE",
   "AUTHID",
   "DETERMINISTIC",
@@ -74,7 +74,7 @@ export function tokenize(source: string) {
   return tokens;
 }
 
-function boundary(
+export function boundary(
   tokens: Token[],
   start: number,
   markers: Set<string>,
@@ -105,7 +105,7 @@ function parameters(tokens: Token[], start: number, end: number) {
   return { parts, after: end };
 }
 
-function format(tokens: Token[]) {
+export function format(tokens: Token[]) {
   return tokens
     .map((token, i) => {
       const before = tokens[i - 1]?.key;
@@ -118,7 +118,7 @@ function format(tokens: Token[]) {
     .join("");
 }
 
-function normalizedParameter(tokens: Token[]) {
+export function normalizedParameter(tokens: Token[]) {
   // IN es el modo predeterminado, pero IN OUT es distinto de OUT.
   return tokens
     .filter(
@@ -128,7 +128,7 @@ function normalizedParameter(tokens: Token[]) {
     .map((token) => token.key);
 }
 
-function readName(tokens: Token[], start: number) {
+export function readName(tokens: Token[], start: number) {
   return tokens[start + 1]?.key === "." && isIdentifier(tokens[start + 2])
     ? start + 2
     : start;
@@ -179,7 +179,7 @@ function afterStatement(tokens: Token[], start: number) {
 }
 const statementEnd = new Set([";"]);
 
-function matchingBlocks(tokens: Token[]) {
+export function matchingBlocks(tokens: Token[]) {
   const ends = new Map<number, number>();
   const stack: { kind: string; index: number }[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
@@ -388,7 +388,7 @@ export function programFoldRanges(
   return ranges;
 }
 
-function findCreatedUnit(tokens: Token[]) {
+export function findCreatedUnit(tokens: Token[]) {
   for (let i = 0; i < tokens.length; i += 1) {
     if (tokens[i].key !== "CREATE") continue;
     let unit = i + 1;

@@ -769,3 +769,214 @@ describe("búsqueda y reemplazo desde ProgramActions", () => {
     expect(view.state.selection.main.from).toBe(firstFrom);
   });
 });
+
+test("registra su texto vivo y se da de baja al cerrarse", () => {
+  const release = vi.fn();
+  const registerSource = vi.fn().mockReturnValue(release);
+  const { unmount } = render(
+    <ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} registerSource={registerSource} sourceKey="s1|HR|PKG_A" />,
+  );
+  expect(registerSource).toHaveBeenCalledOnce();
+  const read = registerSource.mock.calls[0][0] as () => { kind: string; source: string }[];
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "-- nuevo\n" } }));
+  const live = read();
+  expect(live).toMatchObject([
+    { kind: "PACKAGE", source: `-- nuevo\n${parts[0].source}` },
+    { kind: "PACKAGE BODY", source: parts[1].source },
+  ]);
+  expect((live[0] as { tree?: unknown }).tree).toBeDefined();
+  unmount();
+  expect(release).toHaveBeenCalledOnce();
+});
+
+test("Mostrar ficha abre la ficha de la constante en el cursor", async () => {
+  const source = "PACKAGE PKG_A AS\n  c_max CONSTANT NUMBER := 3;\n  PROCEDURE p(x NUMBER := c_max);\nEND;";
+  const ref = createRef<ProgramActions>();
+  render(<ProgramWindow ref={ref} parts={[{ ...parts[0], source }]} readOnly onDirty={vi.fn()} symbols={null} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.lastIndexOf("c_max") + 1 } }));
+  act(() => ref.current!.showSymbolCard!());
+  expect(await screen.findByText("NUMBER := 3")).toBeInTheDocument();
+  expect(screen.getByText("línea 2")).toBeInTheDocument();
+});
+
+describe("ir a la definición", () => {
+  const spec = "PACKAGE PKG_A AS\n  PROCEDURE calcular;\nEND;";
+  const body = "PACKAGE BODY PKG_A AS\n  PROCEDURE calcular IS BEGIN NULL; END;\nBEGIN\n  calcular;\nEND;";
+  const both = [{ ...parts[0], source: spec }, { ...parts[1], source: body }];
+  const viewOf = (name: string) =>
+    EditorView.findFromDOM(screen.getByRole("textbox", { name }).closest<HTMLElement>(".cm-editor")!)!;
+  const atCall = () => {
+    fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: body.lastIndexOf("calcular") + 1 } }));
+    return view;
+  };
+
+  test("F12 sobre una llamada va al cuerpo", async () => {
+    const ref = createRef<ProgramActions>();
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={both} />);
+    const view = atCall();
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(view.state.selection.main.head).toBe(body.indexOf("calcular")));
+  });
+
+  test("Ctrl+F12 va a la spec", async () => {
+    const ref = createRef<ProgramActions>();
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={both} />);
+    atCall();
+    act(() => ref.current!.goToDeclaration!());
+    await waitFor(() => expect(viewOf("Spec").state.selection.main.head).toBe(spec.indexOf("calcular")));
+  });
+
+  test("Ir a la implementación sin cuerpo avisa", async () => {
+    const ref = createRef<ProgramActions>();
+    const only = "PACKAGE PKG_A AS\n  PROCEDURE calcular;\n  PROCEDURE otro(p NUMBER := calcular);\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={[{ ...parts[0], source: only }]} />);
+    const view = viewOf("Spec");
+    act(() => view.dispatch({ selection: { anchor: only.lastIndexOf("calcular") + 1 } }));
+    act(() => ref.current!.goToImplementation!());
+    expect(await screen.findByText("Cuerpo no disponible")).toBeInTheDocument();
+    expect(view.state.selection.main.head).toBe(only.indexOf("calcular"));
+  });
+
+  test("Ctrl+clic en un nombre navega", async () => {
+    render(<ProgramWindow readOnly onDirty={vi.fn()} parts={both} />);
+    const view = atCall();
+    vi.spyOn(view, "posAtCoords").mockReturnValue(body.lastIndexOf("calcular") + 2);
+    fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+    await waitFor(() => expect(view.state.selection.main.head).toBe(body.indexOf("calcular")));
+  });
+
+  test("destino en otro objeto pide abrirlo", async () => {
+    const ref = createRef<ProgramActions>();
+    const onNavigate = vi.fn();
+    const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+    const symbols = {
+      object: vi.fn(async (_owner: string | null, name: string) => (name === "PKG_OTRO" ? other : null)),
+      parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+      columns: vi.fn(async () => []),
+    };
+    const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} symbols={symbols} onNavigate={onNavigate}
+      parts={[{ ...parts[1], source }]} />);
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledOnce());
+    expect(onNavigate.mock.calls[0][0]).toMatchObject({
+      location: { where: "object", object: other, partKind: "PACKAGE", line: 2 },
+    });
+  });
+
+  test("F12 sobre una tabla abre su descripción", async () => {
+    vi.spyOn(api, "describeColumns").mockResolvedValue([{ name: "ID", data_type: "NUMBER", nullable: false }]);
+    const ref = createRef<ProgramActions>();
+    const table = { owner: "HR", name: "CLIENTES", object_type: "Table" as const, status: "Valid" as const, last_ddl_time: "" };
+    const symbols = {
+      object: vi.fn(async () => table),
+      parts: vi.fn(async () => []),
+      columns: vi.fn(async () => [{ name: "ID", data_type: "NUMBER", nullable: false }]),
+    };
+    const source = "PACKAGE BODY PKG_A AS\n  CURSOR c IS SELECT id FROM clientes;\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} symbols={symbols}
+      catalog={{ sessionId: "s", owner: "HR", openProgram: vi.fn() }}
+      parts={[{ ...parts[1], source }]} />);
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("clientes") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    expect(await screen.findByRole("region", { name: "Descripción de HR.CLIENTES" })).toBeInTheDocument();
+  });
+});
+
+test("un destino pedido se ubica por línea y columna, aunque esté fuera del texto", () => {
+  const source = "PACKAGE PKG_A AS\n  PROCEDURE hacer;\nEND;";
+  const { rerender } = render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source }]}
+    initialTarget={{ partKind: "PACKAGE", line: 2, column: 13 }} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Spec" }).closest<HTMLElement>(".cm-editor")!)!;
+  expect(view.state.selection.main.head).toBe(source.indexOf("hacer"));
+  rerender(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source }]}
+    initialTarget={{ partKind: "PACKAGE", line: 99, column: 99 }} />);
+  expect(view.state.selection.main.head).toBe(source.length);
+});
+
+test("F12 no navega si el usuario escribió mientras se resolvía", async () => {
+  const ref = createRef<ProgramActions>();
+  const onNavigate = vi.fn();
+  const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof other) => void = () => {};
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof other>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+  render(<ProgramWindow readOnly={false} onDirty={vi.fn()} ref={ref} symbols={symbols} onNavigate={onNavigate}
+    parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  act(() => view.dispatch({ changes: { from: 0, insert: "-- " } }));
+  await act(async () => { answer(other); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onNavigate).not.toHaveBeenCalled();
+});
+
+test("F12 no abre otro objeto si el usuario cambió de pestaña mientras se resolvía", async () => {
+  const ref = createRef<ProgramActions>();
+  const onNavigate = vi.fn();
+  const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+  let answer: (value: typeof other) => void = () => {};
+  const symbols = {
+    object: vi.fn(() => new Promise<typeof other>((resolve) => { answer = resolve; })),
+    parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+    columns: vi.fn(async () => []),
+  };
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+  const props = { onDirty: vi.fn(), ref, symbols, onNavigate, parts: [{ ...parts[1], source }] };
+  const { rerender } = render(<ProgramWindow readOnly {...props} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+  act(() => ref.current!.goToDefinition!());
+  rerender(<ProgramWindow readOnly {...props} active={false} />);
+  await act(async () => { answer(other); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onNavigate).not.toHaveBeenCalled();
+});
+
+test("Ctrl+clic sobre un nombre sin destino deja el cursor donde se hizo clic", async () => {
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  desconocido;\nEND;";
+  render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  const position = source.indexOf("desconocido") + 3;
+  vi.spyOn(view, "posAtCoords").mockReturnValue(position);
+  fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+  await waitFor(() => expect(view.state.selection.main.head).toBe(position));
+});
+
+test("una ventana que recibe su objeto después se registra entonces, una sola vez", () => {
+  const registerSource = vi.fn().mockReturnValue(vi.fn());
+  const props = { parts, readOnly: false, onDirty: vi.fn() };
+  const { rerender } = render(<ProgramWindow {...props} />);
+  expect(registerSource).not.toHaveBeenCalled();
+  rerender(<ProgramWindow {...props} registerSource={registerSource} sourceKey="s1|HR|PKG_A" />);
+  expect(registerSource).toHaveBeenCalledOnce();
+  rerender(<ProgramWindow {...props} registerSource={(read) => registerSource(read)} sourceKey="s1|HR|PKG_A" />);
+  expect(registerSource).toHaveBeenCalledOnce();
+});
+
+test("Ctrl+clic sin contexto de símbolos igual ubica el cursor", async () => {
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_w.f;\nEND;";
+  const symbols = { object: vi.fn(async () => null), parts: vi.fn(async () => []), columns: vi.fn(async () => []) };
+  render(<ProgramWindow readOnly onDirty={vi.fn()} symbols={symbols} parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  const position = source.indexOf("pkg_w") + 2;
+  vi.spyOn(view, "posAtCoords").mockReturnValue(position);
+  const resolveAt = await import("../editorNavigation");
+  vi.spyOn(resolveAt, "resolveAt").mockResolvedValue(null);
+  fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+  await waitFor(() => expect(view.state.selection.main.head).toBe(position));
+});

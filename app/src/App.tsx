@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -41,6 +42,8 @@ import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { UpdateBadge } from "./components/UpdateBadge";
+import { createSymbolSources } from "./symbolSources";
 import { runCheck, tauriUpdater, type AvailableUpdate } from "./updater";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
 import { activeTheme } from "./themes";
@@ -81,6 +84,10 @@ const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const TAB_DRAG_TYPE = "application/x-openpl-tab";
 const sqlTabActions = [
   "execute",
+  "showSymbolCard",
+  "goToDefinition",
+  "goToDeclaration",
+  "goToImplementation",
   "executeScript",
   "explainPlan",
   "fetchAllRows",
@@ -120,6 +127,8 @@ interface ProgramTab {
   fileName?: string;
   workspaceProfileId?: string;
   load?: symbol;
+  /** Posición pedida por "Ir a la definición" desde otra ventana. */
+  target?: { partKind: string; line: number; column: number };
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
   sql?: {
     sessionId: string;
@@ -182,12 +191,14 @@ export default function App() {
   } | null>(null);
   const closeRoutineOptions = useCallback(() => setRoutineOptions(null), []);
   const closeNewMenu = useCallback(() => setNewMenu(null), []);
+  const newButton = useRef<HTMLButtonElement>(null);
   const pick = (run: () => void) => () => {
     setNewMenu(null);
     run();
   };
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
+  const symbolSources = useMemo(() => createSymbolSources(api), []);
   const [notice, setNotice] = useState<{ message: string; kind: "info" | "error" } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const errorVisible = useRef(false);
@@ -217,6 +228,7 @@ export default function App() {
   latestWorkspace.current = { programs, connections };
   const saveBeforeClose = useRef<() => boolean>(() => false);
   const [updateOffer, setUpdateOffer] = useState<AvailableUpdate | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<AvailableUpdate | null>(null);
   const [updateProgress, setUpdateProgress] = useState<number | null | undefined>(undefined);
   // Un catálogo estable por sesión de ventana SQL: completado contra su propia sesión.
   const sqlCatalogs = useRef(new Map<string, CompletionCatalog>());
@@ -268,7 +280,10 @@ export default function App() {
         "spec",
         "body",
         "sideBySide",
+        "goToDefinition",
         "goToDeclaration",
+        "goToImplementation",
+        "showSymbolCard",
         "foldBlock",
         "unfoldBlock",
         "objectActions",
@@ -307,7 +322,10 @@ export default function App() {
           !program.readOnly ||
           [
             "save",
+            "goToDefinition",
             "goToDeclaration",
+            "goToImplementation",
+            "showSymbolCard",
             "foldBlock",
             "unfoldBlock",
             "goToLine",
@@ -336,7 +354,10 @@ export default function App() {
       ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex + 1)) : undefined,
     connect: () => setShowLogin(true),
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
-    refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
+    refreshExplorer: active ? () => {
+      symbolSources.invalidate(active.sessionId);
+      setRefreshTick((t) => t + 1);
+    } : undefined,
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
@@ -454,6 +475,7 @@ export default function App() {
     try {
       await api.reconnect(id);
       setStates((s) => ({ ...s, [id]: "Connected" }));
+      symbolSources.invalidate(id);
       setReconnectErrors(({ [id]: _old, ...rest }) => rest);
       setRefreshTick((t) => t + 1);
       return true;
@@ -564,8 +586,15 @@ export default function App() {
 
   async function checkUpdates(silent: boolean) {
     const result = await runCheck(tauriUpdater, silent);
-    if (result.kind === "available") setUpdateOffer(result.update);
-    else if (result.kind === "upToDate" && !silent) showNotice("Estás al día");
+    if (result.kind === "available") {
+      setPendingUpdate(result.update);
+      setUpdateOffer(result.update);
+    }
+    else if (result.kind === "upToDate") {
+      // La versión anunciada ya no está publicada: el ícono no debe seguir prometiéndola.
+      setPendingUpdate(null);
+      if (!silent) showNotice("Estás al día");
+    }
     else if (result.kind === "error") showNotice(result.message, "error");
   }
   const updateChecked = useRef(false);
@@ -930,6 +959,7 @@ export default function App() {
     object: ObjectInfo,
     mode: "view" | "edit" = "view",
     connection = active,
+    at?: { partKind: string; line: number; column: number },
   ) {
     if (!connection) return;
     if (!supportsProgram.has(object.object_type)) {
@@ -955,6 +985,7 @@ export default function App() {
     const load = Symbol();
     if (existing) {
       setProgramId(id);
+      if (at) updateProgram(id, { target: { ...at } });
       if (mode === "edit") updateProgram(id, { readOnly: false });
       if (!existing.error) return;
       updateProgram(id, { error: undefined, load });
@@ -967,6 +998,7 @@ export default function App() {
         readOnly: mode === "view",
         dirty: false,
         load,
+        target: at,
       });
     }
     try {
@@ -1023,6 +1055,7 @@ export default function App() {
     try {
       return await api.sqlExecute(id, sql, []);
     } finally {
+      symbolSources.invalidate(sessionId);
       compileSession.current = null;
       try {
         await api.sqlClose(id);
@@ -1126,12 +1159,12 @@ export default function App() {
     <div className="shell">
       <header className="titlebar">
         <Logo size={18} />
-        <MenuBar menus={menus} />
+        <MenuBar menus={menus} onOpen={closeNewMenu} />
         <button
+          ref={newButton}
           className="btn"
           aria-haspopup="menu"
           aria-expanded={!!newMenu}
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             const box = e.currentTarget.getBoundingClientRect();
             setNewMenu((open) =>
@@ -1143,12 +1176,19 @@ export default function App() {
           Nuevo
           <CaretDown size={11} aria-hidden />
         </button>
+        {pendingUpdate && (
+          <UpdateBadge
+            version={pendingUpdate.version}
+            onOpen={() => { if (updateProgress === undefined) setUpdateOffer(pendingUpdate); }}
+          />
+        )}
         {newMenu && (
           <ContextMenu
             x={newMenu.x}
             y={newMenu.y}
             label="Nuevo"
             width={240}
+            anchor={newButton}
             onClose={closeNewMenu}
             items={[
               ...(
@@ -1364,6 +1404,13 @@ export default function App() {
                       )}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
+                        symbols={tab.connection ? symbolSources.lookup(tab.connection.sessionId, null) : null}
+                        catalog={tab.id === programId && tab.connection ? {
+                          sessionId: tab.connection.sessionId,
+                          owner: null,
+                          openProgram: (object) => void onOpenObject(object, "view", tab.connection),
+                        } : undefined}
+                        openObject={(object, at) => void onOpenObject(object, "view", tab.connection, at)}
                         completion={sqlCatalog(tab.sql.sessionId)}
                         initialSql={tab.sql.initial}
                         command={tab.sql.command}
@@ -1411,6 +1458,30 @@ export default function App() {
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <ProgramWindow
                         parts={tab.parts}
+                        symbols={tab.id === programId && editorConnection
+                          ? symbolSources.lookup(editorConnection.sessionId, tab.object?.owner ?? null)
+                          : null}
+                        symbolSelf={tab.object ?? null}
+                        initialTarget={tab.target}
+                        onNavigate={(target) => {
+                          const { location } = target;
+                          if (location.where !== "object" || !editorConnection) return;
+                          void onOpenObject(location.object, "view", editorConnection, {
+                            partKind: location.partKind,
+                            line: location.line,
+                            column: location.column,
+                          });
+                        }}
+                        sourceKey={tab.object && tab.connection
+                          ? JSON.stringify([tab.connection.sessionId, tab.object.owner, tab.object.name])
+                          : undefined}
+                        registerSource={tab.object && tab.connection
+                          ? (read) => symbolSources.register({
+                              connection: tab.connection!.sessionId,
+                              owner: tab.object!.owner,
+                              name: tab.object!.name,
+                            }, read)
+                          : undefined}
                         readOnly={tab.readOnly}
                         onReadOnlyChange={(readOnly) => updateProgram(tab.id, { readOnly })}
                         fileName={tab.fileName}
