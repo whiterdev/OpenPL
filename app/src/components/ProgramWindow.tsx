@@ -24,7 +24,7 @@ import { programStructure, type DeclarationKind, type ProgramDeclaration } from 
 import { useCompletionCatalog } from "../useCompletionCatalog";
 import { ContextMenu } from "./ContextMenu";
 import type { SourcePart, SymbolLookup } from "../symbolSources";
-import { showSymbolCard, type ContextFor } from "../symbolHover";
+import { editorPart, showSymbolCard, type ContextFor } from "../symbolHover";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
 
@@ -156,10 +156,10 @@ export function ProgramWindow({
   liveParts.current = parts;
   const registerRef = useRef(registerSource);
   registerRef.current = registerSource;
-  const liveSources = useCallback(() => liveParts.current.map((entry, index) => ({
-    kind: entry.kind,
-    source: views.current[index]?.state.doc.toString() ?? entry.source,
-  })), []);
+  const liveSources = useCallback(() => liveParts.current.map((entry, index): SourcePart => {
+    const view = views.current[index];
+    return view ? editorPart(entry.kind, view) : { kind: entry.kind, source: entry.source };
+  }), []);
   useEffect(() => registerRef.current?.(liveSources), [liveSources]);
   const symbolRefs = useRef({ symbols, symbolSelf });
   symbolRefs.current = { symbols, symbolSelf };

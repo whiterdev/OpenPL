@@ -163,3 +163,21 @@ test("un IF sin cerrar no oculta las rutinas siguientes", () => {
   expect(find(symbols, "B")).toHaveLength(1);
   expect(one(symbols, "V").scope).not.toBeNull();
 });
+
+test("un paquete de 14.000 líneas se analiza rápido", () => {
+  const routine = (n: number) =>
+    `  -- rutina ${n}\n  PROCEDURE p${n}(a IN NUMBER, b VARCHAR2 := 'x') IS\n    v NUMBER := 1;\n` +
+    "    CURSOR c IS SELECT id, nombre FROM clientes WHERE id = a;\n  BEGIN\n" +
+    "    FOR r IN c LOOP\n      IF r.id > 0 THEN v := v + 1; END IF;\n    END LOOP;\n  END;\n";
+  let source = "CREATE OR REPLACE PACKAGE BODY pkg IS\n";
+  for (let i = 0; i < 1600; i += 1) source += routine(i);
+  source += "END;";
+  programSymbols(source.slice(0, 2000));
+  const start = performance.now();
+  const symbols = programSymbols(source);
+  const elapsed = performance.now() - start;
+  expect(symbols.filter((symbol) => symbol.kind === "procedure")).toHaveLength(1600);
+  expect(symbols.find((symbol) => symbol.name === "P1599")?.comment).toBe("rutina 1599");
+  // Holgado para máquinas lentas; antes tardaba más de 300 ms.
+  expect(elapsed).toBeLessThan(180);
+});

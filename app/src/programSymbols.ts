@@ -10,9 +10,12 @@ import {
   readName,
   signatureModifiers,
   storedUnits,
-  tokenize,
   type Token,
 } from "./programStructure";
+import type { syntaxTree } from "@codemirror/language";
+
+/** Árbol de sintaxis de CodeMirror (el de lezer, sin depender de él directamente). */
+export type Tree = ReturnType<typeof syntaxTree>;
 
 export type SymbolKind =
   | "package" | "procedure" | "function" | "cursor" | "type" | "subtype"
@@ -59,15 +62,35 @@ const statementEnd = new Set([";"]);
 const routineMarkers = new Set([";", "IS", "AS"]);
 const parameterModes = new Set(["IN", "OUT", "NOCOPY"]);
 
-function commentSpans(source: string): Span[] {
-  const spans: Span[] = [];
-  oracleDialect.language.parser.parse(source).iterate({
+/** Tokens (como `tokenize`) y comentarios en una sola pasada; reusa el árbol del editor si lo hay. */
+function scan(source: string, tree?: Tree) {
+  const tokens: Token[] = [];
+  const comments: Span[] = [];
+  (tree ?? oracleDialect.language.parser.parse(source)).iterate({
     enter(node) {
-      if (node.name !== "LineComment" && node.name !== "BlockComment") return;
-      spans.push({ from: node.from, to: node.to, text: source.slice(node.from, node.to) });
+      if (node.from === node.to) return;
+      if (node.name === "LineComment" || node.name === "BlockComment") {
+        comments.push({ from: node.from, to: node.to, text: source.slice(node.from, node.to) });
+        return;
+      }
+      if (node.node.firstChild) return;
+      const text = source.slice(node.from, node.to);
+      tokens.push({ text, key: text.startsWith('"') ? text : text.toUpperCase(), from: node.from });
     },
   });
-  return spans;
+  return { tokens, comments };
+}
+
+/** Índice del primer comentario con `from >= position`. */
+function firstFrom(spans: Span[], position: number) {
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (spans[middle].from < position) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 function commentText(text: string) {
@@ -85,7 +108,7 @@ function commentText(text: string) {
 function attachedComment(source: string, spans: Span[], start: number, end: number) {
   const above: Span[] = [];
   let limit = start;
-  for (let i = spans.length - 1; i >= 0; i -= 1) {
+  for (let i = firstFrom(spans, start) - 1; i >= 0; i -= 1) {
     const span = spans[i];
     if (span.to > limit) continue;
     const gap = source.slice(span.to, limit);
@@ -94,10 +117,8 @@ function attachedComment(source: string, spans: Span[], start: number, end: numb
     limit = span.from;
   }
   if (above.length) return above.map((span) => commentText(span.text)).join("\n") || null;
-  const trailing = spans.find(
-    (span) => span.from >= end && !/\n/.test(source.slice(end, span.from)),
-  );
-  return trailing ? commentText(trailing.text) || null : null;
+  const trailing = spans[firstFrom(spans, end)];
+  return trailing && !/\n/.test(source.slice(end, trailing.from)) ? commentText(trailing.text) || null : null;
 }
 
 class Analyzer {
@@ -106,10 +127,11 @@ class Analyzer {
   private readonly blocks: ReadonlyMap<number, number>;
   private readonly comments: Span[];
 
-  constructor(private readonly source: string) {
-    this.tokens = tokenize(source);
+  constructor(private readonly source: string, tree?: Tree) {
+    const { tokens, comments } = scan(source, tree);
+    this.tokens = tokens;
     this.blocks = matchingBlocks(this.tokens);
-    this.comments = commentSpans(source);
+    this.comments = comments;
   }
 
   run() {
@@ -431,9 +453,10 @@ class Analyzer {
 }
 
 /** Símbolos declarados en el texto: unidad principal, bloques anónimos y variables de FOR. */
-export function programSymbols(source: string): ProgramSymbol[] {
+/** `tree`: el árbol del editor para este texto, si ya está; evita volver a parsear. */
+export function programSymbols(source: string, tree?: Tree): ProgramSymbol[] {
   try {
-    return new Analyzer(source).run();
+    return new Analyzer(source, tree).run();
   } catch {
     return [];
   }

@@ -38,7 +38,7 @@ import {
   NAVIGATION_TITLES, navigationMenuItems, navigationTargets, resolveAt,
   type NavigationGoal, type NavigationTarget,
 } from "../editorNavigation";
-import { showSymbolCard, type ContextFor } from "../symbolHover";
+import { editorPart, showSymbolCard, type ContextFor } from "../symbolHover";
 import type { SymbolLookup } from "../symbolSources";
 import "./SqlWindow.css";
 
@@ -803,7 +803,7 @@ export function SqlWindow({
   const symbolsRef = useRef(symbols);
   symbolsRef.current = symbols;
   const symbolContext = useCallback<ContextFor>((editor, position) => ({
-    parts: [{ kind: "SQL", source: editor.state.doc.toString() }],
+    parts: [editorPart("SQL", editor)],
     current: 0,
     position,
     self: null,

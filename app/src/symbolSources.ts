@@ -1,10 +1,13 @@
 import type { api as appApi } from "./api";
 import type { ObjectColumn, ObjectInfo } from "./types";
+import type { Tree } from "./programSymbols";
 
 export interface SourcePart {
   /** Como `ProgramPart.kind`: "PACKAGE", "PACKAGE BODY", "SQL"… */
   kind: string;
   source: string;
+  /** Árbol del editor para `source`, si está listo: evita volver a parsear. */
+  tree?: Tree;
 }
 
 export interface ObjectKey {

@@ -211,3 +211,20 @@ test("la ubicación incluye la columna", async () => {
   const [found] = await resolveSymbol(at([source], "v :="), path(["V"]));
   expect(found).toMatchObject({ location: { line: 2, column: 5 } });
 });
+
+test("un alias en un paquete de 14.000 líneas se resuelve rápido", async () => {
+  const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table") });
+  let body = "PACKAGE BODY pkg IS\n";
+  for (let i = 0; i < 1600; i += 1) {
+    body += `  PROCEDURE p${i} IS v NUMBER; BEGIN\n    SELECT c.id INTO v FROM clientes c WHERE c.id = ${i};\n` +
+      "    FOR r IN (SELECT id FROM clientes) LOOP v := r.id; END LOOP;\n    IF v > 0 THEN v := 1; END IF;\n  END;\n";
+  }
+  body += "END;";
+  const context = at(["PACKAGE pkg IS END;", body], "c.id INTO", { lookup, nth: 1599 });
+  await resolveSymbol(at(["X", "BEGIN NULL; END;"], "NULL"), path(["X"]));
+  const start = performance.now();
+  const found = await resolveSymbol(context, path(["C", "ID"]));
+  const elapsed = performance.now() - start;
+  expect(found[0]).toMatchObject({ kind: "column", table: "CLIENTES" });
+  expect(elapsed).toBeLessThan(200);
+});

@@ -781,10 +781,12 @@ test("registra su texto vivo y se da de baja al cerrarse", () => {
   const editor = screen.getByRole("textbox", { name: "Spec" });
   const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
   act(() => view.dispatch({ changes: { from: 0, insert: "-- nuevo\n" } }));
-  expect(read()).toEqual([
+  const live = read();
+  expect(live).toMatchObject([
     { kind: "PACKAGE", source: `-- nuevo\n${parts[0].source}` },
     { kind: "PACKAGE BODY", source: parts[1].source },
   ]);
+  expect((live[0] as { tree?: unknown }).tree).toBeDefined();
   unmount();
   expect(release).toHaveBeenCalledOnce();
 });

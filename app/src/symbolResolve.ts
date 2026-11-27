@@ -1,7 +1,7 @@
 import type { NamePath } from "./editorReference";
 import { statementAliases, statementTables } from "./programCompletion";
 import { isIdentifier, nameOf, tokenize, type Token } from "./programStructure";
-import { programSymbols, type ProgramSymbol } from "./programSymbols";
+import { programSymbols, type ProgramSymbol, type Tree } from "./programSymbols";
 import type { SourcePart, SymbolLookup } from "./symbolSources";
 import type { ObjectColumn, ObjectInfo, ObjectType } from "./types";
 
@@ -34,14 +34,14 @@ const memberKinds = new Set(["field", "parameter"]);
 const MAX_DEPTH = 6;
 
 const cache = new Map<string, ProgramSymbol[]>();
-function symbolsOf(source: string) {
+function symbolsOf(source: string, tree?: Tree) {
   const hit = cache.get(source);
   if (hit) {
     cache.delete(source);
     cache.set(source, hit);
     return hit;
   }
-  const symbols = programSymbols(source);
+  const symbols = programSymbols(source, tree);
   cache.set(source, symbols);
   if (cache.size > 16) cache.delete(cache.keys().next().value!);
   return symbols;
@@ -69,7 +69,7 @@ type Entity =
 
 const homeOf = (parts: SourcePart[], object: ObjectInfo | null): Home => ({
   parts,
-  symbols: parts.map((part) => symbolsOf(part.source)),
+  symbols: parts.map((part) => symbolsOf(part.source, part.tree)),
   object,
 });
 
@@ -90,6 +90,14 @@ function located(home: Home, part: number, symbol: ProgramSymbol): Resolved {
       ? { where: "object", object: home.object, partKind: home.parts[part].kind, from: symbol.from, line, column }
       : { where: "here", part, from: symbol.from, line, column },
   };
+}
+
+/** Alias de la sentencia en `position`, tokenizando solo entre los `;` que la rodean. */
+function aliasesAround(source: string, position: number) {
+  const start = source.lastIndexOf(";", Math.max(0, position - 1)) + 1;
+  const next = source.indexOf(";", position);
+  const end = next < 0 ? source.length : next;
+  return statementAliases(source.slice(start, end), position - start);
 }
 
 /** Nombre con puntos, respetando comillas: `hr."Mi Tabla"` → ["HR", "Mi Tabla"]. */
@@ -215,7 +223,7 @@ class Resolver {
       item.kind === "symbol" && (valueKinds.has(item.symbol.kind) || item.symbol.kind === "package")));
     if (fromSymbol) return fromSymbol;
     const { current, position } = this.ctx;
-    const table = statementAliases(this.ctx.parts[current]?.source ?? "", position).get(name);
+    const table = aliasesAround(this.ctx.parts[current]?.source ?? "", position).get(name);
     if (table) return { t: "relation", owner: table.owner, name: table.name };
     if (!this.ctx.lookup) return null;
     return this.entityFromObject(await this.object(null, name), name);

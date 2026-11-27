@@ -5,6 +5,8 @@ import { EditorView, hoverTooltip, showTooltip, type Command, type Tooltip } fro
 import { SymbolCard } from "./components/SymbolCard";
 import { editorPath } from "./editorReference";
 import { resolveSymbol, type Resolved, type ResolveContext } from "./symbolResolve";
+import type { SourcePart } from "./symbolSources";
+import { ensureSyntaxTree } from "@codemirror/language";
 
 export type ContextFor = (view: EditorView, position: number) => ResolveContext | null;
 
@@ -87,3 +89,9 @@ export const showSymbolCard: Command = (view) => {
   });
   return true;
 };
+
+/** Texto de un editor con su árbol de sintaxis, si está listo en 50 ms. */
+export function editorPart(kind: string, view: EditorView): SourcePart {
+  const tree = ensureSyntaxTree(view.state, view.state.doc.length, 50);
+  return tree ? { kind, source: view.state.doc.toString(), tree } : { kind, source: view.state.doc.toString() };
+}
