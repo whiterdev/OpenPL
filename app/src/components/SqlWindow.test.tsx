@@ -748,3 +748,66 @@ describe("edición en grilla", () => {
     expect(screen.getByRole("note")).toHaveTextContent("Editando datos de producción");
   });
 });
+
+test("WAL-116: pegar con el cursor al final y F8 ejecuta lo pegado", async () => {
+  const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"]]));
+  const { ref, view } = setup("");
+  const pasted = "select 1 from dual;\n";
+  act(() => view.dispatch({
+    changes: { from: 0, insert: pasted },
+    selection: { anchor: pasted.length },
+    userEvent: "input.paste",
+  }));
+  await act(async () => ref.current!.execute!());
+  expect(exec).toHaveBeenCalledWith("w1", "select 1 from dual", []);
+});
+
+test("WAL-116: sin sentencia F8 avisa en vez de callar", async () => {
+  const exec = vi.spyOn(api, "sqlExecute");
+  const { ref } = setup("-- nada");
+  await act(async () => ref.current!.execute!());
+  expect(exec).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert")).toHaveTextContent("No hay sentencia para ejecutar");
+});
+
+describe("WAL-115: la selección manda", () => {
+  const source = "select 1 from dual;\nselect 2 from dual;\nselect 3 from dual;";
+  const middle = { anchor: source.indexOf("select 2"), head: source.indexOf("select 3") };
+
+  test("F8 corre solo la sentencia seleccionada", async () => {
+    const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+    const { ref, view } = setup(source);
+    act(() => view.dispatch({ selection: middle }));
+    await act(async () => ref.current!.execute!());
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledWith("w1", "select 2 from dual", []);
+  });
+
+  test("Ejecutar script con selección corre solo la selección", async () => {
+    const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+    const { ref, view } = setup(source);
+    act(() => view.dispatch({ selection: middle }));
+    await act(async () => ref.current!.executeScript!());
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledWith("w1", "select 2 from dual", []);
+  });
+
+  test("Ejecutar script sin selección corre todo", async () => {
+    const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([]));
+    const { ref } = setup(source);
+    await act(async () => ref.current!.executeScript!());
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(exec).toHaveBeenNthCalledWith(3, "w1", "select 3 from dual", []);
+  });
+
+  test("un error en la selección se marca en la posición del documento", async () => {
+    vi.spyOn(api, "sqlExecute").mockRejectedValue({
+      Db: { code: "ORA-00904", kind: "Other", message: "ORA-00904: identificador no válido", offset: 7 },
+    });
+    const { ref, view } = setup(source);
+    act(() => view.dispatch({ selection: middle }));
+    await act(async () => ref.current!.executeScript!());
+    expect(view.state.selection.main.head).toBe(source.indexOf("select 2") + 7);
+    await waitFor(() => expect(view.dom.querySelector(".cm-lintRange-error")).not.toBeNull());
+  });
+});

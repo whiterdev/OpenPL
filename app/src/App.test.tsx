@@ -622,6 +622,35 @@ test("Ctrl N abre una ventana SQL con sesión propia y Commit actúa sobre ella"
   expect(api.sqlCommit).toHaveBeenCalledWith("w1");
 });
 
+test("WAL-116: en una ventana SQL nueva, pegar y Ejecutar corre lo pegado", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.listObjects).mockResolvedValue([]);
+  vi.mocked(api.sqlOpen).mockResolvedValue("w1");
+  vi.mocked(api.sqlExecute).mockReset().mockResolvedValue({
+    result: { kind: "Done", message: "Ejecutado" },
+    elapsed_ms: 1,
+    output: [],
+    transaction: false,
+  });
+  render(<App />);
+  await connectAs();
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Ventana SQL/ }));
+  const editor = await screen.findByRole("textbox", { name: "SQL" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  const pasted = "select 1 from dual;\n";
+  act(() => view.dispatch({
+    changes: { from: 0, insert: pasted },
+    selection: { anchor: pasted.length },
+    userEvent: "input.paste",
+  }));
+  const sql = within(screen.getByRole("region", { name: "Ventana SQL" }));
+  await act(async () => {
+    fireEvent.click(sql.getByRole("button", { name: /^Ejecutar/ }));
+  });
+  expect(api.sqlExecute).toHaveBeenCalledWith("w1", "select 1 from dual", []);
+});
+
 test("la ventana SQL completa las columnas de un alias con su propia sesión", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   vi.mocked(api.listObjects).mockResolvedValue([]);
