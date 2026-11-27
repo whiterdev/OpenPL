@@ -828,7 +828,7 @@ export function SqlWindow({
   }
 
   /** Definición, declaración o implementación del nombre en `at` (o en el cursor). */
-  async function goTo(goal: NavigationGoal, at?: number) {
+  async function goTo(goal: NavigationGoal, at?: number, onMiss?: () => void) {
     const editor = view.current;
     if (!editor) return;
     const position = at ?? editor.state.selection.main.from;
@@ -850,6 +850,8 @@ export function SqlWindow({
       const coords = editor.coordsAtPos(position) ?? editor.contentDOM.getBoundingClientRect();
       closeObjectMenu();
       setTargetsMenu({ title: `${NAVIGATION_TITLES[goal]} de ${found.name}`, x: coords.left, y: coords.bottom, targets });
+    } else {
+      onMiss?.();
     }
   }
 
@@ -992,7 +994,9 @@ export function SqlWindow({
           <ProgramEditor part={part} label="SQL" readOnly={false} completion={completion} markers={markers}
             activate={() => {}}
             symbolContext={symbolContext}
-            onCtrlClick={(position) => void goTo("definition", position)}
+            onCtrlClick={(position) => void goTo("definition", position, () => {
+              view.current?.dispatch({ selection: { anchor: position } });
+            })}
             onObjectContext={catalog ? (reference, x, y, position) => {
               closeTargetsMenu();
               setObjectMenu({ reference, x, y, position, id: ++objectMenuId.current });

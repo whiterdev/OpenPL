@@ -318,7 +318,8 @@ export function ProgramWindow({
   }
 
   /** Definición, declaración o implementación del nombre en `at` (o en el cursor). */
-  async function goTo(goal: NavigationGoal, index = selected, at?: number) {
+  /** `onMiss`: el nombre no lleva a ningún lado (Ctrl+clic lo usa para ubicar el cursor). */
+  async function goTo(goal: NavigationGoal, index = selected, at?: number, onMiss?: () => void) {
     if (comparison) return;
     const view = views.current[index];
     if (!view) return;
@@ -345,6 +346,8 @@ export function ProgramWindow({
         title: `${NAVIGATION_TITLES[goal]} de ${name}`,
         x: coords.left, y: coords.bottom, targets,
       });
+    } else {
+      onMiss?.();
     }
   }
 
@@ -665,7 +668,9 @@ export function ProgramWindow({
                   closeDeclarationMenu();
                   setObjectMenu({ reference, x, y, id: ++objectRequestId.current, part: index, position });
                 } : undefined}
-                onCtrlClick={(position) => void goTo("definition", index, position)}
+                onCtrlClick={(position) => void goTo("definition", index, position, () => {
+                  views.current[index]?.dispatch({ selection: { anchor: position } });
+                })}
                 onView={(view) => {
                   views.current[index] = view;
                   const base = saved.current[index];

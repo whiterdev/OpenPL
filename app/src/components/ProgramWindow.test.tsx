@@ -946,3 +946,13 @@ test("F12 no abre otro objeto si el usuario cambió de pestaña mientras se reso
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(onNavigate).not.toHaveBeenCalled();
 });
+
+test("Ctrl+clic sobre un nombre sin destino deja el cursor donde se hizo clic", async () => {
+  const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  desconocido;\nEND;";
+  render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[1], source }]} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Body" }).closest<HTMLElement>(".cm-editor")!)!;
+  const position = source.indexOf("desconocido") + 3;
+  vi.spyOn(view, "posAtCoords").mockReturnValue(position);
+  fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+  await waitFor(() => expect(view.state.selection.main.head).toBe(position));
+});

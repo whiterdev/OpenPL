@@ -35,6 +35,8 @@ export function symbolLink(navigate: () => ((position: number) => void) | null |
   };
   return [
     linkField,
+    // Ctrl+clic navega; agregar un cursor pasa a Alt+clic.
+    EditorView.clickAddsSelectionRange.of((event) => event.altKey),
     EditorView.domEventHandlers({
       mousemove(event, view) {
         mouse = { x: event.clientX, y: event.clientY };
