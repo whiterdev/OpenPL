@@ -1239,3 +1239,20 @@ test("Alt cierra Nuevo al abrir la barra", async () => {
   fireEvent.keyDown(document, { key: "Alt" }); fireEvent.keyUp(document, { key: "Alt" });
   expect(screen.queryByRole("menu", { name: "Nuevo" })).not.toBeInTheDocument();
 });
+
+test("una actualización encontrada deja el ícono tras Más tarde", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockResolvedValue({ version: "9.9.9", notes: "", install: vi.fn() });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Más tarde" }));
+  expect(screen.queryByRole("dialog", { name: "OpenPL 9.9.9" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Actualización disponible: 9.9.9" }));
+  expect(screen.getByRole("dialog", { name: "OpenPL 9.9.9" })).toBeInTheDocument();
+});
+
+test("sin actualización no hay ícono", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  await screen.findByRole("button", { name: "Cancelar" });
+  expect(screen.queryByRole("button", { name: /Actualización disponible/ })).not.toBeInTheDocument();
+});

@@ -41,6 +41,7 @@ import { parseTestFile, type TestSettings } from "./testFile";
 import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { UpdateBadge } from "./components/UpdateBadge";
 import { runCheck, tauriUpdater, type AvailableUpdate } from "./updater";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
 import { activeTheme } from "./themes";
@@ -218,6 +219,7 @@ export default function App() {
   latestWorkspace.current = { programs, connections };
   const saveBeforeClose = useRef<() => boolean>(() => false);
   const [updateOffer, setUpdateOffer] = useState<AvailableUpdate | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<AvailableUpdate | null>(null);
   const [updateProgress, setUpdateProgress] = useState<number | null | undefined>(undefined);
   // Un catálogo estable por sesión de ventana SQL: completado contra su propia sesión.
   const sqlCatalogs = useRef(new Map<string, CompletionCatalog>());
@@ -565,7 +567,10 @@ export default function App() {
 
   async function checkUpdates(silent: boolean) {
     const result = await runCheck(tauriUpdater, silent);
-    if (result.kind === "available") setUpdateOffer(result.update);
+    if (result.kind === "available") {
+      setPendingUpdate(result.update);
+      setUpdateOffer(result.update);
+    }
     else if (result.kind === "upToDate" && !silent) showNotice("Estás al día");
     else if (result.kind === "error") showNotice(result.message, "error");
   }
@@ -1144,6 +1149,12 @@ export default function App() {
           Nuevo
           <CaretDown size={11} aria-hidden />
         </button>
+        {pendingUpdate && (
+          <UpdateBadge
+            version={pendingUpdate.version}
+            onOpen={() => { if (updateProgress === undefined) setUpdateOffer(pendingUpdate); }}
+          />
+        )}
         {newMenu && (
           <ContextMenu
             x={newMenu.x}

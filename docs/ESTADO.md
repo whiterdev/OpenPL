@@ -1,8 +1,10 @@
 # Estado de OpenPL
 
-Última actualización: 2026-11-26 (auditoría UX en `feat/auditoria-ux`, briefs 1 a 60). Mantener este archivo al día al terminar cada bloque de trabajo.
+Última actualización: 2026-11-27 (beta 8: ícono de actualización y menú Nuevo; diseño del editor inteligente).
 
 ## Resumen
+
+- 1.0.0-beta.8 (WAL-118, WAL-120): con una versión nueva, la barra superior muestra un ícono que da un salto corto y abre el diálogo de actualización. "Más tarde" deja el ícono. Nuevo y los menús de la barra ya no quedan abiertos a la vez.
 
 - Auditoría UX: los briefs 1 a 59 del [plan de 61 briefs](superpowers/plans/2026-11-25-openpl-auditoria-ux.md)
   están implementados en `feat/auditoria-ux`, un commit por brief. El brief 60 deja esta

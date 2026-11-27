@@ -155,3 +155,17 @@
     justify-content: flex-end;
     gap: 8px;
 }
+
+.update-badge {
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .update-badge {
+    animation: update-bounce 600ms ease-out 3;
+  }
+}
+@keyframes update-bounce {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-4px); }
+  70% { transform: translateY(1px); }
+}
