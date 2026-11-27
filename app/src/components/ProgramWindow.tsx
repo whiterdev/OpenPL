@@ -18,7 +18,8 @@ import { compileStatement, type CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
 import { useCompletionCatalog } from "../useCompletionCatalog";
 import { ContextMenu } from "./ContextMenu";
-import type { SourcePart } from "../symbolSources";
+import type { SourcePart, SymbolLookup } from "../symbolSources";
+import { showSymbolCard, type ContextFor } from "../symbolHover";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
 
@@ -62,6 +63,10 @@ interface Props {
   compile?: ProgramCompiler;
   /** Registra el texto vivo para la ficha y la navegación de otras ventanas. */
   registerSource?: (read: () => SourcePart[]) => () => void;
+  /** Catálogo para la ficha y la navegación; null o ausente: solo lo del documento. */
+  symbols?: SymbolLookup | null;
+  /** Objeto que muestra la ventana, para ubicar sus propias declaraciones. */
+  symbolSelf?: Pick<ObjectInfo, "owner" | "name" | "object_type"> | null;
 }
 
 const caption = (kind: string) => {
@@ -101,7 +106,7 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource,
+  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource, symbols, symbolSelf,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
   const [compiling, setCompiling] = useState(false);
@@ -145,10 +150,24 @@ export function ProgramWindow({
   liveParts.current = parts;
   const registerRef = useRef(registerSource);
   registerRef.current = registerSource;
-  useEffect(() => registerRef.current?.(() => liveParts.current.map((entry, index) => ({
+  const liveSources = useCallback(() => liveParts.current.map((entry, index) => ({
     kind: entry.kind,
     source: views.current[index]?.state.doc.toString() ?? entry.source,
-  }))), []);
+  })), []);
+  useEffect(() => registerRef.current?.(liveSources), [liveSources]);
+  const symbolRefs = useRef({ symbols, symbolSelf });
+  symbolRefs.current = { symbols, symbolSelf };
+  const symbolContext = useCallback<ContextFor>((view, position) => {
+    const current = views.current.indexOf(view);
+    if (current < 0) return null;
+    return {
+      parts: liveSources(),
+      current,
+      position,
+      self: symbolRefs.current.symbolSelf ?? null,
+      lookup: symbolRefs.current.symbols ?? null,
+    };
+  }, [liveSources]);
 
   function currentTexts() {
     return parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);
@@ -481,6 +500,7 @@ export function ProgramWindow({
       setObjectMenu({ reference, x: coords.left, y: coords.bottom, id: ++objectRequestId.current });
     }) : undefined,
     complete: readOnly ? undefined : runInEditor(startCompletion),
+    showSymbolCard: runInEditor(showSymbolCard),
     goToLine: runInEditor(gotoLine),
     find: runInEditor(openFind),
     findNext: runInEditor(findNextMatch),
@@ -597,6 +617,7 @@ export function ProgramWindow({
               {split && <span className="program-pane-label">{caption(entry.kind)}</span>}
               <ProgramEditor
                 part={entry}
+                symbolContext={symbolContext}
                 label={caption(entry.kind)}
                 readOnly={readOnly}
                 completion={completion}

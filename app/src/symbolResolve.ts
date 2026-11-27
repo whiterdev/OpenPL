@@ -22,8 +22,8 @@ export interface ResolveContext {
   current: number;
   /** Posición dentro de esa parte. */
   position: number;
-  /** Objeto del documento abierto, si lo es. */
-  self: ObjectInfo | null;
+  /** Objeto del documento abierto, si lo es. Sus declaraciones se ubican como "here". */
+  self: Pick<ObjectInfo, "owner" | "name" | "object_type"> | null;
   /** null sin conexión. */
   lookup: SymbolLookup | null;
 }
@@ -119,7 +119,7 @@ class Resolver {
   private readonly here: Home;
 
   constructor(private readonly ctx: ResolveContext) {
-    this.here = homeOf(ctx.parts, ctx.self);
+    this.here = homeOf(ctx.parts, null);
   }
 
   private async safe<T>(load: (lookup: SymbolLookup) => Promise<T>, fallback: T): Promise<T> {

@@ -176,3 +176,9 @@ test("fuente envuelta", async () => {
   const found = await resolveSymbol(at(["BEGIN pkg_w.f; END;"], "pkg_w", { lookup }), path(["PKG_W", "F"], 0));
   expect(found).toEqual([{ kind: "object", object: info("PKG_W", "Package"), note: "Fuente no disponible" }]);
 });
+
+test("con el objeto propio las ubicaciones siguen siendo del documento", async () => {
+  const context = { ...at(["DECLARE v NUMBER; BEGIN v := 1; END;"], "v :="), self: info("PKG", "Package") };
+  const [found] = await resolveSymbol(context, path(["V"]));
+  expect(found).toMatchObject({ kind: "symbol", location: { where: "here" } });
+});

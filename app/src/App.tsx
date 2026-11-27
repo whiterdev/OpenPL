@@ -275,6 +275,7 @@ export default function App() {
         "body",
         "sideBySide",
         "goToDeclaration",
+        "showSymbolCard",
         "foldBlock",
         "unfoldBlock",
         "objectActions",
@@ -314,6 +315,7 @@ export default function App() {
           [
             "save",
             "goToDeclaration",
+            "showSymbolCard",
             "foldBlock",
             "unfoldBlock",
             "goToLine",
@@ -1432,6 +1434,10 @@ export default function App() {
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <ProgramWindow
                         parts={tab.parts}
+                        symbols={tab.id === programId && editorConnection
+                          ? symbolSources.lookup(editorConnection.sessionId, tab.object?.owner ?? null)
+                          : null}
+                        symbolSelf={tab.object ?? null}
                         registerSource={tab.object && tab.connection
                           ? (read) => symbolSources.register({
                               connection: tab.connection!.sessionId,

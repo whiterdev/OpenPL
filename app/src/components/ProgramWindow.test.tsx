@@ -788,3 +788,15 @@ test("registra su texto vivo y se da de baja al cerrarse", () => {
   unmount();
   expect(release).toHaveBeenCalledOnce();
 });
+
+test("Mostrar ficha abre la ficha de la constante en el cursor", async () => {
+  const source = "PACKAGE PKG_A AS\n  c_max CONSTANT NUMBER := 3;\n  PROCEDURE p(x NUMBER := c_max);\nEND;";
+  const ref = createRef<ProgramActions>();
+  render(<ProgramWindow ref={ref} parts={[{ ...parts[0], source }]} readOnly onDirty={vi.fn()} symbols={null} />);
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.lastIndexOf("c_max") + 1 } }));
+  act(() => ref.current!.showSymbolCard!());
+  expect(await screen.findByText("NUMBER := 3")).toBeInTheDocument();
+  expect(screen.getByText("línea 2")).toBeInTheDocument();
+});
