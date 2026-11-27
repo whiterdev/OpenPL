@@ -28,6 +28,10 @@ export interface ResolveContext {
   lookup: SymbolLookup | null;
 }
 
+/** Fuente envuelta con `wrap`: no se puede analizar. */
+const wrappedSource =
+  /^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?)?(?:(?:NON)?EDITIONABLE\s+)?(?:PACKAGE|TYPE|FUNCTION|PROCEDURE|TRIGGER)(?:\s+BODY)?\s+(?:"[^"]+"|[\w$#]+)(?:\s*\.\s*(?:"[^"]+"|[\w$#]+))?\s+wrapped\b/i;
+
 const relationTypes = new Set<ObjectType>(["Table", "View", "MaterializedView"]);
 const programTypes = new Set<ObjectType>(["Package", "Function", "Procedure", "Type", "Trigger"]);
 const memberKinds = new Set(["field", "parameter"]);
@@ -65,7 +69,8 @@ type Entity =
   | { t: "record"; home: Home; dataType: string; at?: At }
   | { t: "query"; home: Home; query: string; label: string }
   | { t: "relation"; owner: string | null; name: string }
-  | { t: "schema"; owner: string };
+  | { t: "schema"; owner: string }
+  | { t: "unreadable"; object: ObjectInfo };
 
 const homeOf = (parts: SourcePart[], object: ObjectInfo | null): Home => ({
   parts,
@@ -166,8 +171,10 @@ class Resolver {
     return this.safe((lookup) => lookup.columns(realOwner, name), [] as ObjectColumn[]);
   }
 
+  /** Partes legibles del objeto; null si no hay ninguna (sin permiso o todo envuelto). */
   private async home(object: ObjectInfo) {
-    const parts = await this.safe((lookup) => lookup.parts(object), [] as SourcePart[]);
+    const parts = (await this.safe((lookup) => lookup.parts(object), [] as SourcePart[]))
+      .filter((part) => !wrappedSource.test(part.source));
     return parts.length ? homeOf(parts, object) : null;
   }
 
@@ -201,7 +208,7 @@ class Resolver {
     if (relationTypes.has(object.object_type)) return { t: "relation", owner: object.owner, name: object.name };
     if (object.object_type !== "Package") return null;
     const home = await this.home(object);
-    return home ? { t: "unit", home } : null;
+    return home ? { t: "unit", home } : { t: "unreadable", object };
   }
 
   /** Entidad de un símbolo del documento abierto. */
@@ -262,6 +269,8 @@ class Resolver {
         return this.typeMembers(entity.home, entity.dataType, name, 0, entity.at);
       case "query":
         return this.queryColumn(entity.query, name, entity.label);
+      case "unreadable":
+        return [{ kind: "object", object: entity.object, note: "Fuente no disponible" }];
     }
   }
 

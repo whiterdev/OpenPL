@@ -229,3 +229,23 @@ test("un alias en un paquete grande no vuelve a parsear todo el paquete", async 
   for (const [input] of parse.mock.calls) expect(String(input).length).toBeLessThan(2000);
   parse.mockRestore();
 });
+
+test("un paquete envuelto dice que la fuente no está disponible", async () => {
+  const wrapped = "CREATE OR REPLACE PACKAGE pkg_w wrapped\na000000\n1\nabcd\n";
+  const lookup = fakeLookup({ PKG_W: info("PKG_W", "Package") }, { PKG_W: [{ kind: "PACKAGE", source: wrapped }] });
+  const note = { kind: "object", object: info("PKG_W", "Package"), note: "Fuente no disponible" };
+  expect(await resolveSymbol(at(["BEGIN pkg_w.f; END;"], "f;", { lookup }), path(["PKG_W", "F"]))).toEqual([note]);
+  expect(await resolveSymbol(at(["BEGIN pkg_w.f; END;"], "pkg_w", { lookup }), path(["PKG_W", "F"], 0))).toEqual([note]);
+});
+
+test("un cuerpo envuelto deja ver la spec", async () => {
+  const lookup = fakeLookup({ PKG_W: info("PKG_W", "Package") }, {
+    PKG_W: [
+      { kind: "PACKAGE", source: "PACKAGE pkg_w IS\n  PROCEDURE f;\nEND;" },
+      { kind: "PACKAGE BODY", source: "PACKAGE BODY pkg_w wrapped\na000000\n" },
+    ],
+  });
+  const found = await resolveSymbol(at(["BEGIN pkg_w.f; END;"], "f;", { lookup }), path(["PKG_W", "F"]));
+  expect(found).toHaveLength(1);
+  expect(found[0]).toMatchObject({ kind: "symbol", symbol: { name: "F" } });
+});
