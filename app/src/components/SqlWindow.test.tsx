@@ -748,3 +748,24 @@ describe("edición en grilla", () => {
     expect(screen.getByRole("note")).toHaveTextContent("Editando datos de producción");
   });
 });
+
+test("WAL-116: pegar con el cursor al final y F8 ejecuta lo pegado", async () => {
+  const exec = vi.spyOn(api, "sqlExecute").mockResolvedValue(query([["1", "Ana"]]));
+  const { ref, view } = setup("");
+  const pasted = "select 1 from dual;\n";
+  act(() => view.dispatch({
+    changes: { from: 0, insert: pasted },
+    selection: { anchor: pasted.length },
+    userEvent: "input.paste",
+  }));
+  await act(async () => ref.current!.execute!());
+  expect(exec).toHaveBeenCalledWith("w1", "select 1 from dual", []);
+});
+
+test("WAL-116: sin sentencia F8 avisa en vez de callar", async () => {
+  const exec = vi.spyOn(api, "sqlExecute");
+  const { ref } = setup("-- nada");
+  await act(async () => ref.current!.execute!());
+  expect(exec).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert")).toHaveTextContent("No hay sentencia para ejecutar");
+});

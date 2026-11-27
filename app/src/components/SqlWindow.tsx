@@ -323,7 +323,11 @@ export function SqlWindow({
   }
 
   async function run(list: ScriptStatement[], entered = false, exportQuery = false, io?: ConsoleIo) {
-    if (running || applying || fetchingRef.current || !list.length) return;
+    if (running || applying || fetchingRef.current) return;
+    if (!list.length) {
+      setAlert("No hay sentencia para ejecutar");
+      return;
+    }
     if (count && !window.confirm(pendingDiscardMessage(count))) return;
     setAlert("");
     setNotice("");

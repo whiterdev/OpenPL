@@ -105,21 +105,38 @@ describe("statementAt", () => {
   const source = "select 1 from dual;\n-- siguiente\nselect 2 from dual;\n";
   const list = splitScript(source);
 
-  test("elige la sentencia siguiente en comentarios y espacios intermedios", () => {
+  // Regla: el cursor dentro de una sentencia la elige; en el hueco entre dos sentencias
+  // (después del ";" de una y antes de la otra) corresponde a la anterior; antes de la
+  // primera, a la primera; después de la última, a la última.
+  test("en el hueco entre sentencias elige la anterior", () => {
     expect(statementAt(list, source.indexOf("2"))?.text).toBe(
       "select 2 from dual",
     );
     expect(statementAt(list, source.indexOf(";") + 1)?.text).toBe(
-      "select 2 from dual",
+      "select 1 from dual",
     );
     expect(statementAt(list, source.indexOf("-- siguiente"))?.text).toBe(
-      "select 2 from dual",
+      "select 1 from dual",
     );
     expect(statementAt(list, 0)?.text).toBe("select 1 from dual");
-    expect(statementAt(list, source.length)).toBeNull();
+    expect(statementAt(list, source.length)?.text).toBe("select 2 from dual");
+  });
+
+  test("con el cursor al final después de pegar elige la última sentencia", () => {
+    for (const pasted of ["select 1 from dual;", "select 1 from dual;\n\n"]) {
+      expect(statementAt(splitScript(pasted), pasted.length)?.text).toBe(
+        "select 1 from dual",
+      );
+    }
+  });
+
+  test("antes de la primera sentencia elige la primera", () => {
+    const text = "-- encabezado\nselect 1 from dual;";
+    expect(statementAt(splitScript(text), 0)?.text).toBe("select 1 from dual");
   });
 
   test("sin sentencias no hay nada que ejecutar", () => {
     expect(statementAt(splitScript("  -- nada"), 0)).toBeNull();
+    expect(statementAt(splitScript(""), 0)).toBeNull();
   });
 });

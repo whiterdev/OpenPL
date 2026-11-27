@@ -196,10 +196,12 @@ export function splitScript(source: string): ScriptStatement[] {
   return out;
 }
 
-/** Un espacio entre sentencias pertenece a la siguiente. */
+/** El hueco entre sentencias pertenece a la anterior; antes de la primera, a la primera. */
 export function statementAt(
   list: ScriptStatement[],
   position: number,
 ): ScriptStatement | null {
-  return list.find((statement) => position <= statement.to) ?? null;
+  let found = list[0] ?? null;
+  for (const statement of list) if (statement.from <= position) found = statement;
+  return found;
 }
