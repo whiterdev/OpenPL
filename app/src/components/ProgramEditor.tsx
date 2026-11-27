@@ -21,6 +21,7 @@ import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "..
 import { editorSearch } from "./EditorSearch";
 import { editorMenuItems } from "../editorMenu";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
+import { isPackageKind, packageSnippet, packageSnippetItems } from "../packageSnippets";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -96,6 +97,29 @@ function sameSource(doc: Text, source: string, cache: { source: string; doc: Tex
   return { same, cache: same ? { source, doc } : known };
 }
 
+/** Ítems "Insertar" de un paquete sobre una línea vacía; reemplazan la línea en una sola transacción. */
+function insertItems(view: EditorView, kind: string, lineNumber: number | null): ContextItem[] {
+  if (lineNumber === null || lineNumber > view.state.doc.lines || view.state.readOnly || !isPackageKind(kind)) return [];
+  const line = view.state.doc.line(lineNumber);
+  if (line.text.trim()) return [];
+  return packageSnippetItems.map(({ id, label }) => ({
+    label: `Insertar ${label.toLowerCase()}`,
+    run: () => {
+      const snippet = packageSnippet(kind, id, line.text);
+      view.dispatch({
+        changes: { from: line.from, to: line.to, insert: snippet.text },
+        selection: { anchor: line.from + snippet.name.from, head: line.from + snippet.name.to },
+        scrollIntoView: true, userEvent: "input",
+      });
+      view.focus();
+    },
+  }));
+}
+
+function menuExtra(inserts: ContextItem[], extra: (ContextItem | "sep")[] = []): (ContextItem | "sep")[] {
+  return inserts.length && extra.length ? [...inserts, "sep", ...extra] : [...inserts, ...extra];
+}
+
 export interface EditorMarker {
   from: number;
   to: number;
@@ -108,7 +132,7 @@ export function ProgramEditor(props: Props) {
   const viewRef = useRef<EditorView | null>(null);
   const sourceDoc = useRef<{ source: string; doc: Text } | null>(null);
   const editing = useRef(new Compartment()).current;
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; line: number | null } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   latest.current = props;
   const { part, label, readOnly } = props;
@@ -164,7 +188,9 @@ export function ProgramEditor(props: Props) {
             event.preventDefault();
             latest.current.activate();
             const open = latest.current.onObjectContext;
-            const point = open && !keyboard ? editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY }) : null;
+            const point = keyboard ? null : editor.posAndSideAtCoords({ x: event.clientX, y: event.clientY });
+            const head = point ? point.pos : editor.state.selection.main.head;
+            const line = keyboard || point ? editor.state.doc.lineAt(head).number : null;
             if (open && point) {
               const position = Math.max(0, point.pos + (point.assoc === -1 ? -1 : 0));
               const reference = editorReference(editor.state, position);
@@ -176,9 +202,9 @@ export function ProgramEditor(props: Props) {
             }
             if (keyboard) {
               const coords = editor.coordsAtPos(editor.state.selection.main.head) ?? editor.contentDOM.getBoundingClientRect();
-              setMenu({ x: coords.left, y: coords.bottom });
+              setMenu({ x: coords.left, y: coords.bottom, line });
             } else {
-              setMenu({ x: event.clientX, y: event.clientY });
+              setMenu({ x: event.clientX, y: event.clientY, line });
             }
             return true;
           },
@@ -240,7 +266,7 @@ export function ProgramEditor(props: Props) {
       <div className="program-editor" ref={host} />
       {menu && view && (
         <ContextMenu x={menu.x} y={menu.y} label="Editor" onClose={closeMenu}
-          items={editorMenuItems(view, { readOnly, extra: props.menuExtra })} />
+          items={editorMenuItems(view, { readOnly, extra: menuExtra(insertItems(view, part.kind, menu.line), props.menuExtra) })} />
       )}
     </>
   );
