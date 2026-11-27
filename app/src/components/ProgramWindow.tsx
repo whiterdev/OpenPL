@@ -81,6 +81,7 @@ interface Props {
 }
 
 const caption = (kind: string) => {
+  if (kind === "DDL") return kind;
   if (kind === "PACKAGE" || kind === "TYPE") return "Spec";
   if (kind.endsWith(" BODY")) return "Body";
   return "Fuente";
