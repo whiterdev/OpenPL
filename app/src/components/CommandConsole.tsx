@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { scriptReplacement } from "../autoReplace";
 import { commands, formatKeys, matches } from "../keymap";
 import { splitScript } from "../sqlScript";
 import { describeError, type CompletionObject } from "../types";
@@ -246,6 +247,20 @@ export function CommandConsole({ sessionId, tabPrefix, active, lines, running, a
                   event.preventDefault();
                   event.stopPropagation();
                   finishQuestion(null);
+                }
+                return;
+              }
+              if (!event.nativeEvent.isComposing && matches(event, commands.expandScript.keys!)) {
+                const input = event.currentTarget;
+                const at = input.selectionStart;
+                const replacement = at === input.selectionEnd
+                  ? scriptReplacement(input.value.slice(0, at), input.value.slice(at)) : null;
+                if (replacement) {
+                  event.preventDefault();
+                  input.setRangeText(replacement.script, at - replacement.length, at, "end");
+                  setPrompt(input.value);
+                  setChoice(undefined);
+                  setDismissed(false);
                 }
                 return;
               }

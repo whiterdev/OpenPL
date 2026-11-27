@@ -24,6 +24,8 @@ import { editorSearch } from "./EditorSearch";
 import { editorMenuItems } from "../editorMenu";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
 import { isPackageKind, packageSnippet, packageSnippetItems } from "../packageSnippets";
+import { commands } from "../keymap";
+import { scriptReplacement } from "../autoReplace";
 
 export const programSyntax = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--kw)" },
@@ -37,9 +39,25 @@ const INDENT = "  ";
 
 // Devuelven true siempre para que Tab no saque el foco del editor.
 export const indentKeys: KeyBinding[] = [{
-  key: "Tab",
+  key: commands.expandScript.keys!,
   run: (view) => {
     const { doc, selection } = view.state;
+    const { main } = selection;
+    if (selection.ranges.length === 1 && main.empty) {
+      const line = doc.lineAt(main.head);
+      const column = main.head - line.from;
+      const replacement = scriptReplacement(line.text.slice(0, column), line.text.slice(column));
+      if (replacement) {
+        const from = main.head - replacement.length;
+        view.dispatch({
+          changes: { from, to: main.head, insert: replacement.script },
+          selection: { anchor: from + replacement.script.length },
+          scrollIntoView: true,
+          userEvent: "input",
+        });
+        return true;
+      }
+    }
     const multiline = selection.ranges.some((r) => doc.lineAt(r.from).number !== doc.lineAt(r.to).number);
     if (multiline) indentMore(view);
     else view.dispatch(view.state.update(view.state.replaceSelection(INDENT), { scrollIntoView: true, userEvent: "input" }));

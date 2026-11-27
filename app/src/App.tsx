@@ -26,7 +26,9 @@ import { StartupCheck } from "./components/StartupCheck";
 import { LoginDialog } from "./components/LoginDialog";
 import { ConnectionBar } from "./components/ConnectionBar";
 import { MenuBar, type MenuDef } from "./components/MenuBar";
-import { ObjectBrowser } from "./components/ObjectBrowser";
+import { ObjectBrowser, SchemaSearch } from "./components/ObjectBrowser";
+import { AutoReplaceDialog } from "./components/AutoReplaceDialog";
+import { ToolsDialog } from "./components/ToolsDialog";
 import { ObjectInspector, type Inspection } from "./components/ObjectInspector";
 import { ObjectDraftDialog } from "./components/ObjectDraftDialog";
 import { createDraft, dropDraft, privilegesQuery } from "./objectDraft";
@@ -183,6 +185,9 @@ export default function App() {
   const [states, setStates] = useState<Record<string, SessionState>>({});
   const [showLogin, setShowLogin] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
+  const [tool, setTool] = useState<"search" | "history" | "scripts" | null>(null);
+  const [statementHistory, setStatementHistory] = useState<{ id: number; connectionId: string; sql: string; ok: boolean }[]>([]);
+  const statementId = useRef(0);
   const [showPalette, setShowPalette] = useState(false);
   const [themeMode, setThemeMode] = useState(() => activeTheme().mode);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
@@ -361,6 +366,9 @@ export default function App() {
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
+    searchSchema: active ? () => setTool("search") : undefined,
+    statementHistory: active ? () => setTool("history") : undefined,
+    autoReplace: () => setTool("scripts"),
     palette: () => setShowPalette(true),
     checkUpdates: () => void checkUpdates(false),
   };
@@ -370,7 +378,7 @@ export default function App() {
       if (e.defaultPrevented) return;
       // La grilla maneja su copia localmente. El editor y los campos usan la copia nativa.
       if (matches(e, commands.copyGrid.keys!)) return;
-      if (showLogin || showTheme || showPalette || inspection || draft || updateOffer) {
+      if (showLogin || showTheme || showPalette || inspection || draft || updateOffer || tool) {
         if (isWebviewKey(e)) e.preventDefault();
         return;
       }
@@ -1104,13 +1112,14 @@ export default function App() {
     },
     {
       label: "Buscar",
-      items: [run("find"), run("replace"), run("findNext"), run("findPrev"), "sep", run("palette")],
+      items: [run("find"), run("replace"), run("findNext"), run("findPrev"), "sep", run("searchSchema"), run("palette")],
     },
     {
       label: "Ver",
       items: [
         run("toggleExplorer"),
         run("refreshExplorer"),
+        run("statementHistory"),
         "sep",
         run("foldBlock"),
         run("unfoldBlock"),
@@ -1122,6 +1131,7 @@ export default function App() {
         run("moveTabRight"),
         "sep",
         run("customizeUi"),
+        run("autoReplace"),
       ],
     },
     {
@@ -1287,6 +1297,8 @@ export default function App() {
             refreshKey={refreshTick}
             onOpenObject={(object, mode) => void onOpenObject(object, mode)}
             onConnectionLost={onConnectionLost}
+            onSearchSchema={actions.searchSchema}
+            onStatementHistory={actions.statementHistory}
             onNotice={showNotice}
             onQueryData={(object) => queryData(object)}
             onEditData={(object) => queryData(object, true)}
@@ -1430,6 +1442,12 @@ export default function App() {
                         environment={tab.connection?.environment ?? undefined}
                         ref={tab.id === programId ? programActions : undefined}
                         onDirty={dirtyHandler(tab.id)}
+                        onStatement={(sql, ok) => {
+                          const connectionId = tab.connection?.sessionId;
+                          if (!connectionId) return;
+                          const entry = { id: ++statementId.current, connectionId, sql, ok };
+                          setStatementHistory((current) => [entry, ...current.slice(0, 199)]);
+                        }}
                         onWorkspaceChange={tab.connection?.profileId && !tab.sql.command
                           ? (text) => rememberWorkspaceText(tab.id, text) : undefined}
                         onPendingChange={(count) => { gridPending.current[tab.id] = count; }}
@@ -1604,6 +1622,27 @@ export default function App() {
           }}
         />
       )}
+      {tool === "scripts" && <AutoReplaceDialog close={() => setTool(null)} />}
+      {tool === "search" && active && <SchemaSearch key={active.sessionId} connection={active}
+        close={() => setTool(null)} onConnectionLost={onConnectionLost}
+        open={(object) => { setTool(null); void onOpenObject(object, "view", active); }} />}
+      {tool === "history" && active && (() => {
+        const entries = statementHistory.filter((entry) => entry.connectionId === active.sessionId);
+        return <ToolsDialog title={commands.statementHistory.label} close={() => setTool(null)}>
+          {entries.length === 0 ? <p>Sin sentencias ejecutadas</p> :
+            <ul className="tool-list" aria-label="Sentencias">
+              {entries.map((entry) => <li key={entry.id}>
+                <button type="button" className="btn"
+                  onClick={() => { setTool(null); void openSql(active, entry.sql); }}>
+                  {entry.ok ? "" : "Error · "}{entry.sql}
+                </button>
+              </li>)}
+            </ul>}
+          <div className="dialog-actions">
+            <button type="button" className="btn" onClick={() => setTool(null)}>Cerrar</button>
+          </div>
+        </ToolsDialog>;
+      })()}
       {showTheme && (
         <ThemeDialog
           onClose={() => {

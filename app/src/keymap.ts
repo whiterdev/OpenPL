@@ -51,6 +51,10 @@ export type CommandId =
   | "reconnect"
   | "toggleExplorer"
   | "refreshExplorer"
+  | "searchSchema"
+  | "statementHistory"
+  | "autoReplace"
+  | "expandScript"
   | "customizeUi"
   | "findNext"
   | "findPrev"
@@ -138,6 +142,10 @@ const list: Command[] = [
     keys: "Ctrl+Shift+R",
   },
   { id: "customizeUi", label: "Personalizar interfaz", keys: "Ctrl+," },
+  { id: "searchSchema", label: "Buscar en el esquema", keys: "Ctrl+Shift+F" },
+  { id: "statementHistory", label: "Historial de sentencias", keys: "Ctrl+Alt+H" },
+  { id: "autoReplace", label: "Auto Replace", keys: "Ctrl+Alt+R" },
+  { id: "expandScript", label: "Expandir script", keys: "Tab" },
   { id: "nextTab", label: "Pestaña siguiente", keys: "Ctrl+Tab" },
   { id: "prevTab", label: "Pestaña anterior", keys: "Ctrl+Shift+Tab" },
   {

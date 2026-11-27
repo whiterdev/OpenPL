@@ -59,6 +59,7 @@ interface Props {
   onBusy?: (busy: boolean) => void;
   onPendingChange?: (count: number) => void;
   onDirty: (dirty: boolean) => void;
+  onStatement?: (text: string, ok: boolean) => void;
   onWorkspaceChange?: (text: string) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
@@ -138,7 +139,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export function SqlWindow({
   sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, onWorkspaceChange, completion, ref,
-  symbols, catalog, openObject,
+  symbols, catalog, openObject, onStatement,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -177,6 +178,11 @@ export function SqlWindow({
   const sqlplusRef = useRef<ReturnType<typeof createSqlplusState> | null>(null);
   const sqlplus = sqlplusRef.current ??= createSqlplusState();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  function rememberStatement(sql: string, ok: boolean) {
+    const entry = { id: ++lineId.current, sql, ok };
+    setHistory((current) => [entry, ...current]);
+    onStatement?.(sql, ok);
+  }
   const [markers, setMarkers] = useState<EditorMarker[]>([]);
   const [alert, setAlert] = useState("");
   const [values, setValues] = useState<Record<string, { value: string; kind: BindKind }>>(
@@ -456,7 +462,7 @@ export function SqlWindow({
           }
         } catch (error) {
           const detail = describeError(error);
-          setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: false }, ...h]);
+          rememberStatement(statement.text, false);
           if (detail.code === CANCELLED) {
             log("info", "Ejecución cancelada");
           } else {
@@ -476,7 +482,7 @@ export function SqlWindow({
           setTab("output");
           return false;
         }
-        setHistory((h) => [{ id: ++lineId.current, sql: statement.text, ok: true }, ...h]);
+        rememberStatement(statement.text, true);
         if (sqlplus.settings.serveroutput) outcome.output.forEach((line) => log("output", line));
         if (createdObject(sql)) sqlplus.lastCreated = sql;
         if (outcome.test_outputs?.length) {

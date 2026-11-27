@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowsClockwise,
@@ -48,6 +48,7 @@ import { objectMenuItems, type InspectMode } from "../objectMenu";
 import { createDraft, dropDraft, type DraftAction } from "../objectDraft";
 import { describeError, type ActiveConnection, type ObjectInfo, type ObjectType, type Scope } from "../types";
 import { ContextMenu, type ContextItem } from "./ContextMenu";
+import { ToolsDialog } from "./ToolsDialog";
 import "./ObjectBrowser.css";
 
 const CODE = "var(--fn)";
@@ -115,9 +116,85 @@ interface Props {
   onInspect?: (object: ObjectInfo, mode: InspectMode) => void;
   onDraft?: (action: DraftAction, type: ObjectType, object?: ObjectInfo) => void;
   onTest?: (o: ObjectInfo, x: number, y: number) => void;
+  onSearchSchema?: () => void;
+  onStatementHistory?: () => void;
 }
 
-export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onInspect, onDraft, onTest }: Props) {
+export function SchemaSearch({ connection, close, open, onConnectionLost }: {
+  connection: ActiveConnection;
+  close: () => void;
+  open: (object: ObjectInfo) => void;
+  onConnectionLost: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<ObjectType>("Table");
+  const [scope, setScope] = useState<Scope>("Mine");
+  const [results, setResults] = useState<ObjectInfo[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const revision = useRef(0);
+
+  function reset() {
+    revision.current += 1;
+    setResults(null);
+    setError("");
+  }
+
+  async function search() {
+    if (!name.trim() || loading) return;
+    reset();
+    const current = revision.current;
+    setLoading(true);
+    try {
+      const objects = await api.listObjects(connection.sessionId, scope, type, name.trim());
+      if (revision.current === current) setResults(objects);
+    } catch (cause) {
+      const detail = describeError(cause);
+      if (detail.kind === "ConnectionLost") onConnectionLost();
+      if (revision.current === current) setError([detail.code, detail.message].filter(Boolean).join(" "));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <ToolsDialog title={commands.searchSchema.label} close={close}>
+      <form onSubmit={(event) => { event.preventDefault(); void search(); }}>
+        <label>Nombre
+          <input value={name} onChange={(event) => { setName(event.target.value); reset(); }} spellCheck={false} />
+        </label>
+        <label>Tipo
+          <select value={type} onChange={(event) => { setType(event.target.value as ObjectType); reset(); }}>
+            {TYPES.map(({ t, label }) => <option key={t} value={t}>{label}</option>)}
+          </select>
+        </label>
+        <label>Alcance
+          <select value={scope} onChange={(event) => { setScope(event.target.value as Scope); reset(); }}>
+            <option value="Mine">Mis objetos</option>
+            <option value="All">Objetos accesibles</option>
+          </select>
+        </label>
+        <div role="status">{loading ? "Buscando…" : results?.length === 0 ? "Sin coincidencias" : ""}</div>
+        {error && <p role="alert">{error}</p>}
+        {!!results?.length && <ul className="tool-list" aria-label="Resultados">
+          {results.map((object) => (
+            <li key={JSON.stringify([object.owner, object.name, object.object_type])}>
+              <button type="button" className="btn" onClick={() => open(object)}>
+                {object.owner ? `${object.owner}.${object.name}` : object.name}
+              </button>
+            </li>
+          ))}
+        </ul>}
+        <div className="dialog-actions">
+          <button type="submit" className="btn primary" disabled={!name.trim() || loading}>Buscar</button>
+          <button type="button" className="btn" onClick={close}>Cerrar</button>
+        </div>
+      </form>
+    </ToolsDialog>
+  );
+}
+
+export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refreshKey, onNotice, onQueryData, onEditData, onExportData, onInspect, onDraft, onTest, onSearchSchema, onStatementHistory }: Props) {
   const [scope, setScope] = useState<Scope>("Mine");
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState<string | null>(null);
@@ -267,7 +344,6 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
   }, [expanded, cache, errors, scope, query]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const unavailable = useId();
   const [focusedRow, setFocusedRow] = useState<string | null>(null);
   const requestedFocus = useRef<string | null>(null);
   const rowKey = (row: Row) => row.kind === "obj"
@@ -422,11 +498,14 @@ export function ObjectBrowser({ connection, onOpenObject, onConnectionLost, refr
         <button className="ib active" aria-label="Objetos" aria-pressed="true">
           <TreeStructure size={16} />
         </button>
-        <span id={unavailable} hidden>Próximamente</span>
-        <button className="ib" aria-label="Buscar en el esquema" title="Próximamente" aria-describedby={unavailable} disabled>
+        <button className="ib" aria-label={commands.searchSchema.label}
+          title={`${commands.searchSchema.label} (${formatKeys(commands.searchSchema.keys!)})`}
+          onClick={onSearchSchema} disabled={!onSearchSchema}>
           <MagnifyingGlass size={16} />
         </button>
-        <button className="ib" aria-label="Historial de sentencias" title="Próximamente" aria-describedby={unavailable} disabled>
+        <button className="ib" aria-label={commands.statementHistory.label}
+          title={`${commands.statementHistory.label} (${formatKeys(commands.statementHistory.keys!)})`}
+          onClick={onStatementHistory} disabled={!onStatementHistory}>
           <ClockCounterClockwise size={16} />
         </button>
         <span style={{ flex: 1 }} />
