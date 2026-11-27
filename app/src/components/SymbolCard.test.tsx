@@ -59,3 +59,16 @@ test("objeto sin fuente", () => {
   render(<SymbolCard items={[{ kind: "object", object: pkg, note: "Fuente no disponible" }]} />);
   expect(screen.getByText("Fuente no disponible")).toBeVisible();
 });
+
+test("la ficha de una tabla muestra todas las columnas aunque sean más de 30", () => {
+  const columns = Array.from({ length: 64 }, (_, index) => ({
+    name: `CAMPO_${index + 1}`, data_type: "NUMBER", nullable: index % 2 === 0,
+  }));
+  render(<SymbolCard items={[{
+    kind: "relation", object: { ...pkg, name: "CLIENTES", object_type: "Table" }, columns,
+  }]} />);
+
+  expect(screen.getAllByRole("row")).toHaveLength(64);
+  expect(screen.getByRole("row", { name: "CAMPO_64 NUMBER NOT NULL" })).toBeInTheDocument();
+  expect(screen.queryByText(/columnas más/)).not.toBeInTheDocument();
+});
