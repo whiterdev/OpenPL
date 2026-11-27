@@ -1,4 +1,5 @@
 import { expect, test, vi } from "vitest";
+import { oracleDialect } from "./editorReference";
 import { resolveSymbol, type ResolveContext } from "./symbolResolve";
 import type { SourcePart, SymbolLookup } from "./symbolSources";
 import type { ObjectColumn, ObjectInfo, ObjectType } from "./types";
@@ -212,7 +213,7 @@ test("la ubicación incluye la columna", async () => {
   expect(found).toMatchObject({ location: { line: 2, column: 5 } });
 });
 
-test("un alias en un paquete de 14.000 líneas se resuelve rápido", async () => {
+test("un alias en un paquete grande no vuelve a parsear todo el paquete", async () => {
   const lookup = fakeLookup({ CLIENTES: info("CLIENTES", "Table") });
   let body = "PACKAGE BODY pkg IS\n";
   for (let i = 0; i < 1600; i += 1) {
@@ -221,10 +222,10 @@ test("un alias en un paquete de 14.000 líneas se resuelve rápido", async () =>
   }
   body += "END;";
   const context = at(["PACKAGE pkg IS END;", body], "c.id INTO", { lookup, nth: 1599 });
-  await resolveSymbol(at(["X", "BEGIN NULL; END;"], "NULL"), path(["X"]));
-  const start = performance.now();
+  context.parts = context.parts.map((part) => ({ ...part, tree: oracleDialect.language.parser.parse(part.source) }));
+  const parse = vi.spyOn(oracleDialect.language.parser, "parse");
   const found = await resolveSymbol(context, path(["C", "ID"]));
-  const elapsed = performance.now() - start;
   expect(found[0]).toMatchObject({ kind: "column", table: "CLIENTES" });
-  expect(elapsed).toBeLessThan(200);
+  for (const [input] of parse.mock.calls) expect(String(input).length).toBeLessThan(2000);
+  parse.mockRestore();
 });

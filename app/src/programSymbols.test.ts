@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { oracleDialect } from "./editorReference";
 import { programSymbols, type ProgramSymbol } from "./programSymbols";
 
 const find = (symbols: ProgramSymbol[], name: string) =>
@@ -164,7 +165,7 @@ test("un IF sin cerrar no oculta las rutinas siguientes", () => {
   expect(one(symbols, "V").scope).not.toBeNull();
 });
 
-test("un paquete de 14.000 líneas se analiza rápido", () => {
+test("un paquete grande se parsea una sola vez, o ninguna con el árbol del editor", () => {
   const routine = (n: number) =>
     `  -- rutina ${n}\n  PROCEDURE p${n}(a IN NUMBER, b VARCHAR2 := 'x') IS\n    v NUMBER := 1;\n` +
     "    CURSOR c IS SELECT id, nombre FROM clientes WHERE id = a;\n  BEGIN\n" +
@@ -172,12 +173,13 @@ test("un paquete de 14.000 líneas se analiza rápido", () => {
   let source = "CREATE OR REPLACE PACKAGE BODY pkg IS\n";
   for (let i = 0; i < 1600; i += 1) source += routine(i);
   source += "END;";
-  programSymbols(source.slice(0, 2000));
-  const start = performance.now();
+  const tree = oracleDialect.language.parser.parse(source);
+  const parse = vi.spyOn(oracleDialect.language.parser, "parse");
   const symbols = programSymbols(source);
-  const elapsed = performance.now() - start;
+  expect(parse).toHaveBeenCalledTimes(1);
   expect(symbols.filter((symbol) => symbol.kind === "procedure")).toHaveLength(1600);
   expect(symbols.find((symbol) => symbol.name === "P1599")?.comment).toBe("rutina 1599");
-  // Holgado para máquinas lentas; antes tardaba más de 300 ms.
-  expect(elapsed).toBeLessThan(180);
+  expect(programSymbols(source, tree)).toHaveLength(symbols.length);
+  expect(parse).toHaveBeenCalledTimes(1);
+  parse.mockRestore();
 });
