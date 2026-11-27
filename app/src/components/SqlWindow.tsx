@@ -19,7 +19,7 @@ import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import {
   describeError, type BindKind, type BindValue, type Conflict, type EditTarget, type Environment, type ExecOutcome,
-  type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan, type CompletionObject,
+  type ProgramPart, type SqlColumn, type TestOutput, type ExplainPlan, type CompletionObject, type ObjectInfo,
 } from "../types";
 import { editableQuery, ROWID_COLUMN } from "../sqlEdit";
 import { appliedRows, buildChanges, emptyPending, pendingCount, pendingDiscardMessage, type Cell, type Pending } from "../gridEdits";
@@ -32,6 +32,14 @@ import { ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import type { ProgramActions } from "./ProgramWindow";
 import { routineDraft } from "../routineTest";
 import { serializeTestFile, type TestSettings } from "../testFile";
+import { ContextMenu } from "./ContextMenu";
+import { EditorObjectMenu, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
+import {
+  NAVIGATION_TITLES, navigationMenuItems, navigationTargets, resolveAt,
+  type NavigationGoal, type NavigationTarget,
+} from "../editorNavigation";
+import { showSymbolCard, type ContextFor } from "../symbolHover";
+import type { SymbolLookup } from "../symbolSources";
 import "./SqlWindow.css";
 
 interface Props {
@@ -54,6 +62,12 @@ interface Props {
   onWorkspaceChange?: (text: string) => void;
   completion?: CompletionCatalog | null;
   ref?: Ref<ProgramActions>;
+  /** Catálogo de la conexión principal para la ficha y la navegación. */
+  symbols?: SymbolLookup | null;
+  /** Menú contextual sobre nombres (Describir, Ver fuente, Copiar). */
+  catalog?: ObjectCatalog;
+  /** Abre un objeto: tabla o vista en su descripción, programa en la posición pedida. */
+  openObject?: (object: ObjectInfo, at?: { partKind: string; from: number }) => void;
 }
 
 interface Grid {
@@ -124,6 +138,7 @@ const REASONS: Record<Conflict["reason"], string> = {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 export function SqlWindow({
   sessionId, command = false, active = true, onEditObject, initialSql = "", testSettings, runOnOpen, exportOnOpen, editOnOpen, environment, onTransaction, onBusy, onPendingChange, onDirty, onWorkspaceChange, completion, ref,
+  symbols, catalog, openObject,
 }: Props) {
   const part = useMemo<ProgramPart>(() => ({ kind: "SQL", source: initialSql, diagnostics: [], last_ddl_time: null }),
     // La parte inicial es fija: el editor conserva su propio texto.
@@ -785,6 +800,54 @@ export function SqlWindow({
     if (view.current) action(view.current);
   };
 
+  const symbolsRef = useRef(symbols);
+  symbolsRef.current = symbols;
+  const symbolContext = useCallback<ContextFor>((editor, position) => ({
+    parts: [{ kind: "SQL", source: editor.state.doc.toString() }],
+    current: 0,
+    position,
+    self: null,
+    lookup: symbolsRef.current ?? null,
+  }), []);
+  const [objectMenu, setObjectMenu] = useState<(ObjectRequest & { id: number; position: number }) | null>(null);
+  const [targetsMenu, setTargetsMenu] = useState<{ title: string; x: number; y: number; targets: NavigationTarget[] } | null>(null);
+  const objectMenuId = useRef(0);
+  const closeObjectMenu = useCallback(() => setObjectMenu(null), []);
+  const closeTargetsMenu = useCallback(() => setTargetsMenu(null), []);
+
+  function openTarget({ location }: NavigationTarget) {
+    const editor = view.current;
+    if (location.where === "object") {
+      openObject?.(location.object, { partKind: location.partKind, from: location.from });
+    } else if (editor) {
+      editor.dispatch({ selection: { anchor: location.from }, scrollIntoView: true });
+      editor.focus();
+    }
+  }
+
+  /** Definición, declaración o implementación del nombre en `at` (o en el cursor). */
+  async function goTo(goal: NavigationGoal, at?: number) {
+    const editor = view.current;
+    if (!editor) return;
+    const position = at ?? editor.state.selection.main.from;
+    const found = await resolveAt(editor, position, symbolContext);
+    if (!found) return;
+    const relation = found.items.find((item) => item.kind === "relation");
+    if (relation?.kind === "relation") {
+      openObject?.(relation.object);
+      return;
+    }
+    const { targets, notice } = navigationTargets(found.items, goal);
+    if (notice) setNotice(notice);
+    if (targets.length === 1) {
+      openTarget(targets[0]);
+    } else if (targets.length > 1) {
+      const coords = editor.coordsAtPos(position) ?? editor.contentDOM.getBoundingClientRect();
+      closeObjectMenu();
+      setTargetsMenu({ title: `${NAVIGATION_TITLES[goal]} de ${found.name}`, x: coords.left, y: coords.bottom, targets });
+    }
+  }
+
   const busy = running || fetching || applying;
   useEffect(() => { onBusy?.(busy); }, [busy, onBusy]);
   const actions: ProgramActions = {
@@ -805,6 +868,10 @@ export function SqlWindow({
     rollback: busy ? undefined : () => void transaction("rollback"),
     save: command ? undefined : () => void save(),
     complete: inEditor(startCompletion),
+    showSymbolCard: inEditor(showSymbolCard),
+    goToDefinition: () => void goTo("definition"),
+    goToDeclaration: () => void goTo("declaration"),
+    goToImplementation: () => void goTo("implementation"),
     foldBlock: inEditor(foldCode),
     unfoldBlock: inEditor(unfoldCode),
     goToLine: inEditor(gotoLine),
@@ -919,6 +986,12 @@ export function SqlWindow({
         <div className="sql-editor">
           <ProgramEditor part={part} label="SQL" readOnly={false} completion={completion} markers={markers}
             activate={() => {}}
+            symbolContext={symbolContext}
+            onCtrlClick={(position) => void goTo("definition", position)}
+            onObjectContext={catalog ? (reference, x, y, position) => {
+              closeTargetsMenu();
+              setObjectMenu({ reference, x, y, position, id: ++objectMenuId.current });
+            } : undefined}
             onView={onView}
             onSelection={setCursor}
             onChange={(doc) => {
@@ -1136,6 +1209,20 @@ export function SqlWindow({
         )}
       </div>
       {confirmationDialog}
+      {active && catalog && objectMenu && (
+        <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
+          navigation={navigationMenuItems((goal) => void goTo(goal, objectMenu.position))}
+          onMessage={setNotice}
+          onDescribe={(object) => openObject?.(object)} />
+      )}
+      {active && targetsMenu && (
+        <ContextMenu x={targetsMenu.x} y={targetsMenu.y} label={targetsMenu.title} width={360}
+          items={targetsMenu.targets.map((target) => ({
+            label: target.location.where === "object" ? `${target.location.object.name} · ${target.label}` : target.label,
+            run: () => openTarget(target),
+          }))}
+          onClose={closeTargetsMenu} />
+      )}
     </section>
   );
 }

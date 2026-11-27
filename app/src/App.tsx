@@ -84,6 +84,10 @@ const quoteName = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const TAB_DRAG_TYPE = "application/x-openpl-tab";
 const sqlTabActions = [
   "execute",
+  "showSymbolCard",
+  "goToDefinition",
+  "goToDeclaration",
+  "goToImplementation",
   "executeScript",
   "explainPlan",
   "fetchAllRows",
@@ -1396,6 +1400,13 @@ export default function App() {
                       )}
                       <SqlWindow
                         sessionId={tab.sql.sessionId}
+                        symbols={tab.connection ? symbolSources.lookup(tab.connection.sessionId, null) : null}
+                        catalog={tab.id === programId && tab.connection ? {
+                          sessionId: tab.connection.sessionId,
+                          owner: null,
+                          openProgram: (object) => void onOpenObject(object, "view", tab.connection),
+                        } : undefined}
+                        openObject={(object, at) => void onOpenObject(object, "view", tab.connection, at)}
                         completion={sqlCatalog(tab.sql.sessionId)}
                         initialSql={tab.sql.initial}
                         command={tab.sql.command}

@@ -10,9 +10,11 @@ import { copyLineDown, deleteLine, indentLess, indentMore, redo, toggleComment, 
 import { api } from "../api";
 import { commands, formatKeys, type CommandId } from "../keymap";
 import { describeError, type ObjectInfo, type ProgramPart } from "../types";
-import { editorPath, editorReference } from "../editorReference";
-import { navigationTargets, type NavigationGoal, type NavigationTarget } from "../editorNavigation";
-import { resolveSymbol } from "../symbolResolve";
+import { editorReference } from "../editorReference";
+import {
+  NAVIGATION_TITLES, navigationMenuItems, navigationTargets, resolveAt,
+  type NavigationGoal, type NavigationTarget,
+} from "../editorNavigation";
 import { partCaption } from "./SymbolCard";
 import { positionAt, ProgramEditor, type EditorMarker } from "./ProgramEditor";
 import { EditorObjectMenu, ObjectDescription, type ObjectCatalog, type ObjectRequest } from "./EditorObjectMenu";
@@ -107,11 +109,6 @@ function storedOutlineWidth() {
   }
 }
 
-const NAVIGATION_TITLES: Record<NavigationGoal, string> = {
-  definition: "Definiciones",
-  declaration: "Declaraciones",
-  implementation: "Implementaciones",
-};
 
 export function ProgramWindow({
   parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource, symbols, symbolSelf,
@@ -324,10 +321,9 @@ export function ProgramWindow({
     const view = views.current[index];
     if (!view) return;
     const position = at ?? view.state.selection.main.from;
-    const path = editorPath(view.state, position) ?? (position > 0 ? editorPath(view.state, position - 1) : null);
-    const context = symbolContext(view, position);
-    if (!path || !context) return;
-    const items = await resolveSymbol(context, path);
+    const found = await resolveAt(view, position, symbolContext);
+    if (!found) return;
+    const { name, items } = found;
     const relation = items.find((item) => item.kind === "relation");
     if (relation?.kind === "relation") {
       if (catalog) setDescription({ object: relation.object, sessionId: catalog.sessionId, id: ++objectRequestId.current });
@@ -341,7 +337,7 @@ export function ProgramWindow({
       const coords = view.coordsAtPos(position) ?? view.contentDOM.getBoundingClientRect();
       closeObjectMenu();
       setDeclarationMenu({
-        title: `${NAVIGATION_TITLES[goal]} de ${path.parts[path.index]}`,
+        title: `${NAVIGATION_TITLES[goal]} de ${name}`,
         x: coords.left, y: coords.bottom, targets,
       });
     }
@@ -700,10 +696,7 @@ export function ProgramWindow({
       {active && catalog && objectMenu && (
         <EditorObjectMenu key={objectMenu.id} request={objectMenu} catalog={catalog} onClose={closeObjectMenu}
           readOnlyItem={readOnlyItem}
-          navigation={(["definition", "declaration", "implementation"] as const).map((goal) => {
-            const id = goal === "definition" ? "goToDefinition" : goal === "declaration" ? "goToDeclaration" : "goToImplementation";
-            return { label: commands[id].label, keys: commands[id].keys, run: () => void goTo(goal, objectMenu.part, objectMenu.position) };
-          })}
+          navigation={navigationMenuItems((goal) => void goTo(goal, objectMenu.part, objectMenu.position))}
           onMessage={setMessage}
           onDescribe={(object) => setDescription({ object, sessionId: catalog.sessionId, id: objectMenu.id })} />
       )}
