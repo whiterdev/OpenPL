@@ -21,11 +21,15 @@ interface Props {
   onClose: () => void;
   width?: number;
   className?: string;
+  /** Botón que abre el menú: un clic sobre él no cuenta como clic fuera. */
+  anchor?: { readonly current: HTMLElement | null };
 }
 
 /** Menú de clic derecho en la posición del puntero. Se cierra con Escape, clic fuera o al elegir. */
-export function ContextMenu({ x, y, label, items, onClose, width = 260, className = "" }: Props) {
+export function ContextMenu({ x, y, label, items, onClose, width = 260, className = "", anchor }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
   const hasAction = items.some((item) => item !== "sep" && item.run);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -42,6 +46,7 @@ export function ContextMenu({ x, y, label, items, onClose, width = 260, classNam
   useEffect(() => {
     const out = (e: MouseEvent) => {
       if (ref.current?.contains(e.target as Node)) return;
+      if (anchorRef.current?.current?.contains(e.target as Node)) return;
       const focusInside = ref.current?.contains(document.activeElement);
       const hitsControl =
         e.target instanceof Element &&

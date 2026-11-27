@@ -182,6 +182,7 @@ export default function App() {
   } | null>(null);
   const closeRoutineOptions = useCallback(() => setRoutineOptions(null), []);
   const closeNewMenu = useCallback(() => setNewMenu(null), []);
+  const newButton = useRef<HTMLButtonElement>(null);
   const pick = (run: () => void) => () => {
     setNewMenu(null);
     run();
@@ -1126,12 +1127,12 @@ export default function App() {
     <div className="shell">
       <header className="titlebar">
         <Logo size={18} />
-        <MenuBar menus={menus} />
+        <MenuBar menus={menus} onOpen={closeNewMenu} />
         <button
+          ref={newButton}
           className="btn"
           aria-haspopup="menu"
           aria-expanded={!!newMenu}
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             const box = e.currentTarget.getBoundingClientRect();
             setNewMenu((open) =>
@@ -1149,6 +1150,7 @@ export default function App() {
             y={newMenu.y}
             label="Nuevo"
             width={240}
+            anchor={newButton}
             onClose={closeNewMenu}
             items={[
               ...(

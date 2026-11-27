@@ -1210,3 +1210,32 @@ test("Ayuda > Buscar actualizaciones avisa si está al día o si falla", async (
   await checkUpdatesFromMenu();
   expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo buscar actualizaciones");
 });
+
+test("Abrir un menú de la barra cierra Nuevo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  const archivo = screen.getByRole("button", { name: "Archivo" });
+  fireEvent.mouseDown(archivo); fireEvent.click(archivo);
+  expect(screen.queryByRole("menu", { name: "Archivo" })).toBeInTheDocument();
+  expect(screen.queryByRole("menu", { name: "Nuevo" })).not.toBeInTheDocument();
+});
+test("Abrir Nuevo cierra el menú de la barra", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Archivo" }));
+  const nuevo = screen.getByRole("button", { name: "Nuevo" });
+  fireEvent.mouseDown(nuevo); fireEvent.click(nuevo);
+  expect(screen.queryByRole("menu", { name: "Nuevo" })).toBeInTheDocument();
+  expect(screen.queryByRole("menu", { name: "Archivo" })).not.toBeInTheDocument();
+});
+test("Alt cierra Nuevo al abrir la barra", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Nuevo" }));
+  fireEvent.keyDown(document, { key: "Alt" }); fireEvent.keyUp(document, { key: "Alt" });
+  expect(screen.queryByRole("menu", { name: "Nuevo" })).not.toBeInTheDocument();
+});

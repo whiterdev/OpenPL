@@ -23,7 +23,8 @@ function disabledReason(item: MenuItemDef): string {
   return "No disponible en el contexto actual";
 }
 
-export function MenuBar({ menus }: { menus: MenuDef[] }) {
+/** `onOpen` avisa al abrir un menú, para cerrar los menús desplegables de afuera. */
+export function MenuBar({ menus, onOpen }: { menus: MenuDef[]; onOpen?: () => void }) {
   const [open, setOpen] = useState<string | null>(null);
   const ref = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
@@ -31,6 +32,8 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
   menusRef.current = menus;
   const openRef = useRef(open);
   openRef.current = open;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
 
   useEffect(() => {
     let altPending = false;
@@ -78,6 +81,7 @@ export function MenuBar({ menus }: { menus: MenuDef[] }) {
 
   useEffect(() => {
     if (!open) return;
+    onOpenRef.current?.();
     const close = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(null);
     };
