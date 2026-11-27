@@ -590,7 +590,11 @@ export default function App() {
       setPendingUpdate(result.update);
       setUpdateOffer(result.update);
     }
-    else if (result.kind === "upToDate" && !silent) showNotice("Estás al día");
+    else if (result.kind === "upToDate") {
+      // La versión anunciada ya no está publicada: el ícono no debe seguir prometiéndola.
+      setPendingUpdate(null);
+      if (!silent) showNotice("Estás al día");
+    }
     else if (result.kind === "error") showNotice(result.message, "error");
   }
   const updateChecked = useRef(false);

@@ -169,3 +169,6 @@
   40% { transform: translateY(-4px); }
   70% { transform: translateY(1px); }
 }
+.update-badge:hover:not(:disabled) {
+  color: var(--accent);
+}

@@ -1291,3 +1291,48 @@ test("F12 sobre un miembro de otro paquete lo abre en su declaración", async ()
     expect(opened.state.selection.main.head).toBe(other.indexOf("hacer"));
   });
 });
+
+test("buscar actualizaciones sin versión nueva quita el ícono que había", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockResolvedValueOnce({ version: "9.9.9", notes: "", install: vi.fn() }).mockResolvedValueOnce(null);
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Más tarde" }));
+  expect(screen.getByRole("button", { name: "Actualización disponible: 9.9.9" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Ayuda" }));
+  fireEvent.click(within(screen.getByRole("menu", { name: "Ayuda" })).getByRole("menuitem", { name: /Buscar actualizaciones/ }));
+  expect(await screen.findByText("Estás al día")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Actualización disponible/ })).not.toBeInTheDocument();
+});
+
+test("un error al buscar actualizaciones deja el ícono", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockResolvedValueOnce({ version: "9.9.9", notes: "", install: vi.fn() }).mockRejectedValueOnce(new Error("red"));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Más tarde" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ayuda" }));
+  fireEvent.click(within(screen.getByRole("menu", { name: "Ayuda" })).getByRole("menuitem", { name: /Buscar actualizaciones/ }));
+  expect(await screen.findByText("No se pudo buscar actualizaciones")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Actualización disponible: 9.9.9" })).toBeInTheDocument();
+});
+
+test("durante la instalación el ícono no abre otro diálogo", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  updater.check.mockResolvedValue({ version: "9.9.9", notes: "", install: vi.fn(() => new Promise<void>(() => {})) });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actualizar" }));
+  expect(await screen.findByRole("status", { name: "" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Actualización disponible: 9.9.9" }));
+  expect(screen.getAllByRole("dialog", { name: "OpenPL 9.9.9" })).toHaveLength(1);
+});
+
+test("un segundo clic en Nuevo lo cierra", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+  const nuevo = screen.getByRole("button", { name: "Nuevo" });
+  fireEvent.click(nuevo);
+  expect(screen.getByRole("menu", { name: "Nuevo" })).toBeInTheDocument();
+  fireEvent.mouseDown(nuevo);
+  fireEvent.click(nuevo);
+  expect(screen.queryByRole("menu", { name: "Nuevo" })).not.toBeInTheDocument();
+});
