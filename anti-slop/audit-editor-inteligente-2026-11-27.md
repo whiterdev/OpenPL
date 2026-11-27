@@ -33,3 +33,9 @@ Alcance: ficha de símbolo (`SymbolCard`, `.cm-symbol-tooltip`), subrayado de Ct
   y su altura máxima de 320 px. La comprobación es automatizada.
 - **Pendiente, escritorio.** Probar en la app real: pasar el puntero sobre una constante de un
   paquete, Ctrl+clic en una llamada a otro paquete y F12 sobre una tabla en una ventana SQL.
+
+## Detección periódica de actualizaciones
+
+- **PASS automatizado.** Abrir la app con el chequeo inicial sin red, dejarla abierta, esperar un intervalo simulado y ver el ícono en la barra. El diálogo abre al hacer clic. Más tarde lo cierra y conserva el ícono.
+- **PASS automatizado.** Ayuda > Buscar actualizaciones comparte una consulta que ya está en curso. Al cerrar la app se limpia el temporizador.
+- **PASS revisión de código.** Se reutilizan el ícono, el diálogo y sus estados visuales. Compilación Tauri de depuración verificada. Queda pendiente la prueba de punta a punta con dos versiones instalables.

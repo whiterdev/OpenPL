@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- La rama `fix/deteccion-automatica-de-actualizaciones` consulta actualizaciones cada cinco minutos mientras OpenPL está abierto. El chequeo periódico muestra el ícono sin abrir el diálogo y se pausa cuando hay una actualización anunciada. Se mantiene la comprobación al iniciar y desde Ayuda. Pasaron 781 pruebas Vitest, TypeScript, fmt, Clippy y pruebas Rust sin Oracle. Se generó el ejecutable Tauri de depuración. [Publicación y actualizador](RELEASE-v1.md#publicar).
+
 - Beta 11 (WAL-126): los resultados de Buscar en el esquema abren la fuente de los programas o una pestaña DDL de solo lectura para tablas, vistas y los demás tipos con DDL. Los tipos sin DDL conservan el inspector. Pasaron 779 pruebas Vitest, TypeScript, build web, fmt, Clippy y las pruebas Rust sin conexión a Oracle. Queda pendiente la comprobación manual en la app instalada. [Comportamiento](behavior/busqueda-historial-scripts.md).
 
 - Beta 9 publicada y validada por el usuario. Los issues de las betas 8 y 9 están en Done en Linear. [Validación de Beta 8](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-511a7819) y [validación de Beta 9](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-031e4038).

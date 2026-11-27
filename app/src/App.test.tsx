@@ -1231,7 +1231,7 @@ async function checkUpdatesFromMenu() {
   });
 }
 
-test("al abrir busca actualizaciones una vez y sin versión no muestra nada", async () => {
+test("al abrir busca actualizaciones y sin versión no muestra nada", async () => {
   windowEvents.close.mockResolvedValue(() => {});
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
@@ -1239,6 +1239,60 @@ test("al abrir busca actualizaciones una vez y sin versión no muestra nada", as
   await act(async () => {});
   expect(screen.queryByRole("dialog", { name: /^OpenPL/ })).not.toBeInTheDocument();
   expect(screen.queryByText("Estás al día")).not.toBeInTheDocument();
+});
+
+test("detecta una actualización con la app abierta y solo muestra el ícono", async () => {
+  vi.useFakeTimers();
+  try {
+    windowEvents.close.mockResolvedValue(() => {});
+    updater.check.mockRejectedValueOnce(new Error("sin red")).mockResolvedValue(availableUpdate());
+    const app = render(<App />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(updater.check).toHaveBeenCalledOnce();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60 * 1000); });
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog", { name: "OpenPL 1.0.0" })).not.toBeInTheDocument();
+    const badge = screen.getByRole("button", { name: "Actualización disponible: 1.0.0" });
+    fireEvent.click(badge);
+    expect(screen.getByRole("dialog", { name: "OpenPL 1.0.0" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Más tarde" }));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60 * 1000); });
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    expect(badge).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "OpenPL 1.0.0" })).not.toBeInTheDocument();
+    app.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("la búsqueda manual comparte la comprobación en curso y al cerrar se cancela el temporizador", async () => {
+  vi.useFakeTimers();
+  try {
+    windowEvents.close.mockResolvedValue(() => {});
+    let finish!: (update: null) => void;
+    updater.check.mockResolvedValueOnce(null).mockImplementationOnce(
+      () => new Promise<null>((resolve) => { finish = resolve; }),
+    );
+    const app = render(<App />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60 * 1000); });
+
+    await checkUpdatesFromMenu();
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    await act(async () => { finish(null); });
+    expect(screen.getByText("Estás al día")).toBeInTheDocument();
+
+    app.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60 * 1000); });
+    expect(updater.check).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("un error en la búsqueda silenciosa no muestra aviso", async () => {
