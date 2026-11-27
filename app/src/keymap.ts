@@ -27,7 +27,9 @@ export type CommandId =
   | "spec"
   | "body"
   | "sideBySide"
+  | "goToDefinition"
   | "goToDeclaration"
+  | "goToImplementation"
   | "showSymbolCard"
   | "foldBlock"
   | "unfoldBlock"
@@ -101,7 +103,9 @@ const list: Command[] = [
   { id: "spec", label: "Spec", keys: "Alt+S" },
   { id: "body", label: "Body", keys: "Alt+B" },
   { id: "sideBySide", label: "Spec y Body lado a lado", keys: "Ctrl+\\" },
-  { id: "goToDeclaration", label: "Ir a la declaración", keys: "F12" },
+  { id: "goToDefinition", label: "Ir a la definición", keys: "F12" },
+  { id: "goToDeclaration", label: "Ir a la declaración", keys: "Ctrl+F12" },
+  { id: "goToImplementation", label: "Ir a la implementación", keys: "Ctrl+Shift+F12" },
   { id: "showSymbolCard", label: "Mostrar ficha", keys: "Ctrl+Shift+Space" },
   { id: "foldBlock", label: "Plegar bloque", keys: "Alt+Shift+P" },
   { id: "unfoldBlock", label: "Desplegar bloque", keys: "Alt+Shift+A" },

@@ -800,3 +800,92 @@ test("Mostrar ficha abre la ficha de la constante en el cursor", async () => {
   expect(await screen.findByText("NUMBER := 3")).toBeInTheDocument();
   expect(screen.getByText("línea 2")).toBeInTheDocument();
 });
+
+describe("ir a la definición", () => {
+  const spec = "PACKAGE PKG_A AS\n  PROCEDURE calcular;\nEND;";
+  const body = "PACKAGE BODY PKG_A AS\n  PROCEDURE calcular IS BEGIN NULL; END;\nBEGIN\n  calcular;\nEND;";
+  const both = [{ ...parts[0], source: spec }, { ...parts[1], source: body }];
+  const viewOf = (name: string) =>
+    EditorView.findFromDOM(screen.getByRole("textbox", { name }).closest<HTMLElement>(".cm-editor")!)!;
+  const atCall = () => {
+    fireEvent.click(screen.getByRole("tab", { name: /^Body/ }));
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: body.lastIndexOf("calcular") + 1 } }));
+    return view;
+  };
+
+  test("F12 sobre una llamada va al cuerpo", async () => {
+    const ref = createRef<ProgramActions>();
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={both} />);
+    const view = atCall();
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(view.state.selection.main.head).toBe(body.indexOf("calcular")));
+  });
+
+  test("Ctrl+F12 va a la spec", async () => {
+    const ref = createRef<ProgramActions>();
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={both} />);
+    atCall();
+    act(() => ref.current!.goToDeclaration!());
+    await waitFor(() => expect(viewOf("Spec").state.selection.main.head).toBe(spec.indexOf("calcular")));
+  });
+
+  test("Ir a la implementación sin cuerpo avisa", async () => {
+    const ref = createRef<ProgramActions>();
+    const only = "PACKAGE PKG_A AS\n  PROCEDURE calcular;\n  PROCEDURE otro(p NUMBER := calcular);\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} parts={[{ ...parts[0], source: only }]} />);
+    const view = viewOf("Spec");
+    act(() => view.dispatch({ selection: { anchor: only.lastIndexOf("calcular") + 1 } }));
+    act(() => ref.current!.goToImplementation!());
+    expect(await screen.findByText("Cuerpo no disponible")).toBeInTheDocument();
+    expect(view.state.selection.main.head).toBe(only.indexOf("calcular"));
+  });
+
+  test("Ctrl+clic en un nombre navega", async () => {
+    render(<ProgramWindow readOnly onDirty={vi.fn()} parts={both} />);
+    const view = atCall();
+    vi.spyOn(view, "posAtCoords").mockReturnValue(body.lastIndexOf("calcular") + 2);
+    fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
+    await waitFor(() => expect(view.state.selection.main.head).toBe(body.indexOf("calcular")));
+  });
+
+  test("destino en otro objeto pide abrirlo", async () => {
+    const ref = createRef<ProgramActions>();
+    const onNavigate = vi.fn();
+    const other = { owner: "HR", name: "PKG_OTRO", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "" };
+    const symbols = {
+      object: vi.fn(async (_owner: string | null, name: string) => (name === "PKG_OTRO" ? other : null)),
+      parts: vi.fn(async () => [{ kind: "PACKAGE", source: "PACKAGE pkg_otro AS\n  PROCEDURE hacer;\nEND;" }]),
+      columns: vi.fn(async () => []),
+    };
+    const source = "PACKAGE BODY PKG_A AS\nBEGIN\n  pkg_otro.hacer;\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} symbols={symbols} onNavigate={onNavigate}
+      parts={[{ ...parts[1], source }]} />);
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledOnce());
+    expect(onNavigate.mock.calls[0][0]).toMatchObject({
+      location: { where: "object", object: other, partKind: "PACKAGE", line: 2 },
+    });
+  });
+
+  test("F12 sobre una tabla abre su descripción", async () => {
+    vi.spyOn(api, "describeColumns").mockResolvedValue([{ name: "ID", data_type: "NUMBER", nullable: false }]);
+    const ref = createRef<ProgramActions>();
+    const table = { owner: "HR", name: "CLIENTES", object_type: "Table" as const, status: "Valid" as const, last_ddl_time: "" };
+    const symbols = {
+      object: vi.fn(async () => table),
+      parts: vi.fn(async () => []),
+      columns: vi.fn(async () => [{ name: "ID", data_type: "NUMBER", nullable: false }]),
+    };
+    const source = "PACKAGE BODY PKG_A AS\n  CURSOR c IS SELECT id FROM clientes;\nEND;";
+    render(<ProgramWindow readOnly onDirty={vi.fn()} ref={ref} symbols={symbols}
+      catalog={{ sessionId: "s", owner: "HR", openProgram: vi.fn() }}
+      parts={[{ ...parts[1], source }]} />);
+    const view = viewOf("Body");
+    act(() => view.dispatch({ selection: { anchor: source.indexOf("clientes") + 1 } }));
+    act(() => ref.current!.goToDefinition!());
+    expect(await screen.findByRole("region", { name: "Descripción de HR.CLIENTES" })).toBeInTheDocument();
+  });
+});

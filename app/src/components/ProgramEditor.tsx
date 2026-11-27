@@ -17,6 +17,7 @@ import { tags } from "@lezer/highlight";
 import type { ProgramPart } from "../types";
 import { editorReference, oracleDialect, type EditorReference } from "../editorReference";
 import { symbolHover, type ContextFor } from "../symbolHover";
+import { symbolLink } from "../symbolLink";
 import { programFolding } from "../programFolding";
 import { catalogCompletion, keywordCompletion, type CompletionCatalog } from "../programCompletion";
 import { editorSearch } from "./EditorSearch";
@@ -84,6 +85,8 @@ interface Props {
   markers?: EditorMarker[];
   /** Contexto para la ficha de símbolos; sin él no hay ficha. */
   symbolContext?: ContextFor;
+  /** Ctrl+clic sobre un nombre: ir a su definición. */
+  onCtrlClick?: (position: number) => void;
 }
 
 function markerDiagnostics(markers: EditorMarker[], length: number): Diagnostic[] {
@@ -177,6 +180,7 @@ export function ProgramEditor(props: Props) {
         }),
         EditorState.allowMultipleSelections.of(true),
         symbolHover(() => latest.current.symbolContext ?? null),
+        symbolLink(() => latest.current.onCtrlClick),
         EditorView.domEventHandlers({
           focus: () => { latest.current.activate(); },
           keydown: (event) => {

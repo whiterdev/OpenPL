@@ -57,3 +57,8 @@
   padding: 1px 12px 1px 0;
   vertical-align: top;
 }
+.cm-symbol-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

@@ -123,6 +123,8 @@ interface ProgramTab {
   fileName?: string;
   workspaceProfileId?: string;
   load?: symbol;
+  /** Posición pedida por "Ir a la definición" desde otra ventana. */
+  target?: { partKind: string; from: number };
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
   sql?: {
     sessionId: string;
@@ -274,7 +276,9 @@ export default function App() {
         "spec",
         "body",
         "sideBySide",
+        "goToDefinition",
         "goToDeclaration",
+        "goToImplementation",
         "showSymbolCard",
         "foldBlock",
         "unfoldBlock",
@@ -314,7 +318,9 @@ export default function App() {
           !program.readOnly ||
           [
             "save",
+            "goToDefinition",
             "goToDeclaration",
+            "goToImplementation",
             "showSymbolCard",
             "foldBlock",
             "unfoldBlock",
@@ -945,6 +951,7 @@ export default function App() {
     object: ObjectInfo,
     mode: "view" | "edit" = "view",
     connection = active,
+    at?: { partKind: string; from: number },
   ) {
     if (!connection) return;
     if (!supportsProgram.has(object.object_type)) {
@@ -970,6 +977,7 @@ export default function App() {
     const load = Symbol();
     if (existing) {
       setProgramId(id);
+      if (at) updateProgram(id, { target: { ...at } });
       if (mode === "edit") updateProgram(id, { readOnly: false });
       if (!existing.error) return;
       updateProgram(id, { error: undefined, load });
@@ -982,6 +990,7 @@ export default function App() {
         readOnly: mode === "view",
         dirty: false,
         load,
+        target: at,
       });
     }
     try {
@@ -1438,6 +1447,15 @@ export default function App() {
                           ? symbolSources.lookup(editorConnection.sessionId, tab.object?.owner ?? null)
                           : null}
                         symbolSelf={tab.object ?? null}
+                        initialTarget={tab.target}
+                        onNavigate={(target) => {
+                          const { location } = target;
+                          if (location.where !== "object" || !editorConnection) return;
+                          void onOpenObject(location.object, "view", editorConnection, {
+                            partKind: location.partKind,
+                            from: location.from,
+                          });
+                        }}
                         registerSource={tab.object && tab.connection
                           ? (read) => symbolSources.register({
                               connection: tab.connection!.sessionId,

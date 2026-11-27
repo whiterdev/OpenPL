@@ -106,6 +106,8 @@ vi.mock("./api", () => ({
     sessionPing: vi.fn(async () => true),
     listObjects: vi.fn(),
     programSource: vi.fn(),
+    editorObject: vi.fn(async () => null),
+    describeColumns: vi.fn(async () => []),
     routineOverloads: vi.fn(),
     completeObjects: vi.fn(),
     objectColumns: vi.fn(),
@@ -1255,4 +1257,37 @@ test("sin actualización no hay ícono", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "Cancelar" });
   expect(screen.queryByRole("button", { name: /Actualización disponible/ })).not.toBeInTheDocument();
+});
+
+test("F12 sobre un miembro de otro paquete lo abre en su declaración", async () => {
+  windowEvents.close.mockResolvedValue(() => {});
+  vi.mocked(api.programSource).mockReset();
+  const pkgA = { owner: "HR", name: "PKG_A", object_type: "Package" as const, status: "Valid" as const, last_ddl_time: "2026-01-01T12:00:00" };
+  const pkgOtro = { ...pkgA, name: "PKG_OTRO" };
+  vi.mocked(api.listObjects).mockResolvedValue([pkgA]);
+  const source = "CREATE OR REPLACE PACKAGE PKG_A AS\n  c NUMBER := pkg_otro.hacer;\nEND;";
+  const other = "CREATE OR REPLACE PACKAGE PKG_OTRO AS\n  FUNCTION hacer RETURN NUMBER;\nEND;";
+  vi.mocked(api.programSource).mockImplementation(async (_session, _type, _owner, name) => [
+    { kind: "PACKAGE", source: name === "PKG_OTRO" ? other : source, last_ddl_time: null, diagnostics: [] },
+  ]);
+  vi.mocked(api.editorObject).mockImplementation(async (_session, reference) =>
+    reference.name === "PKG_OTRO" ? pkgOtro : null);
+  render(<App />);
+  await connectAs();
+  fireEvent.click(await screen.findByRole("treeitem", { name: "Paquetes" }));
+  fireEvent.contextMenu(await screen.findByRole("treeitem", { name: "PKG_A" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Editar Spec y Body" }));
+  const editor = await screen.findByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: source.indexOf("hacer") + 1 } }));
+  await act(async () => {
+    fireEvent.keyDown(window, { key: "F12" });
+  });
+  await waitFor(() => {
+    const opened = EditorView.findFromDOM(
+      screen.getByRole("textbox", { name: "Spec" }).closest<HTMLElement>(".cm-editor")!,
+    )!;
+    expect(opened.state.doc.toString()).toBe(other);
+    expect(opened.state.selection.main.head).toBe(other.indexOf("hacer"));
+  });
 });
