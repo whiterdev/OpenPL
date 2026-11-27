@@ -413,6 +413,7 @@ class Analyzer {
     for (const [from, to] of this.list(open, false).items) {
       let first = from;
       while (first < to && methodPrefixes.has(tokens[first].key)) first += 1;
+      if (tokens[first]?.key === "PRAGMA") continue;
       if (tokens[first]?.key === "PROCEDURE" || tokens[first]?.key === "FUNCTION") {
         this.method(first, to, typeName);
       } else {

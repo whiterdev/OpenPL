@@ -214,3 +214,8 @@ test("las rutinas y variables internas de un método no son del tipo", () => {
   expect(one(symbols, "HELPER")).toMatchObject({ container: null });
   expect(one(symbols, "MAP")).toMatchObject({ kind: "variable" });
 });
+
+test("un PRAGMA dentro de AS OBJECT no es un atributo", () => {
+  const typeSpec = "CREATE TYPE t_p AS OBJECT (\n  edad NUMBER,\n  MEMBER FUNCTION f RETURN NUMBER,\n  PRAGMA RESTRICT_REFERENCES(f, WNDS)\n);";
+  expect(find(programSymbols(typeSpec), "PRAGMA")).toHaveLength(0);
+});
