@@ -4,6 +4,8 @@
 
 ## Resumen
 
+- Editor inteligente (WAL-119, rama `xwhiterr/wal-119-editor-inteligente-ficha-al-pasar-el-mouse`): ficha al pasar el puntero con firma, tipo, valor declarado, comentario, campos de registros y columnas; Ir a la definición (F12, Ctrl+clic), a la declaración (Ctrl+F12) y a la implementación (Ctrl+Shift+F12) en paquetes, ventanas SQL y de prueba. [Comportamiento](behavior/editor-inteligente.md), [diseño](superpowers/specs/2026-11-27-openpl-editor-inteligente-design.md), [plan](superpowers/plans/2026-11-27-openpl-editor-inteligente.md) y [auditoría](../anti-slop/audit-editor-inteligente-2026-11-27.md). Pendiente la prueba en escritorio contra Oracle.
+
 - 1.0.0-beta.8 (WAL-118, WAL-120): con una versión nueva, la barra superior muestra un ícono que da un salto corto y abre el diálogo de actualización. "Más tarde" deja el ícono. Nuevo y los menús de la barra ya no quedan abiertos a la vez.
 
 - Auditoría UX: los briefs 1 a 59 del [plan de 61 briefs](superpowers/plans/2026-11-25-openpl-auditoria-ux.md)
@@ -124,6 +126,10 @@ Rama creada desde `main`, sin merge ni push. Auditoría:
 | Reemplazar | Ctrl+H | Ctrl+R (Ctrl+H sigue como alternativa) |
 | Refrescar explorador | Ctrl+R | Ctrl+Shift+R |
 | Rehacer | Ctrl+Shift+Z | Ctrl+Shift+Z o Ctrl+Y |
+| Ir a la definición (WAL-119) | (F12 iba a la declaración) | F12 y Ctrl+clic |
+| Ir a la declaración (WAL-119) | F12 | Ctrl+F12 |
+| Ir a la implementación (WAL-119) | (no existía) | Ctrl+Shift+F12 |
+| Mostrar ficha (WAL-119) | (no existía) | Ctrl+Shift+Espacio |
 | Ejecutar | F8 | F8 o Ctrl+Enter |
 | Buscar siguiente / anterior | sin atajo | F3 / Shift+F3 |
 | Pestaña siguiente / anterior | sin atajo | Ctrl+Tab / Ctrl+Shift+Tab |

@@ -1,0 +1,49 @@
+# Ficha y navegación en el editor
+
+Aplica a la ventana de programa, la ventana SQL y la ventana de prueba. La ventana de comando no
+tiene ficha.
+
+## Ficha
+
+- Aparece al dejar el puntero quieto unos 400 ms sobre un nombre. Se cierra al moverlo o al
+  escribir. **Mostrar ficha** (Ctrl+Shift+Espacio) la abre en el cursor; Esc la cierra.
+- **Rutinas y cursores:** firma completa con modos y tipos de parámetros y `RETURN`. Un cursor
+  muestra también las primeras líneas de su consulta.
+- **Constantes y variables:** tipo y valor declarado (`:=` o `DEFAULT`). Sin valor declarado
+  dice "Sin valor inicial". No se lee el valor que tiene en una sesión.
+- **Parámetros, tipos y subtipos:** su declaración.
+- **Campos y columnas:** `registro.campo` resuelve el tipo del registro: `%ROWTYPE` de una tabla o
+  de un cursor, `RECORD` propio, colecciones (`t(i).campo`) y `%TYPE`. En un SELECT, `alias.columna`
+  muestra la columna de la tabla. Una columna de cursor que es una expresión muestra
+  "Expresión".
+- **Tablas y vistas:** columnas con tipo y `NOT NULL`, hasta 30.
+- Cada ficha dice dónde está la declaración (línea, y objeto y parte si es de otro objeto) y el
+  comentario pegado arriba de ella o al final de su línea.
+- Las sobrecargas muestran una ficha por firma.
+- Un objeto con la fuente envuelta o sin permiso de lectura dice "Fuente no disponible".
+
+## Orden de búsqueda
+
+1. Declaraciones locales visibles en el cursor: la más interna gana sobre una global con el
+   mismo nombre.
+2. Declaraciones del paquete abierto, en Spec y Body.
+3. Alias y tablas de la sentencia SQL.
+4. Objetos del catálogo, con la conexión principal. Un paquete abierto en otra pestaña se lee del
+   editor, aunque tenga cambios sin guardar.
+
+Sin conexión solo se resuelve lo que está en el documento. La fuente de otros objetos se guarda
+por conexión y se vuelve a pedir al compilar, refrescar el explorador o reconectar.
+
+## Navegación
+
+| Comando | Atajo | Destino |
+|---|---|---|
+| Ir a la definición | F12, Ctrl+clic | El cuerpo de la rutina; si no tiene, su declaración |
+| Ir a la declaración | Ctrl+F12 | La declaración en la Spec; si no hay, el cuerpo |
+| Ir a la implementación | Ctrl+Shift+F12 | El cuerpo; sin cuerpo, la declaración y el aviso "Cuerpo no disponible" |
+
+- Con Ctrl apretado, el nombre bajo el puntero se subraya.
+- Con varias firmas, un selector lista cada destino.
+- Un destino en otro objeto abre ese objeto (o activa su pestaña) en la línea de la declaración.
+- Sobre una tabla o vista, los tres comandos abren su descripción.
+- El menú contextual de un nombre suma los tres comandos arriba de Describir, Ver fuente y Copiar.
