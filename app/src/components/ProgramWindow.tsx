@@ -18,6 +18,7 @@ import { compileStatement, type CompilationTarget } from "../programScript";
 import { programStructure, type DeclarationKind, type ProgramDeclaration } from "../programStructure";
 import { useCompletionCatalog } from "../useCompletionCatalog";
 import { ContextMenu } from "./ContextMenu";
+import type { SourcePart } from "../symbolSources";
 
 export type ProgramActions = Partial<Record<CommandId, () => void>> & { hasPending?: () => boolean };
 
@@ -59,6 +60,8 @@ interface Props {
   readCurrentProgram?: () => Promise<ProgramPart[]>;
   compilationTarget?: CompilationTarget;
   compile?: ProgramCompiler;
+  /** Registra el texto vivo para la ficha y la navegación de otras ventanas. */
+  registerSource?: (read: () => SourcePart[]) => () => void;
 }
 
 const caption = (kind: string) => {
@@ -98,7 +101,7 @@ interface DeclarationTarget {
 }
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine,
+  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
   const [compiling, setCompiling] = useState(false);
@@ -138,6 +141,14 @@ export function ProgramWindow({
   const root = useRef<HTMLElement>(null);
   const shownParts = useRef(parts);
   const wasActive = useRef(active);
+  const liveParts = useRef(parts);
+  liveParts.current = parts;
+  const registerRef = useRef(registerSource);
+  registerRef.current = registerSource;
+  useEffect(() => registerRef.current?.(() => liveParts.current.map((entry, index) => ({
+    kind: entry.kind,
+    source: views.current[index]?.state.doc.toString() ?? entry.source,
+  }))), []);
 
   function currentTexts() {
     return parts.map((entry, index) => views.current[index]?.state.doc.toString() ?? entry.source);

@@ -769,3 +769,22 @@ describe("búsqueda y reemplazo desde ProgramActions", () => {
     expect(view.state.selection.main.from).toBe(firstFrom);
   });
 });
+
+test("registra su texto vivo y se da de baja al cerrarse", () => {
+  const release = vi.fn();
+  const registerSource = vi.fn().mockReturnValue(release);
+  const { unmount } = render(
+    <ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} registerSource={registerSource} />,
+  );
+  expect(registerSource).toHaveBeenCalledOnce();
+  const read = registerSource.mock.calls[0][0] as () => { kind: string; source: string }[];
+  const editor = screen.getByRole("textbox", { name: "Spec" });
+  const view = EditorView.findFromDOM(editor.closest<HTMLElement>(".cm-editor")!)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "-- nuevo\n" } }));
+  expect(read()).toEqual([
+    { kind: "PACKAGE", source: `-- nuevo\n${parts[0].source}` },
+    { kind: "PACKAGE BODY", source: parts[1].source },
+  ]);
+  unmount();
+  expect(release).toHaveBeenCalledOnce();
+});

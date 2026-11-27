@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -42,6 +43,7 @@ import { newWindowTemplates } from "./newWindows";
 import { TransactionDialog } from "./components/TransactionDialog";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UpdateBadge } from "./components/UpdateBadge";
+import { createSymbolSources } from "./symbolSources";
 import { runCheck, tauriUpdater, type AvailableUpdate } from "./updater";
 import { ThemeDialog, toggleThemeMode } from "./components/ThemeDialog";
 import { activeTheme } from "./themes";
@@ -190,6 +192,7 @@ export default function App() {
   };
   const [explorerVisible, setExplorerVisible] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
+  const symbolSources = useMemo(() => createSymbolSources(api), []);
   const [notice, setNotice] = useState<{ message: string; kind: "info" | "error" } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const errorVisible = useRef(false);
@@ -339,7 +342,10 @@ export default function App() {
       ? () => setPrograms((current) => reorder(current, tabIndex, tabIndex + 1)) : undefined,
     connect: () => setShowLogin(true),
     toggleExplorer: active ? () => setExplorerVisible((v) => !v) : undefined,
-    refreshExplorer: active ? () => setRefreshTick((t) => t + 1) : undefined,
+    refreshExplorer: active ? () => {
+      symbolSources.invalidate(active.sessionId);
+      setRefreshTick((t) => t + 1);
+    } : undefined,
     disconnect: active ? () => void disconnect(active.sessionId) : undefined,
     reconnect: active ? () => void reconnectConnection(active.sessionId) : undefined,
     customizeUi: () => setShowTheme(true),
@@ -457,6 +463,7 @@ export default function App() {
     try {
       await api.reconnect(id);
       setStates((s) => ({ ...s, [id]: "Connected" }));
+      symbolSources.invalidate(id);
       setReconnectErrors(({ [id]: _old, ...rest }) => rest);
       setRefreshTick((t) => t + 1);
       return true;
@@ -1029,6 +1036,7 @@ export default function App() {
     try {
       return await api.sqlExecute(id, sql, []);
     } finally {
+      symbolSources.invalidate(sessionId);
       compileSession.current = null;
       try {
         await api.sqlClose(id);
@@ -1424,6 +1432,13 @@ export default function App() {
                     <Suspense fallback={<p role="status">Cargando editor…</p>}>
                       <ProgramWindow
                         parts={tab.parts}
+                        registerSource={tab.object && tab.connection
+                          ? (read) => symbolSources.register({
+                              connection: tab.connection!.sessionId,
+                              owner: tab.object!.owner,
+                              name: tab.object!.name,
+                            }, read)
+                          : undefined}
                         readOnly={tab.readOnly}
                         onReadOnlyChange={(readOnly) => updateProgram(tab.id, { readOnly })}
                         fileName={tab.fileName}
