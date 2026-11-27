@@ -774,7 +774,7 @@ test("registra su texto vivo y se da de baja al cerrarse", () => {
   const release = vi.fn();
   const registerSource = vi.fn().mockReturnValue(release);
   const { unmount } = render(
-    <ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} registerSource={registerSource} />,
+    <ProgramWindow parts={parts} readOnly={false} onDirty={vi.fn()} registerSource={registerSource} sourceKey="s1|HR|PKG_A" />,
   );
   expect(registerSource).toHaveBeenCalledOnce();
   const read = registerSource.mock.calls[0][0] as () => { kind: string; source: string }[];
@@ -955,4 +955,15 @@ test("Ctrl+clic sobre un nombre sin destino deja el cursor donde se hizo clic", 
   vi.spyOn(view, "posAtCoords").mockReturnValue(position);
   fireEvent.mouseDown(view.contentDOM, { ctrlKey: true, button: 0, clientX: 5, clientY: 5 });
   await waitFor(() => expect(view.state.selection.main.head).toBe(position));
+});
+
+test("una ventana que recibe su objeto después se registra entonces, una sola vez", () => {
+  const registerSource = vi.fn().mockReturnValue(vi.fn());
+  const props = { parts, readOnly: false, onDirty: vi.fn() };
+  const { rerender } = render(<ProgramWindow {...props} />);
+  expect(registerSource).not.toHaveBeenCalled();
+  rerender(<ProgramWindow {...props} registerSource={registerSource} sourceKey="s1|HR|PKG_A" />);
+  expect(registerSource).toHaveBeenCalledOnce();
+  rerender(<ProgramWindow {...props} registerSource={(read) => registerSource(read)} sourceKey="s1|HR|PKG_A" />);
+  expect(registerSource).toHaveBeenCalledOnce();
 });

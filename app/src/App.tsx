@@ -1468,6 +1468,9 @@ export default function App() {
                             column: location.column,
                           });
                         }}
+                        sourceKey={tab.object && tab.connection
+                          ? JSON.stringify([tab.connection.sessionId, tab.object.owner, tab.object.name])
+                          : undefined}
                         registerSource={tab.object && tab.connection
                           ? (read) => symbolSources.register({
                               connection: tab.connection!.sessionId,

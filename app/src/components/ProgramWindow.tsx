@@ -68,6 +68,8 @@ interface Props {
   compile?: ProgramCompiler;
   /** Registra el texto vivo para la ficha y la navegación de otras ventanas. */
   registerSource?: (read: () => SourcePart[]) => () => void;
+  /** Identifica el objeto registrado; al cambiar (p. ej. tras la primera compilación) se vuelve a registrar. */
+  sourceKey?: string;
   /** Catálogo para la ficha y la navegación; null o ausente: solo lo del documento. */
   symbols?: SymbolLookup | null;
   /** Objeto que muestra la ventana, para ubicar sus propias declaraciones. */
@@ -111,7 +113,7 @@ function storedOutlineWidth() {
 
 
 export function ProgramWindow({
-  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource, symbols, symbolSelf,
+  parts, readOnly, onReadOnlyChange, onDirty, onWorkspaceChange, ref, fileName, catalog, active = true, readCurrentProgram, compilationTarget, compile, onTestRoutine, registerSource, sourceKey, symbols, symbolSelf,
   onNavigate, initialTarget,
 }: Props) {
   const [baselines, setBaselines] = useState<Baseline[]>(() => parts.map(baselineOf));
@@ -160,7 +162,7 @@ export function ProgramWindow({
     const view = views.current[index];
     return view ? editorPart(entry.kind, view) : { kind: entry.kind, source: entry.source };
   }), []);
-  useEffect(() => registerRef.current?.(liveSources), [liveSources]);
+  useEffect(() => (sourceKey ? registerRef.current?.(liveSources) : undefined), [liveSources, sourceKey]);
   const activeRef = useRef(active);
   activeRef.current = active;
   const symbolRefs = useRef({ symbols, symbolSelf });
