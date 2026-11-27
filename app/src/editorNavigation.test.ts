@@ -9,7 +9,7 @@ const routine = (part: number, definition: boolean, signature = "PROCEDURE p(a N
     kind: "procedure", name: "P", signature, dataType: null, value: null, comment: null,
     from: part * 100, scope: null, definition, container: null,
   } satisfies ProgramSymbol,
-  location: { where: "here", part, from: part * 100, line: 1 },
+  location: { where: "here", part, from: part * 100, line: 1, column: 1 },
 });
 
 const parts = (choice: ReturnType<typeof navigationTargets>) =>
@@ -42,7 +42,7 @@ test("una variable no pide cuerpo", () => {
   const variable: Resolved = {
     kind: "symbol",
     symbol: { ...(routine(0, false) as { symbol: ProgramSymbol }).symbol, kind: "variable", signature: "v NUMBER" },
-    location: { where: "here", part: 0, from: 5, line: 1 },
+    location: { where: "here", part: 0, from: 5, line: 1, column: 6 },
   };
   const choice = navigationTargets([variable], "implementation");
   expect(choice.targets).toHaveLength(1);

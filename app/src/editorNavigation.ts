@@ -29,7 +29,7 @@ export function navigationTargets(items: Resolved[], goal: NavigationGoal): Navi
   const groups = new Map<string, Extract<Resolved, { kind: "symbol" }>[]>();
   for (const item of items) {
     if (item.kind !== "symbol") continue;
-    const key = `${item.symbol.kind}|${item.symbol.signature.replace(/\s+/g, " ").toUpperCase()}`;
+    const key = item.symbol.key ?? `${item.symbol.kind}|${item.symbol.signature.replace(/\s+/g, " ").toUpperCase()}`;
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
   let missingBody = false;

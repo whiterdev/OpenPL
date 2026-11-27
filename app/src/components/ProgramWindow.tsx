@@ -75,7 +75,7 @@ interface Props {
   /** Destinos en otro objeto: la ventana pide abrirlo. */
   onNavigate?: (target: NavigationTarget) => void;
   /** Posición a la que ir al abrir o al pedir un destino nuevo. */
-  initialTarget?: { partKind: string; from: number };
+  initialTarget?: { partKind: string; line: number; column: number };
 }
 
 const caption = (kind: string) => {
@@ -346,7 +346,7 @@ export function ProgramWindow({
   useEffect(() => {
     if (!initialTarget) return;
     const index = parts.findIndex((part) => part.kind === initialTarget.partKind);
-    if (index >= 0) navigateAt(index, initialTarget.from);
+    if (index >= 0) navigate(index, initialTarget.line, initialTarget.column);
     // Solo al pedir un destino nuevo; `parts` llega junto con él.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTarget]);

@@ -3,6 +3,7 @@ import {
   boundary,
   findCreatedUnit,
   format,
+  normalizedParameter,
   isIdentifier,
   matchingBlocks,
   nameOf,
@@ -39,6 +40,8 @@ export interface ProgramSymbol {
   /** Rutina, cursor o tipo dueño de parámetros y campos. */
   container: string | null;
   query?: string;
+  /** Rutinas: identifica la misma rutina en spec y body aunque cambien IN o los valores por omisión. */
+  key?: string;
 }
 
 interface Span {
@@ -48,6 +51,10 @@ interface Span {
 }
 
 const tokenEnd = (token: Token) => token.from + token.text.length;
+/** Como `format`, sin separar el `:=` que el tokenizador parte en dos. */
+const signatureOf = (tokens: Token[]) => format(tokens).replace(/:\s=/g, ":=");
+const listStops = new Set([";", "IS", "AS"]);
+const routineStarts = new Set(["PROCEDURE", "FUNCTION"]);
 const statementEnd = new Set([";"]);
 const routineMarkers = new Set([";", "IS", "AS"]);
 const parameterModes = new Set(["IN", "OUT", "NOCOPY"]);
@@ -169,6 +176,11 @@ class Analyzer {
     let start = open + 1;
     for (let i = open; i < this.tokens.length; i += 1) {
       const { key } = this.tokens[i];
+      // Paréntesis sin cerrar: la lista termina donde empieza el cuerpo o la sentencia.
+      if (listStops.has(key)) {
+        if (i > start) items.push([start, i]);
+        return { items, after: i };
+      }
       if (key === "(") depth += 1;
       else if (key === ")") depth -= 1;
       if ((key === "," && depth === 1) || depth === 0) {
@@ -270,7 +282,7 @@ class Analyzer {
     this.push({
       kind: subtype ? "subtype" : "type",
       name: typeName,
-      signature: format(tokens.slice(start, end)),
+      signature: signatureOf(tokens.slice(start, end)),
       dataType: this.text(definitionStart, subtype ? this.typeEnd(definitionStart, end) : end) || null,
       value: null,
       comment: this.comment(start, end),
@@ -297,7 +309,7 @@ class Analyzer {
     this.push({
       kind,
       name: nameOf(name),
-      signature: format(tokens.slice(from, assign?.at ?? to)),
+      signature: signatureOf(tokens.slice(from, assign?.at ?? to)),
       dataType: this.text(typeStart, typeEnd) || null,
       value: assign ? this.text(assign.at + assign.size, to) || null : null,
       from: name.from,
@@ -318,7 +330,7 @@ class Analyzer {
     const returns = tokens[after]?.key === "RETURN" ? tokens.slice(after + 1, marker) : [];
     const modifier = returns.findIndex((token) => signatureModifiers.has(token.key));
     if (modifier >= 0) returns.length = modifier;
-    const parameters = items.map(([from, to]) => format(tokens.slice(from, to)));
+    const parameters = items.map(([from, to]) => signatureOf(tokens.slice(from, to)));
     const signature =
       `${kind} ${this.text(start + 1, nameIndex + 1)}` +
       (parameters.length ? `(${parameters.join(", ")})` : "") +
@@ -338,6 +350,12 @@ class Analyzer {
       scope,
       definition,
       container: null,
+      key: JSON.stringify([
+        kind,
+        routineName,
+        items.map(([from, to]) => normalizedParameter(tokens.slice(from, this.assignment(from, to)?.at ?? to))),
+        returns.map((token) => token.key),
+      ]),
     };
     this.out.push(symbol);
     for (const [from, to] of items) this.member(from, to, "parameter", routineName, own);
@@ -352,7 +370,13 @@ class Analyzer {
     own.to = this.source.length;
     const stop = this.section(marker + 1, own);
     const closing = tokens[stop]?.key === "BEGIN" ? this.blocks.get(stop) : tokens[stop]?.key === "END" ? stop : undefined;
-    if (closing === undefined) return tokens.length;
+    if (closing === undefined) {
+      // Cuerpo sin END (se está escribiendo): sigue en la próxima rutina que empieza una sentencia.
+      const next = tokens.findIndex((token, i) => i > stop && routineStarts.has(token.key) && tokens[i - 1]?.key === ";");
+      if (next < 0) return tokens.length;
+      own.to = tokens[next].from;
+      return next;
+    }
     const end = this.statementEnd(closing);
     own.to = this.endOf(end);
     return end + 1;

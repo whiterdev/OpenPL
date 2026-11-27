@@ -67,7 +67,7 @@ interface Props {
   /** Menú contextual sobre nombres (Describir, Ver fuente, Copiar). */
   catalog?: ObjectCatalog;
   /** Abre un objeto: tabla o vista en su descripción, programa en la posición pedida. */
-  openObject?: (object: ObjectInfo, at?: { partKind: string; from: number }) => void;
+  openObject?: (object: ObjectInfo, at?: { partKind: string; line: number; column: number }) => void;
 }
 
 interface Grid {
@@ -818,7 +818,7 @@ export function SqlWindow({
   function openTarget({ location }: NavigationTarget) {
     const editor = view.current;
     if (location.where === "object") {
-      openObject?.(location.object, { partKind: location.partKind, from: location.from });
+      openObject?.(location.object, { partKind: location.partKind, line: location.line, column: location.column });
     } else if (editor) {
       editor.dispatch({ selection: { anchor: location.from }, scrollIntoView: true });
       editor.focus();

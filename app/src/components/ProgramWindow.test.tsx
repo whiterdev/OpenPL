@@ -889,3 +889,14 @@ describe("ir a la definición", () => {
     expect(await screen.findByRole("region", { name: "Descripción de HR.CLIENTES" })).toBeInTheDocument();
   });
 });
+
+test("un destino pedido se ubica por línea y columna, aunque esté fuera del texto", () => {
+  const source = "PACKAGE PKG_A AS\n  PROCEDURE hacer;\nEND;";
+  const { rerender } = render(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source }]}
+    initialTarget={{ partKind: "PACKAGE", line: 2, column: 13 }} />);
+  const view = EditorView.findFromDOM(screen.getByRole("textbox", { name: "Spec" }).closest<HTMLElement>(".cm-editor")!)!;
+  expect(view.state.selection.main.head).toBe(source.indexOf("hacer"));
+  rerender(<ProgramWindow readOnly onDirty={vi.fn()} parts={[{ ...parts[0], source }]}
+    initialTarget={{ partKind: "PACKAGE", line: 99, column: 99 }} />);
+  expect(view.state.selection.main.head).toBe(source.length);
+});

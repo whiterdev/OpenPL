@@ -146,3 +146,20 @@ test("bloque anónimo declara locales", () => {
 test("texto incompleto no lanza", () => {
   expect(Array.isArray(programSymbols("PACKAGE BODY x IS PROCEDURE p(a NUMBER"))).toBe(true);
 });
+
+test("la firma conserva := en los valores por omisión", () => {
+  expect(one(programSymbols(spec("  PROCEDURE p(a NUMBER := 0);")), "P").signature).toBe("PROCEDURE p(a NUMBER := 0)");
+});
+
+test("una lista de parámetros sin cerrar no oculta lo que sigue", () => {
+  const symbols = programSymbols(body("  PROCEDURE a(p NUMBER IS BEGIN NULL; END;\n  PROCEDURE b IS BEGIN NULL; END;"));
+  expect(find(symbols, "B")).toHaveLength(1);
+});
+
+test("un IF sin cerrar no oculta las rutinas siguientes", () => {
+  const symbols = programSymbols(body(
+    "  PROCEDURE a IS BEGIN IF x THEN NULL; END;\n  PROCEDURE b IS v NUMBER; BEGIN NULL; END;\n  g_fin NUMBER;",
+  ));
+  expect(find(symbols, "B")).toHaveLength(1);
+  expect(one(symbols, "V").scope).not.toBeNull();
+});

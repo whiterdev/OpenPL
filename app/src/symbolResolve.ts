@@ -6,8 +6,8 @@ import type { SourcePart, SymbolLookup } from "./symbolSources";
 import type { ObjectColumn, ObjectInfo, ObjectType } from "./types";
 
 export type SymbolLocation =
-  | { where: "here"; part: number; from: number; line: number }
-  | { where: "object"; object: ObjectInfo; partKind: string; from: number; line: number };
+  | { where: "here"; part: number; from: number; line: number; column: number }
+  | { where: "object"; object: ObjectInfo; partKind: string; from: number; line: number; column: number };
 
 export type Resolved =
   | { kind: "symbol"; symbol: ProgramSymbol; location: SymbolLocation }
@@ -54,9 +54,15 @@ interface Home {
   object: ObjectInfo | null;
 }
 
+/** Parte y posición desde donde se busca: elige el alcance local más interno. */
+interface At {
+  part: number;
+  position: number;
+}
+
 type Entity =
   | { t: "unit"; home: Home }
-  | { t: "record"; home: Home; dataType: string }
+  | { t: "record"; home: Home; dataType: string; at?: At }
   | { t: "query"; home: Home; query: string; label: string }
   | { t: "relation"; owner: string | null; name: string }
   | { t: "schema"; owner: string };
@@ -74,13 +80,15 @@ function lineAt(source: string, from: number) {
 }
 
 function located(home: Home, part: number, symbol: ProgramSymbol): Resolved {
-  const line = lineAt(home.parts[part].source, symbol.from);
+  const { source } = home.parts[part];
+  const line = lineAt(source, symbol.from);
+  const column = symbol.from - (source.lastIndexOf("\n", symbol.from - 1) + 1) + 1;
   return {
     kind: "symbol",
     symbol,
     location: home.object
-      ? { where: "object", object: home.object, partKind: home.parts[part].kind, from: symbol.from, line }
-      : { where: "here", part, from: symbol.from, line },
+      ? { where: "object", object: home.object, partKind: home.parts[part].kind, from: symbol.from, line, column }
+      : { where: "here", part, from: symbol.from, line, column },
   };
 }
 
@@ -103,12 +111,20 @@ function unitMembers(home: Home, name: string, kinds?: Set<string>) {
   return found;
 }
 
-function findSymbol(home: Home, name: string, kinds: Set<string>) {
-  for (let part = 0; part < home.symbols.length; part += 1) {
-    const symbol = home.symbols[part].find((item) => item.name === name && kinds.has(item.kind));
-    if (symbol) return { part, symbol };
+/** El símbolo visible desde `at` (local más interno), si no el de nivel de unidad, si no el primero. */
+function findSymbol(home: Home, name: string, kinds: Set<string>, at?: At) {
+  const found: { part: number; symbol: ProgramSymbol }[] = [];
+  home.symbols.forEach((symbols, part) => {
+    for (const symbol of symbols) if (symbol.name === name && kinds.has(symbol.kind)) found.push({ part, symbol });
+  });
+  if (at) {
+    const size = ({ symbol }: { symbol: ProgramSymbol }) => symbol.scope!.to - symbol.scope!.from;
+    const local = found
+      .filter(({ part, symbol }) => part === at.part && symbol.scope && symbol.scope.from <= at.position && at.position <= symbol.scope.to)
+      .sort((a, b) => size(a) - size(b));
+    if (local.length) return local[0];
   }
-  return null;
+  return found.find(({ symbol }) => !symbol.scope) ?? found[0] ?? null;
 }
 
 const typeKinds = new Set(["type", "subtype"]);
@@ -189,7 +205,8 @@ class Resolver {
     if (symbol.query !== undefined && !symbol.dataType) {
       return { t: "query", home, query: symbol.query, label: symbol.name };
     }
-    return symbol.dataType ? { t: "record", home, dataType: symbol.dataType } : null;
+    const at = { part: this.ctx.current, position: this.ctx.position };
+    return symbol.dataType ? { t: "record", home, dataType: symbol.dataType, at } : null;
   }
 
   private async firstEntity(name: string): Promise<Entity | null> {
@@ -213,9 +230,9 @@ class Resolver {
         : null;
     }
     if (entity.t === "record") {
-      const [found] = await this.typeMembers(entity.home, entity.dataType, name, 0);
+      const [found] = await this.typeMembers(entity.home, entity.dataType, name, 0, entity.at);
       return found?.kind === "symbol" && found.symbol.dataType
-        ? { t: "record", home: entity.home, dataType: found.symbol.dataType }
+        ? { t: "record", home: entity.home, dataType: found.symbol.dataType, at: entity.at }
         : null;
     }
     return null;
@@ -234,21 +251,21 @@ class Resolver {
         return column ? [{ kind: "column", table: entity.name, column }] : [];
       }
       case "record":
-        return this.typeMembers(entity.home, entity.dataType, name, 0);
+        return this.typeMembers(entity.home, entity.dataType, name, 0, entity.at);
       case "query":
         return this.queryColumn(entity.query, name, entity.label);
     }
   }
 
   /** Campo `name` de un valor de tipo `dataType` declarado en `home`. */
-  private async typeMembers(home: Home, dataType: string, name: string, depth: number): Promise<Resolved[]> {
+  private async typeMembers(home: Home, dataType: string, name: string, depth: number, at?: At): Promise<Resolved[]> {
     if (depth > MAX_DEPTH) return [];
     const text = dataType.trim();
     const rowType = /^(.+)%ROWTYPE$/i.exec(text);
     if (rowType) {
       const base = nameParts(rowType[1]);
       if (base.length === 1) {
-        const cursor = findSymbol(home, base[0], cursorKinds);
+        const cursor = findSymbol(home, base[0], cursorKinds, at);
         if (cursor?.symbol.query) return this.queryColumn(cursor.symbol.query, name, cursor.symbol.name);
       }
       const table = base[base.length - 1];
@@ -258,32 +275,35 @@ class Resolver {
     const anchored = /^(.+)%TYPE$/i.exec(text);
     if (anchored) {
       const base = nameParts(anchored[1]);
-      const variable = base.length === 1 ? findSymbol(home, base[0], valueKinds) : null;
+      const variable = base.length === 1 ? findSymbol(home, base[0], valueKinds, at) : null;
       return variable?.symbol.dataType
-        ? this.typeMembers(home, variable.symbol.dataType, name, depth + 1)
+        ? this.typeMembers(home, variable.symbol.dataType, name, depth + 1, at)
         : [];
     }
     const collection =
       /^(?:TABLE|VARRAY\s*\([^)]*\)|VARYING\s+ARRAY\s*\([^)]*\))\s+OF\s+(.+?)(?:\s+INDEX\s+BY\s+[\s\S]*)?(?:\s+NOT\s+NULL)?$/i.exec(text);
-    if (collection) return this.typeMembers(home, collection[1], name, depth + 1);
+    if (collection) return this.typeMembers(home, collection[1], name, depth + 1, at);
 
     const base = nameParts(text);
     let typeHome: Home | null = home;
+    let typeAt = at;
     if (base.length === 2) {
       const object = await this.object(null, base[0]);
       typeHome = object?.object_type === "Package" ? await this.home(object) : null;
+      typeAt = undefined;
     } else if (base.length !== 1) {
       return [];
     }
     if (!typeHome) return [];
-    const type = findSymbol(typeHome, base[base.length - 1], typeKinds);
+    const type = findSymbol(typeHome, base[base.length - 1], typeKinds, typeAt);
     if (!type) return [];
     if (type.symbol.kind === "type" && /^RECORD\b/i.test(type.symbol.dataType ?? "")) {
       return typeHome.symbols[type.part]
-        .filter((symbol) => symbol.kind === "field" && symbol.container === type.symbol.name && symbol.name === name)
+        .filter((symbol) => symbol.kind === "field" && symbol.container === type.symbol.name && symbol.name === name &&
+          symbol.scope?.from === type.symbol.scope?.from)
         .map((symbol) => located(typeHome, type.part, symbol));
     }
-    return type.symbol.dataType ? this.typeMembers(typeHome, type.symbol.dataType, name, depth + 1) : [];
+    return type.symbol.dataType ? this.typeMembers(typeHome, type.symbol.dataType, name, depth + 1, typeAt) : [];
   }
 
   /** Columna `name` de la lista de un SELECT; tipo de la tabla si es una columna simple. */

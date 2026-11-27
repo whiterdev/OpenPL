@@ -62,8 +62,8 @@ test("llamada a rutina del mismo paquete devuelve spec y body", async () => {
     "PACKAGE BODY pkg IS\n  FUNCTION calcular RETURN NUMBER IS BEGIN RETURN 1; END;\n  PROCEDURE p IS x NUMBER; BEGIN x := calcular; END;\nEND;";
   const found = await resolveSymbol(at([spec, body], "calcular;"), path(["CALCULAR"]));
   expect(found.map((item) => item.kind === "symbol" && item.location)).toEqual([
-    { where: "here", part: 0, from: spec.indexOf("calcular"), line: 2 },
-    { where: "here", part: 1, from: body.indexOf("calcular"), line: 2 },
+    { where: "here", part: 0, from: spec.indexOf("calcular"), line: 2, column: 12 },
+    { where: "here", part: 1, from: body.indexOf("calcular"), line: 2, column: 12 },
   ]);
 });
 
@@ -181,4 +181,33 @@ test("con el objeto propio las ubicaciones siguen siendo del documento", async (
   const context = { ...at(["DECLARE v NUMBER; BEGIN v := 1; END;"], "v :="), self: info("PKG", "Package") };
   const [found] = await resolveSymbol(context, path(["V"]));
   expect(found).toMatchObject({ kind: "symbol", location: { where: "here" } });
+});
+
+test("spec y cuerpo con cabeceras distintas son la misma rutina", async () => {
+  const { navigationTargets } = await import("./editorNavigation");
+  const spec = "PACKAGE pkg IS\n  PROCEDURE registrar(p_id IN NUMBER, p_x NUMBER DEFAULT 0);\nEND;";
+  const body = "PACKAGE BODY pkg IS\n  PROCEDURE registrar(p_id NUMBER, p_x NUMBER := 0) IS BEGIN NULL; END;\nBEGIN\n  registrar(1);\nEND;";
+  const found = await resolveSymbol(at([spec, body], "registrar(1)"), path(["REGISTRAR"]));
+  const choice = navigationTargets(found, "definition");
+  expect(choice.targets).toHaveLength(1);
+  expect(choice.targets[0].location).toMatchObject({ where: "here", part: 1 });
+  expect(navigationTargets(found, "implementation").notice).toBeUndefined();
+});
+
+test("los campos se buscan en el cursor del procedimiento actual", async () => {
+  const body =
+    "PACKAGE BODY pkg IS\n" +
+    "  PROCEDURE a IS CURSOR c IS SELECT 1 uno FROM dual; r c%ROWTYPE; BEGIN x := r.uno; END;\n" +
+    "  PROCEDURE b IS CURSOR c IS SELECT 2 dos FROM dual; r c%ROWTYPE; BEGIN x := r.dos; END;\n" +
+    "END;";
+  const found = await resolveSymbol(at(["PACKAGE pkg IS END;", body], "dos;"), path(["R", "DOS"]));
+  expect(found).toEqual([
+    { kind: "column", table: "C", column: { name: "DOS", data_type: "Expresión", nullable: true } },
+  ]);
+});
+
+test("la ubicación incluye la columna", async () => {
+  const source = "DECLARE\n    v NUMBER;\nBEGIN v := 1; END;";
+  const [found] = await resolveSymbol(at([source], "v :="), path(["V"]));
+  expect(found).toMatchObject({ location: { line: 2, column: 5 } });
 });

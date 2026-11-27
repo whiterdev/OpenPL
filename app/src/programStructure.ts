@@ -118,7 +118,7 @@ export function format(tokens: Token[]) {
     .join("");
 }
 
-function normalizedParameter(tokens: Token[]) {
+export function normalizedParameter(tokens: Token[]) {
   // IN es el modo predeterminado, pero IN OUT es distinto de OUT.
   return tokens
     .filter(

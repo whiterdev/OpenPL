@@ -128,7 +128,7 @@ interface ProgramTab {
   workspaceProfileId?: string;
   load?: symbol;
   /** Posición pedida por "Ir a la definición" desde otra ventana. */
-  target?: { partKind: string; from: number };
+  target?: { partKind: string; line: number; column: number };
   /** Ventana SQL: sesión propia, texto inicial y estado de su transacción. */
   sql?: {
     sessionId: string;
@@ -955,7 +955,7 @@ export default function App() {
     object: ObjectInfo,
     mode: "view" | "edit" = "view",
     connection = active,
-    at?: { partKind: string; from: number },
+    at?: { partKind: string; line: number; column: number },
   ) {
     if (!connection) return;
     if (!supportsProgram.has(object.object_type)) {
@@ -1464,7 +1464,8 @@ export default function App() {
                           if (location.where !== "object" || !editorConnection) return;
                           void onOpenObject(location.object, "view", editorConnection, {
                             partKind: location.partKind,
-                            from: location.from,
+                            line: location.line,
+                            column: location.column,
                           });
                         }}
                         registerSource={tab.object && tab.connection

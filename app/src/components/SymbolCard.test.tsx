@@ -11,7 +11,7 @@ const symbol = (overrides: Partial<ProgramSymbol>): ProgramSymbol => ({
   kind: "variable", name: "X", signature: "x NUMBER", dataType: "NUMBER", value: null,
   comment: null, from: 0, scope: null, definition: false, container: null, ...overrides,
 });
-const here = { where: "here" as const, part: 0, from: 0, line: 1 };
+const here = { where: "here" as const, part: 0, from: 0, line: 1, column: 1 };
 
 test("constante muestra tipo y valor", () => {
   const items: Resolved[] = [{
@@ -33,7 +33,7 @@ test("ubicación con línea y comentario", () => {
   const items: Resolved[] = [{
     kind: "symbol",
     symbol: symbol({ kind: "function", signature: "FUNCTION calcular RETURN NUMBER", comment: "Calcula el total" }),
-    location: { where: "object", object: pkg, partKind: "PACKAGE BODY", from: 0, line: 12 },
+    location: { where: "object", object: pkg, partKind: "PACKAGE BODY", from: 0, line: 12, column: 1 },
   }];
   render(<SymbolCard items={items} />);
   expect(screen.getByText("FUNCTION calcular RETURN NUMBER")).toBeVisible();
