@@ -222,7 +222,7 @@ export function SqlWindow({
     } else printSqlplus(sqlplus, (line, level) => appendLine(level ?? "info", line), text, kind);
   }, [appendLine, sqlplus]);
 
-  function targets(): { list: ScriptStatement[]; script: boolean } {
+  function targets(whole = false): { list: ScriptStatement[]; script: boolean } {
     const editor = view.current;
     const doc = editor?.state.doc.toString() ?? source;
     const range = editor?.state.selection.main;
@@ -233,6 +233,7 @@ export function SqlWindow({
         script: true,
       };
     }
+    if (whole) return { list: splitScript(doc), script: true };
     const one = statementAt(splitScript(doc), range?.head ?? cursor);
     return { list: one ? [one] : [], script: false };
   }
@@ -790,7 +791,7 @@ export function SqlWindow({
     hasPending: () => count > 0,
     explainPlan: command ? undefined : () => void explain(),
     execute: command ? undefined : () => void run(targets().list),
-    executeScript: command ? undefined : () => void run(splitScript(view.current?.state.doc.toString() ?? source)),
+    executeScript: command ? undefined : () => void run(targets(true).list),
     exportData: !command && grid && !editSession && !busy ? () => void exportRows(grid) : undefined,
     fetchAllRows: !command && grid?.more && !busy ? () => void fetchAll() : undefined,
     // Durante applying no se ofrece: cortar un guardado a medias deja la tabla en un estado incierto.
