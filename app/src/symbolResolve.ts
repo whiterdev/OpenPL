@@ -286,6 +286,13 @@ class Resolver {
         const cursor = findSymbol(home, base[0], cursorKinds, at);
         if (cursor?.symbol.query) return this.queryColumn(cursor.symbol.query, name, cursor.symbol.name);
       }
+      if (base.length === 2) {
+        // pkg.cursor%ROWTYPE
+        const owner = await this.object(null, base[0]);
+        const unit = owner?.object_type === "Package" ? await this.home(owner) : null;
+        const cursor = unit ? findSymbol(unit, base[1], cursorKinds) : null;
+        if (cursor?.symbol.query) return this.queryColumn(cursor.symbol.query, name, cursor.symbol.name);
+      }
       const table = base[base.length - 1];
       const column = (await this.columns(base.length > 1 ? base[0] : null, table)).find((item) => item.name === name);
       return column ? [{ kind: "column", table, column }] : [];
@@ -303,25 +310,43 @@ class Resolver {
     if (collection) return this.typeMembers(home, collection[1], name, depth + 1, at);
 
     const base = nameParts(text);
-    let typeHome: Home | null = home;
+    if (base.length < 1 || base.length > 2) return [];
+    let typeHome: Home | null = base.length === 1 ? home : null;
     let typeAt = at;
-    if (base.length === 2) {
-      const object = await this.object(null, base[0]);
-      typeHome = object?.object_type === "Package" ? await this.home(object) : null;
+    let type = typeHome ? findSymbol(typeHome, base[0], typeKinds, typeAt) : null;
+    if (!type) {
+      // Tipo de otro paquete (pkg.t_rec) o tipo objeto del esquema (t_persona, hr.t_persona).
       typeAt = undefined;
-    } else if (base.length !== 1) {
-      return [];
+      const owner = base.length === 2 ? await this.object(null, base[0]) : null;
+      if (owner?.object_type === "Package") {
+        typeHome = await this.home(owner);
+      } else {
+        const object = base.length === 2 ? await this.object(base[0], base[1]) : await this.object(null, base[0]);
+        typeHome = object?.object_type === "Type" ? await this.home(object) : null;
+      }
+      type = typeHome ? findSymbol(typeHome, base[base.length - 1], typeKinds) : null;
     }
-    if (!typeHome) return [];
-    const type = findSymbol(typeHome, base[base.length - 1], typeKinds, typeAt);
-    if (!type) return [];
-    if (type.symbol.kind === "type" && /^RECORD\b/i.test(type.symbol.dataType ?? "")) {
-      return typeHome.symbols[type.part]
-        .filter((symbol) => symbol.kind === "field" && symbol.container === type.symbol.name && symbol.name === name &&
-          symbol.scope?.from === type.symbol.scope?.from)
-        .map((symbol) => located(typeHome, type.part, symbol));
+    if (!type || !typeHome) return [];
+    const found = type;
+    const typeName = found.symbol.name;
+    if (found.symbol.dataType === "OBJECT") {
+      const members: Resolved[] = [];
+      typeHome.symbols.forEach((symbols, part) => {
+        for (const symbol of symbols) {
+          if (symbol.container === typeName && symbol.name === name && symbol.kind !== "parameter") {
+            members.push(located(typeHome, part, symbol));
+          }
+        }
+      });
+      return members;
     }
-    return type.symbol.dataType ? this.typeMembers(typeHome, type.symbol.dataType, name, depth + 1, typeAt) : [];
+    if (found.symbol.kind === "type" && /^RECORD\b/i.test(found.symbol.dataType ?? "")) {
+      return typeHome.symbols[found.part]
+        .filter((symbol) => symbol.kind === "field" && symbol.container === typeName && symbol.name === name &&
+          symbol.scope?.from === found.symbol.scope?.from)
+        .map((symbol) => located(typeHome, found.part, symbol));
+    }
+    return found.symbol.dataType ? this.typeMembers(typeHome, found.symbol.dataType, name, depth + 1, typeAt) : [];
   }
 
   /** Columna `name` de la lista de un SELECT; tipo de la tabla si es una columna simple. */

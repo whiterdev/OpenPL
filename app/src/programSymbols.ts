@@ -58,6 +58,8 @@ const tokenEnd = (token: Token) => token.from + token.text.length;
 const signatureOf = (tokens: Token[]) => format(tokens).replace(/:\s=/g, ":=");
 const listStops = new Set([";", "IS", "AS"]);
 const routineStarts = new Set(["PROCEDURE", "FUNCTION"]);
+/** Palabras que pueden ir antes de PROCEDURE o FUNCTION en un tipo objeto. */
+const methodPrefixes = new Set(["MEMBER", "STATIC", "CONSTRUCTOR", "MAP", "ORDER", "OVERRIDING", "FINAL", "NOT", "INSTANTIABLE"]);
 const statementEnd = new Set([";"]);
 const routineMarkers = new Set([";", "IS", "AS"]);
 const parameterModes = new Set(["IN", "OUT", "NOCOPY"]);
@@ -123,6 +125,8 @@ function attachedComment(source: string, spans: Span[], start: number, end: numb
 
 class Analyzer {
   readonly out: ProgramSymbol[] = [];
+  /** Tipo objeto cuyo cuerpo se está leyendo: sus métodos lo llevan como `container`. */
+  private typeName: string | null = null;
   private readonly tokens: Token[];
   private readonly blocks: ReadonlyMap<number, number>;
   private readonly comments: Span[];
@@ -221,6 +225,10 @@ class Analyzer {
       this.routine(unit, null);
       return;
     }
+    if (kind === "TYPE") {
+      this.objectType(unit);
+      return;
+    }
     if (kind !== "PACKAGE") return;
     const isBody = tokens[unit + 1]?.key === "BODY";
     const nameIndex = readName(tokens, unit + (isBody ? 2 : 1));
@@ -249,6 +257,10 @@ class Analyzer {
     while (i < tokens.length) {
       const { key } = tokens[i];
       if (key === "BEGIN" || key === "END" || key === "WRAPPED") return i;
+      if (this.typeName && methodPrefixes.has(key)) {
+        i += 1;
+        continue;
+      }
       if (key === "PROCEDURE" || key === "FUNCTION" || key === "CURSOR") {
         i = this.routine(i, scope);
       } else if (key === "TYPE" || key === "SUBTYPE") {
@@ -341,15 +353,11 @@ class Analyzer {
     });
   }
 
-  private routine(start: number, scope: SymbolScope | null) {
+  /** Firma y clave de una rutina cuyo nombre está en `nameIndex` y su encabezado termina en `end`. */
+  private header(start: number, nameIndex: number, items: [number, number][], after: number, end: number) {
     const { tokens } = this;
     const kind = tokens[start].key;
-    const nameIndex = readName(tokens, start + 1);
-    const name = tokens[nameIndex];
-    if (!isIdentifier(name)) return this.statementEnd(start) + 1;
-    const { items, after } = this.list(nameIndex + 1);
-    const marker = boundary(tokens, after, routineMarkers);
-    const returns = tokens[after]?.key === "RETURN" ? tokens.slice(after + 1, marker) : [];
+    const returns = tokens[after]?.key === "RETURN" ? tokens.slice(after + 1, end) : [];
     const modifier = returns.findIndex((token) => signatureModifiers.has(token.key));
     if (modifier >= 0) returns.length = modifier;
     const parameters = items.map(([from, to]) => signatureOf(tokens.slice(from, to)));
@@ -357,6 +365,95 @@ class Analyzer {
       `${kind} ${this.text(start + 1, nameIndex + 1)}` +
       (parameters.length ? `(${parameters.join(", ")})` : "") +
       (returns.length ? ` RETURN ${format(returns)}` : "");
+    const key = JSON.stringify([
+      kind,
+      nameOf(tokens[nameIndex]),
+      items.map(([from, to]) => normalizedParameter(tokens.slice(from, this.assignment(from, to)?.at ?? to))),
+      returns.map((token) => token.key),
+    ]);
+    return { signature, returns, key };
+  }
+
+  /** `TYPE … AS OBJECT (…)` con atributos y métodos, o `TYPE BODY` con sus implementaciones. */
+  private objectType(unit: number) {
+    const { tokens } = this;
+    const isBody = tokens[unit + 1]?.key === "BODY";
+    const nameIndex = readName(tokens, unit + (isBody ? 2 : 1));
+    const name = tokens[nameIndex];
+    if (!isIdentifier(name)) return;
+    const typeName = nameOf(name);
+    const header = boundary(tokens, nameIndex + 1, routineMarkers);
+    if (tokens[header]?.key !== "IS" && tokens[header]?.key !== "AS") return;
+    if (isBody) {
+      this.typeName = typeName;
+      this.section(header + 1, null);
+      this.typeName = null;
+      return;
+    }
+    const end = this.statementEnd(header);
+    const object = tokens[header + 1]?.key === "OBJECT" || tokens[header + 1]?.key === "UNDER";
+    this.push({
+      kind: "type",
+      name: typeName,
+      signature: `TYPE ${this.text(unit + 1, nameIndex + 1)}`,
+      dataType: object ? "OBJECT" : this.text(header + 1, end) || null,
+      value: null,
+      comment: this.comment(unit, nameIndex),
+      from: name.from,
+      scope: null,
+      definition: false,
+      container: null,
+    });
+    if (!object) return;
+    const open = boundary(tokens, header + 1, new Set(["("]), end);
+    for (const [from, to] of this.list(open).items) {
+      let first = from;
+      while (first < to && methodPrefixes.has(tokens[first].key)) first += 1;
+      if (tokens[first]?.key === "PROCEDURE" || tokens[first]?.key === "FUNCTION") {
+        this.method(first, to, typeName);
+      } else {
+        this.member(first, to, "field", typeName, null);
+      }
+    }
+  }
+
+  /** Declaración de un método dentro de `AS OBJECT (…)`, en tokens [start, end). */
+  private method(start: number, end: number, typeName: string) {
+    const { tokens } = this;
+    const nameIndex = start + 1;
+    const name = tokens[nameIndex];
+    if (!isIdentifier(name)) return;
+    const { items, after } = this.list(nameIndex + 1);
+    const { signature, returns, key } = this.header(start, nameIndex, items, after, end);
+    const methodName = nameOf(name);
+    this.out.push({
+      kind: tokens[start].key === "FUNCTION" ? "function" : "procedure",
+      name: methodName,
+      signature,
+      dataType: returns.length ? format(returns) : null,
+      value: null,
+      comment: this.comment(start, end - 1),
+      from: name.from,
+      scope: null,
+      definition: false,
+      container: typeName,
+      key,
+    });
+    const own: SymbolScope = { from: tokens[start].from, to: this.endOf(end - 1) };
+    for (const [from, to] of items) this.member(from, to, "parameter", methodName, own);
+  }
+
+  private routine(start: number, scope: SymbolScope | null) {
+    const { tokens } = this;
+    const kind = tokens[start].key;
+    const nameIndex = readName(tokens, start + 1);
+    const name = tokens[nameIndex];
+    if (!isIdentifier(name)) return this.statementEnd(start) + 1;
+    const { items, after } = this.list(nameIndex + 1);
+    // RETURN SELF AS RESULT (constructores) lleva un AS que no abre el cuerpo.
+    const selfResult = tokens[after]?.key === "RETURN" && tokens[after + 1]?.key === "SELF" && tokens[after + 2]?.key === "AS";
+    const marker = boundary(tokens, selfResult ? after + 4 : after, routineMarkers);
+    const { signature, returns, key } = this.header(start, nameIndex, items, after, marker);
     const opensBody = tokens[marker]?.key === "IS" || tokens[marker]?.key === "AS";
     const definition = opensBody && kind !== "CURSOR";
     const routineName = nameOf(name);
@@ -371,13 +468,8 @@ class Analyzer {
       from: name.from,
       scope,
       definition,
-      container: null,
-      key: JSON.stringify([
-        kind,
-        routineName,
-        items.map(([from, to]) => normalizedParameter(tokens.slice(from, this.assignment(from, to)?.at ?? to))),
-        returns.map((token) => token.key),
-      ]),
+      container: this.typeName,
+      key,
     };
     this.out.push(symbol);
     for (const [from, to] of items) this.member(from, to, "parameter", routineName, own);

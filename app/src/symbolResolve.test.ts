@@ -258,3 +258,32 @@ test("dentro de un SELECT el alias gana a una variable con el mismo nombre", asy
     { kind: "column", table: "CLIENTES", column: { name: "NOMBRE", data_type: "VARCHAR2(100)", nullable: true } },
   ]);
 });
+
+test("campo de un cursor declarado en otro paquete", async () => {
+  const lookup = fakeLookup(
+    { PKG_CUR: info("PKG_CUR", "Package"), CLIENTES: info("CLIENTES", "Table") },
+    { PKG_CUR: [{ kind: "PACKAGE", source: "PACKAGE pkg_cur IS\n  CURSOR c IS SELECT id, nombre FROM clientes;\nEND;" }] },
+  );
+  const found = await resolveSymbol(
+    at(["DECLARE v pkg_cur.c%ROWTYPE; BEGIN x := v.nombre; END;"], "nombre;", { lookup }),
+    path(["V", "NOMBRE"]),
+  );
+  expect(found).toEqual([
+    { kind: "column", table: "CLIENTES", column: { name: "NOMBRE", data_type: "VARCHAR2(100)", nullable: true } },
+  ]);
+});
+
+test("atributos y métodos de un tipo objeto", async () => {
+  const lookup = fakeLookup({ T_PERSONA: info("T_PERSONA", "Type") }, {
+    T_PERSONA: [
+      { kind: "TYPE", source: "CREATE OR REPLACE TYPE t_persona AS OBJECT (\n  nombre VARCHAR2(50),\n  MEMBER FUNCTION saludo RETURN VARCHAR2\n);" },
+      { kind: "TYPE BODY", source: "CREATE OR REPLACE TYPE BODY t_persona AS\n  MEMBER FUNCTION saludo RETURN VARCHAR2 IS BEGIN RETURN nombre; END;\nEND;" },
+    ],
+  });
+  const source = "DECLARE p t_persona; BEGIN x := p.nombre; y := p.saludo; END;";
+  const field = await resolveSymbol(at([source], "nombre;", { lookup }), path(["P", "NOMBRE"]));
+  expect(field).toHaveLength(1);
+  expect(field[0]).toMatchObject({ kind: "symbol", symbol: { kind: "field", dataType: "VARCHAR2(50)" }, location: { where: "object", partKind: "TYPE", line: 2 } });
+  const method = await resolveSymbol(at([source], "saludo;", { lookup }), path(["P", "SALUDO"]));
+  expect(method.map((item) => item.kind === "symbol" && item.location.where === "object" && item.location.partKind)).toEqual(["TYPE", "TYPE BODY"]);
+});

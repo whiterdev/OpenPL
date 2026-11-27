@@ -183,3 +183,14 @@ test("un paquete grande se parsea una sola vez, o ninguna con el árbol del edit
   expect(parse).toHaveBeenCalledTimes(1);
   parse.mockRestore();
 });
+
+test("tipo objeto: atributos y métodos en spec y body", () => {
+  const typeSpec = "CREATE OR REPLACE TYPE t_persona AS OBJECT (\n  nombre VARCHAR2(50),\n  MEMBER FUNCTION saludo RETURN VARCHAR2,\n  STATIC PROCEDURE crear(p VARCHAR2)\n);";
+  const symbols = programSymbols(typeSpec);
+  expect(one(symbols, "T_PERSONA")).toMatchObject({ kind: "type", dataType: "OBJECT" });
+  expect(one(symbols, "NOMBRE")).toMatchObject({ kind: "field", container: "T_PERSONA", dataType: "VARCHAR2(50)" });
+  expect(one(symbols, "SALUDO")).toMatchObject({ kind: "function", container: "T_PERSONA", definition: false });
+  expect(one(symbols, "CREAR")).toMatchObject({ kind: "procedure", container: "T_PERSONA" });
+  const typeBody = "CREATE OR REPLACE TYPE BODY t_persona AS\n  MEMBER FUNCTION saludo RETURN VARCHAR2 IS BEGIN RETURN nombre; END;\nEND;";
+  expect(one(programSymbols(typeBody), "SALUDO")).toMatchObject({ kind: "function", container: "T_PERSONA", definition: true });
+});
