@@ -4,6 +4,9 @@
 
 ## Resumen
 
+- Beta 9 publicada y validada por el usuario. Los issues de las betas 8 y 9 están en Done en Linear. [Validación de Beta 8](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-511a7819) y [validación de Beta 9](https://linear.app/walter-aquino/project/openpl-7f23a40b5b5c/activity#project-update-031e4038).
+- La rama `feat/ficha-todas-las-columnas` muestra todas las columnas al pasar el puntero sobre tablas y vistas. La ficha mantiene su altura máxima y permite desplazarse por la lista. Pasaron 776 pruebas Vitest, TypeScript, fmt, Clippy y pruebas Rust sin conexión a Oracle. La prueba de regresión usa una tabla simulada de 64 columnas. [Comportamiento](behavior/editor-inteligente.md).
+
 - La rama `feat/busqueda-historial-scripts` habilita la lupa y el reloj del explorador. La lupa busca por nombre, tipo y alcance. El reloj recupera sentencias de la conexión activa durante la sesión de OpenPL y las abre en una pestaña SQL. **Ver > Auto Replace** configura scripts locales que se expanden con Tab. `SEL` incluye `select * from tabla`. [Comportamiento](behavior/busqueda-historial-scripts.md), [plan](superpowers/plans/2026-11-27-openpl-06-busqueda-historial-scripts.md) y [auditoría](../anti-slop/audit-busqueda-historial-scripts-2026-11-27.md).
 - Verificación de esta rama en Windows: 775 pruebas Vitest, TypeScript, build web y Tauri de depuración, fmt, Clippy y pruebas Rust (sin conexión Oracle). Vite avisó por el tamaño del bloque JavaScript principal y Tauri por el identificador con sufijo `.app` en macOS. Los recorridos de interfaz usan un DOM y un catálogo simulados. Queda pendiente validar la búsqueda en escritorio contra Oracle con una conexión de solo lectura.
 

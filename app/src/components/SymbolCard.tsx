@@ -16,7 +16,6 @@ const KIND_LABELS: Record<SymbolKind, string> = {
   field: "Campo",
 };
 const valueKinds = new Set<SymbolKind>(["variable", "constant", "parameter", "field"]);
-const MAX_COLUMNS = 30;
 const MAX_QUERY_LINES = 6;
 
 /** "Spec", "Body" o "Fuente", como las pestañas de la ventana de programa. */
@@ -46,12 +45,11 @@ function Item({ item }: { item: Resolved }) {
     );
   }
   if (item.kind === "relation") {
-    const shown = item.columns.slice(0, MAX_COLUMNS);
     return (
       <div className="symbol-card-item">
         <div className="symbol-card-head"><code>{item.object.owner}.{item.object.name}</code></div>
         <table className="symbol-card-columns">
-          <tbody>{shown.map((column) => (
+          <tbody>{item.columns.map((column) => (
             <tr key={column.name}>
               <td>{column.name}</td>
               <td>{column.data_type}</td>
@@ -59,9 +57,6 @@ function Item({ item }: { item: Resolved }) {
             </tr>
           ))}</tbody>
         </table>
-        {item.columns.length > shown.length && (
-          <p className="symbol-card-note">{item.columns.length - shown.length} columnas más</p>
-        )}
       </div>
     );
   }

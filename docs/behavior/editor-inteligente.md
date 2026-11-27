@@ -20,7 +20,7 @@ tiene ficha.
   tipo (`CREATE TYPE … AS OBJECT` o `UNDER padre`, con lo heredado); un método lleva a su
   implementación en el `TYPE BODY`.
 - **Cursores de otro paquete:** `pkg.cursor%ROWTYPE` resuelve las columnas de ese cursor.
-- **Tablas y vistas:** columnas con tipo y `NOT NULL`, hasta 30.
+- **Tablas y vistas:** todas las columnas con tipo y `NOT NULL`. Se puede desplazar la ficha cuando la lista supera su altura.
 - Cada ficha dice dónde está la declaración (línea, y objeto y parte si es de otro objeto) y el
   comentario pegado arriba de ella o al final de su línea.
 - Las sobrecargas muestran una ficha por firma.

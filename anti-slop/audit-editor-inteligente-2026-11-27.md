@@ -26,7 +26,10 @@ Alcance: ficha de símbolo (`SymbolCard`, `.cm-symbol-tooltip`), subrayado de Ct
   mover el cursor y no toma el foco.
 - **PASS, estados.** Sin resultado no hay ficha. Fuente no legible: "Fuente no disponible". Sin
   cuerpo: "Cuerpo no disponible". Sin conexión: solo lo local, nunca queda cargando.
-- **PASS, copia.** Textos cortos en español: "Sin valor inicial", "Expresión", "Columna",
-  "N columnas más", nombres de los comandos.
+- **PASS, copia.** Textos cortos en español: "Sin valor inicial", "Expresión", "Columna" y
+  nombres de los comandos.
+- **PASS, columnas de la ficha.** La prueba de interfaz renderiza las 64 filas de una tabla de
+  ejemplo y comprueba el tipo y `NOT NULL` de la última. La ficha conserva el desplazamiento
+  y su altura máxima de 320 px. La comprobación es automatizada.
 - **Pendiente, escritorio.** Probar en la app real: pasar el puntero sobre una constante de un
   paquete, Ctrl+clic en una llamada a otro paquete y F12 sobre una tabla en una ventana SQL.
